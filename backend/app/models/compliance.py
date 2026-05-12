@@ -1,12 +1,14 @@
-"""Compliance event/decision rows — audit-grade, append-only."""
+"""Compliance event rows — audit-grade, append-only."""
 from __future__ import annotations
 
-import enum
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
+
+# Re-export from common; same identity as common.enums.ComplianceDecisionType.
+from common.enums import ComplianceDecisionType  # noqa: F401
 
 from app.models.base import Base
 
@@ -15,16 +17,11 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-class ComplianceDecisionType(str, enum.Enum):
-    accept = "accept"
-    reject = "reject"
-
-
 class ComplianceEvent(Base):
     """One row per compliance-gate evaluation.
 
-    Phase 1 only writes `policy_gate` events. Phase 2+ adds rows for
-    `identity_guard`, `pre_lipsync_auth`, and `export_disclosure_validation`.
+    Phase 2 writes rows for: policy_gate, identity_guard, pre_lipsync_auth,
+    export_disclosure_validation.
     """
 
     __tablename__ = "compliance_events"

@@ -2,21 +2,24 @@
 
 How to bring up a P1.AIVideo dev environment on a Linux workstation. The first half of this runbook covers what works **today (Phase 1)**; the second half describes the full stack that lights up in later phases.
 
-## Phase 1 quickstart (no Docker, no models)
+## Phase 1 + Phase 2 quickstart (no Docker, no models)
 
-Phase 1 is metadata-only. You can exercise it without Docker, GPU, or any model weight:
+Phase 1 + Phase 2 are metadata-only. You can exercise both without Docker, GPU, or any model weight:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 
+# Install order matters: `common` is a dependency of `backend` and `agents`.
+pip install -e ./common
 pip install -e ./backend[dev]
 pip install -e ./agents[dev]
 
-# Run the Phase 1 integration test (SQLite in-memory + fakeredis)
+# Run the Phase 1 + Phase 2 integration tests (SQLite in-memory + fakeredis)
 make phase1-test
-# or
-pytest -v tests/integration/test_phase1_metadata_flow.py
+make phase2-test
+# or together:
+make test
 ```
 
 You can also run the API locally without Docker:

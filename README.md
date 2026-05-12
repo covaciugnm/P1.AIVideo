@@ -2,9 +2,8 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 1 — metadata-only flow.**
-> The repo currently ships a FastAPI backend, an orchestrator skeleton, and the intake compliance gate (`policy_gate`). **No model inference, no video generation, no lip-sync, no model weights downloaded.** The flow validates consent + compliance flags + a small banned-keyword scan on the brief, persists the job in Postgres, emits a small reference event to Redis, and updates job status to `accepted` or `rejected`.
-> See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> **Current status: Phase 2 — no-op multi-agent DAG.**
+> Phase 1 (metadata-only intake) plus the full 11-stage DAG running with **no-op** handlers end-to-end: `policy_gate → scriptwriter → voice → face → identity_guard → pre_lipsync_auth → lipsync → editor → qc → export_disclosure_validation → publisher`. A valid job reaches `published`; a rejected job stops at the gate that rejected it. **No model weights, no GPU libraries, no real video/audio/lip-sync — stub MinIO URIs only.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
 
 ## Hard guarantees
 
@@ -51,24 +50,30 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 1 scope (current)
+## Phase 2 scope (current)
 
-Implemented:
+Implemented on top of Phase 1:
 
-- `POST /jobs` and `GET /jobs/{id}` (FastAPI).
-- Job persisted in Postgres (SQLite for tests).
-- `job.created` event published to Redis Streams — **reference only, no media**.
-- Orchestrator consumer that runs the intake `policy_gate`.
-- Compliance Officer's `policy_gate` checks consent/synthetic-person flags + banned-keyword scan, and writes an audit-grade `compliance_events` row.
-- Integration test (`tests/integration/test_phase1_metadata_flow.py`) verifies the full path.
+- Shared `common/` package — `JobStatus`, `StageStatus`, `StageName`, `ComplianceDecisionType`, `ArtifactRef`, `StageOutput`, `ComplianceTokenClaims`, `DagState`. Both backend and agents depend on this; agents no longer import backend types (DB access coupling is documented; see [`agents/orchestrator/README.md`](agents/orchestrator/README.md)).
+- `StageRun` Postgres model recording every DAG-stage execution (`stage_runs` table).
+- `DagRunner` (`agents/orchestrator/dag.py`) — hand-rolled state machine reading the canonical stage order from `pipelines/reel_default.yaml`.
+- No-op handlers for every stage (`agents/{scriptwriter,voice,face,lipsync,editor,qc,publisher}/handler.py`).
+- Compliance Officer:
+  - `pre_lipsync_auth` — mints an HMAC-signed `compliance_token` carrying `synthetic_person_confirmed`, `consent_confirmed`, `watermark_required`, `c2pa_required`, `allowed_lipsync_backend`, `issued_at`, `expires_at`, `phase="phase2_noop"`.
+  - `identity_guard` — no-op (real CLIP-NN check deferred to Phase 5).
+  - `export_disclosure_validation` — no-op (real OCR + C2PA verify deferred to Phase 5).
+- LipSync handler **refuses** to run without a valid `compliance_token`.
+- `JobStatus` extended with `published`; a valid job transitions `pending_compliance → accepted → published`.
+- Integration test (`tests/integration/test_phase2_noop_dag.py`) verifies the full path, all rejection paths, the token, and the metadata-only invariant.
 
-Explicitly **not** in Phase 1:
+Explicitly **not** in Phase 2:
 
 - No model weights are downloaded.
-- No GPU libraries (torch / diffusers / SadTalker / MuseTalk / Wav2Lip) are installed.
-- No real video, audio, or lip-sync generation.
+- No GPU libraries (torch / diffusers / transformers / SadTalker / MuseTalk / Wav2Lip).
+- No real video, audio, face, or lip-sync generation — all artifact references are stub MinIO URIs.
 - No external paid APIs.
-- No LangGraph yet — Phase 2 will lift the single-node state machine into a full DAG.
+- No LangGraph — the DAG runner is a 200-line hand-rolled state machine. The handler interface is LangGraph-compatible; Phase 3+ can swap in `langgraph` if branching/retry/parallelism warrants the dep.
+- Real SadTalker / MuseTalk / Wav2Lip integration is deferred to Phase 3 behind the existing `LipSyncProvider` adapter contract.
 
 ## License
 

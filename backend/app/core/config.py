@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # --- Compliance posture ---
     require_synthetic_person_flag: bool = True
     allow_byo_likeness: bool = False
+    banned_topics_path: str = "configs/policies/banned_topics.example.yaml"
+
+    # --- Compliance token (Phase 2) ---
+    compliance_signing_key: str = "phase2-noop-changeme"
+    compliance_token_ttl_seconds: int = 3600
+    allowed_lipsync_backend: str = "sadtalker"
 
     @property
     def cors_origins(self) -> list[str]:

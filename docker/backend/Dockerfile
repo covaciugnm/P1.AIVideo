@@ -22,9 +22,16 @@ WORKDIR /app
 #     && apt-get install -y --no-install-recommends curl \
 #     && rm -rf /var/lib/apt/lists/*
 
-# TODO(phase-1): copy backend/pyproject.toml and install.
-# COPY backend/pyproject.toml ./pyproject.toml
-# RUN pip install -e .
+# TODO(phase-1+): the `aivideo-common` package is a path dependency of
+# this image. Build context must include both `common/` and `backend/`,
+# and install order is `common` first, then `backend`:
+#
+#   COPY common/ ./common/
+#   RUN pip install -e ./common
+#
+#   COPY backend/pyproject.toml ./backend/pyproject.toml
+#   COPY backend/app/ ./backend/app/
+#   RUN pip install -e ./backend
 
 # TODO(phase-1): copy application source.
 # COPY backend/ ./

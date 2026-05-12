@@ -29,7 +29,7 @@ stages:
       min_duration_seconds: ${MIN_REEL_DURATION_SECONDS:-15}
       max_duration_seconds: ${MAX_REEL_DURATION_SECONDS:-60}
 
-  - id: script
+  - id: scriptwriter
     agent: scriptwriter
     needs: [policy_gate]
     params:
@@ -39,7 +39,7 @@ stages:
 
   - id: voice
     agent: voice
-    needs: [script]
+    needs: [scriptwriter]
     params:
       tts_backend: "${TTS_BACKEND}"
 
@@ -74,7 +74,7 @@ stages:
 
   - id: editor
     agent: editor
-    needs: [lipsync, script]
+    needs: [lipsync, scriptwriter]
     params:
       target_duration_seconds: ${TARGET_DURATION_SECONDS:-30}
       watermark_required: true

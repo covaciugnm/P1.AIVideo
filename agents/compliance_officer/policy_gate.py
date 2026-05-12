@@ -10,14 +10,20 @@ the side effects (DB row, event emission).
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-# Resolve to <repo>/configs/policies/banned_topics.example.yaml by default.
-# Operators copy this to banned_topics.yaml; if that file exists we prefer it.
+# Resolution order for the banned-topics policy:
+#   1. policy_gate(policy_path=...) argument if provided.
+#   2. $BANNED_TOPICS_PATH env var (absolute, or relative to the repo root).
+#   3. <repo>/configs/policies/banned_topics.yaml
+#   4. <repo>/configs/policies/banned_topics.example.yaml
+# Step (2) is what makes this configurable in Docker; the env var lets
+# operators mount a deployment-specific ruleset without changing code.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _POLICY_DIR = _REPO_ROOT / "configs" / "policies"
 _DEFAULT_POLICY_PATH = _POLICY_DIR / "banned_topics.yaml"
@@ -47,9 +53,22 @@ class PolicyGateDecision:
     reasons: list[str] = field(default_factory=list)
 
 
+def _resolve_env_path() -> Path | None:
+    raw = os.environ.get("BANNED_TOPICS_PATH")
+    if not raw:
+        return None
+    p = Path(raw)
+    if not p.is_absolute():
+        p = (_REPO_ROOT / p).resolve()
+    return p if p.exists() else None
+
+
 def _select_policy_path(explicit: Path | None) -> Path | None:
     if explicit is not None:
         return explicit if explicit.exists() else None
+    env_path = _resolve_env_path()
+    if env_path is not None:
+        return env_path
     if _DEFAULT_POLICY_PATH.exists():
         return _DEFAULT_POLICY_PATH
     if _FALLBACK_POLICY_PATH.exists():

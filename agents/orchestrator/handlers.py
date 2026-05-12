@@ -1,12 +1,19 @@
-"""Phase 1 orchestrator handler.
+"""Orchestrator handlers.
 
-Bridges a parsed `job.created` event to:
-  1. The policy_gate function in agents.compliance_officer.policy_gate
-  2. The backend DB (status update + compliance event row)
+Two factories live here. They share the same `Handler` signature so either
+can be plugged into `Orchestrator(handler=...)`.
 
-The handler depends on `app.*` from the backend package. Phase 2 will pull
-the shared DB layer into a small `aivideo-common` package so the
-orchestrator no longer reaches into the backend.
+- `make_policy_gate_handler` — Phase 1 narrow handler. Runs only the
+  intake policy gate against a job and stops at `JobStatus.accepted`
+  (or `rejected`). Preserved for the Phase 1 test and for any deployment
+  that intentionally wants to validate the brief without continuing.
+
+- `make_job_created_handler` — **Phase 2 default**. Wraps a `DagRunner` and
+  executes the full no-op DAG (policy_gate → scriptwriter → voice → face →
+  identity_guard → pre_lipsync_auth → lipsync → editor → qc →
+  export_disclosure_validation → publisher). A valid job reaches
+  `JobStatus.published`. This is the handler wired into the production
+  Redis consumer path.
 """
 from __future__ import annotations
 
@@ -17,7 +24,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-# Backend imports — Phase 1 accepts this coupling; Phase 2 refactors it.
+# Backend imports — Phase 2 coupling; tracked for Phase 3 refactor.
 from app.models.compliance import ComplianceDecisionType, ComplianceEvent
 from app.models.job import JobStatus
 from app.services import job_service
@@ -27,24 +34,36 @@ from agents.compliance_officer.policy_gate import (
     PolicyGateDecision,
     policy_gate,
 )
+from agents.orchestrator.dag import DagRunner, DagRunnerConfig
 
 log = logging.getLogger(__name__)
 
+Handler = Callable[[dict[str, Any]], Awaitable[None]]
 
-def make_job_created_handler(
+
+def _parse_job_id(payload: dict[str, Any]) -> uuid.UUID | None:
+    if payload.get("event") != "job.created":
+        log.debug("orchestrator: ignoring non-job.created event")
+        return None
+    try:
+        return uuid.UUID(payload["job_id"])
+    except (KeyError, ValueError):
+        log.warning("orchestrator: payload missing/invalid job_id")
+        return None
+
+
+def make_policy_gate_handler(
     sessionmaker: async_sessionmaker[AsyncSession],
-) -> Callable[[dict[str, Any]], Awaitable[None]]:
-    """Return a handler closure bound to a SQLAlchemy session factory."""
+) -> Handler:
+    """Phase 1 narrow handler — runs only policy_gate.
+
+    Preserved for the Phase 1 integration test. Production code should
+    wire `make_job_created_handler` instead.
+    """
 
     async def handle(payload: dict[str, Any]) -> None:
-        if payload.get("event") != "job.created":
-            log.debug("orchestrator: ignoring non-job.created event")
-            return
-
-        try:
-            job_id = uuid.UUID(payload["job_id"])
-        except (KeyError, ValueError):
-            log.warning("orchestrator: payload missing/invalid job_id")
+        job_id = _parse_job_id(payload)
+        if job_id is None:
             return
 
         async with sessionmaker() as session:
@@ -83,5 +102,29 @@ def make_job_created_handler(
                 job.rejection_reason = ("; ".join(decision.reasons))[:1000]
 
             await session.commit()
+
+    return handle
+
+
+def make_job_created_handler(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    dag_config: DagRunnerConfig,
+) -> Handler:
+    """Phase 2 production handler — runs the full no-op DAG via DagRunner.
+
+    A `DagRunner` is constructed once (loading the pipeline YAML and stage
+    handler registry) and reused for every event. Per-job state lives on
+    the `DagState` object created inside `runner.run(job_id)`.
+    """
+    runner = DagRunner(sessionmaker, dag_config)
+
+    async def handle(payload: dict[str, Any]) -> None:
+        job_id = _parse_job_id(payload)
+        if job_id is None:
+            return
+        # DagRunner already updates job + stage_runs + compliance_events.
+        # It catches StageRejection / StageError internally and updates
+        # status to rejected / failed; we don't need to wrap further.
+        await runner.run(job_id)
 
     return handle

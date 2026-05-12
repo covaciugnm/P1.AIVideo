@@ -58,7 +58,7 @@ async def test_healthz(app_under_test):
 
 async def test_valid_job_reaches_accepted(app_under_test):
     client, fake_redis = app_under_test
-    from agents.orchestrator.handlers import make_job_created_handler
+    from agents.orchestrator.handlers import make_policy_gate_handler
     from agents.orchestrator.orchestrator import Orchestrator, OrchestratorConfig
     from app.core.db import get_sessionmaker
 
@@ -82,7 +82,7 @@ async def test_valid_job_reaches_accepted(app_under_test):
     assert await fake_redis.xlen("stage.compliance") == 1
 
     # 3. Orchestrator picks up the event and runs the policy gate.
-    handler = make_job_created_handler(get_sessionmaker())
+    handler = make_policy_gate_handler(get_sessionmaker())
     orchestrator = Orchestrator(
         client=fake_redis,
         config=OrchestratorConfig(
@@ -171,7 +171,7 @@ async def test_compliance_event_row_recorded(app_under_test):
     """Verify a policy_gate row lands in compliance_events for audit."""
     from sqlalchemy import select
 
-    from agents.orchestrator.handlers import make_job_created_handler
+    from agents.orchestrator.handlers import make_policy_gate_handler
     from agents.orchestrator.orchestrator import Orchestrator, OrchestratorConfig
     from app.core.db import get_sessionmaker
     from app.models.compliance import ComplianceDecisionType, ComplianceEvent
@@ -188,7 +188,7 @@ async def test_compliance_event_row_recorded(app_under_test):
     r = await client.post("/jobs", json=payload)
     assert r.status_code == 201
 
-    handler = make_job_created_handler(get_sessionmaker())
+    handler = make_policy_gate_handler(get_sessionmaker())
     orchestrator = Orchestrator(
         client=fake_redis,
         config=OrchestratorConfig(

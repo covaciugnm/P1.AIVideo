@@ -28,9 +28,16 @@ WORKDIR /app
 #     && apt-get install -y --no-install-recommends ffmpeg \
 #     && rm -rf /var/lib/apt/lists/*
 
-# TODO(phase-1+): copy agents/pyproject.toml and install shared agent deps.
-# COPY agents/pyproject.toml ./pyproject.toml
-# RUN pip install -e .
+# TODO(phase-1+): the `aivideo-common` package is a path dependency of
+# this image. Build context must include both `common/` and `agents/`,
+# and install order is `common` first, then `agents`:
+#
+#   COPY common/ ./common/
+#   RUN pip install -e ./common
+#
+#   COPY agents/pyproject.toml ./agents/pyproject.toml
+#   COPY agents/ ./agents/
+#   RUN pip install -e ./agents
 
 # TODO(phase-1+): per-agent code is injected at build time via an ARG, e.g.:
 #   docker build --build-arg AGENT=scriptwriter ...

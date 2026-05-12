@@ -1,29 +1,25 @@
-"""Job model — Phase 1.
+"""Job model — Phase 1 + Phase 2.
 
-Stores job metadata only. No binary artifacts. Artifact URIs (MinIO) land in
-later phases when there are artifacts to point at.
+Stores job metadata only. No binary artifacts. Artifact URIs are recorded
+on `StageRun` rows (see stage_run.py).
 """
 from __future__ import annotations
 
-import enum
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
+# Re-export from common so existing `from app.models.job import JobStatus`
+# continues to work and there's only one canonical definition.
+from common.enums import JobStatus  # noqa: F401
+
 from app.models.base import Base
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-class JobStatus(str, enum.Enum):
-    pending_compliance = "pending_compliance"
-    accepted = "accepted"
-    rejected = "rejected"
-    failed = "failed"
 
 
 class Job(Base):

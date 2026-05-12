@@ -1,0 +1,41 @@
+# P1.AIVideo shared common package.
+#
+# Installable as `aivideo-common`. Both `aivideo-backend` and
+# `aivideo-agents` declare this as a dependency. Install order in dev:
+#
+#     pip install -e ./common
+#     pip install -e ./backend[dev]
+#     pip install -e ./agents[dev]
+#
+# In Docker, each agent/backend image must COPY `common/` into the build
+# context and `pip install -e ./common` before installing the parent
+# package. See docs/runbooks/dev-setup.md.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aivideo-common"
+version = "0.2.0"
+description = "Shared enums, Pydantic schemas, and exception classes for P1.AIVideo."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "P1.AIVideo" }]
+dependencies = [
+  "pydantic>=2.7",
+]
+
+[tool.setuptools]
+packages = ["common"]
+
+[tool.setuptools.package-dir]
+"common" = "."
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
