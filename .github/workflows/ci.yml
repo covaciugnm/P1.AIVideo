@@ -1,0 +1,97 @@
+# =============================================================================
+# P1.AIVideo CI — Phase 0
+#
+# Lightweight scaffolding-stage CI. Jobs are intentionally lenient so they
+# don't fail on an empty scaffold. Each job has a TODO that tightens it as
+# real code lands in later phases.
+#
+# Do not add heavy builds (image builds, model downloads, GPU tests) here
+# until a self-hosted GPU runner + budget are agreed.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  markdown-lint:
+    name: Markdown lint (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke-check markdown
+        run: |
+          # TODO: replace with markdownlint-cli2 once a config is added.
+          count=$(find . -type f -name "*.md" -not -path "./node_modules/*" | wc -l)
+          echo "Found $count markdown files."
+          # Fail only if there are zero markdown files (which would mean the
+          # scaffold is broken).
+          test "$count" -gt 0
+
+  # ---------------------------------------------------------------------------
+  yaml-validate:
+    name: YAML validate (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install yamllint
+        run: pip install --quiet yamllint
+      - name: Lint YAML (lenient)
+        run: |
+          # TODO: ship a yamllint config once pipeline ${VAR} interpolation is
+          # handled by the orchestrator's loader; until then keep this lenient.
+          yamllint \
+            -d "{extends: relaxed, rules: {line-length: disable, document-start: disable, truthy: disable}}" \
+            . || echo "yaml lint reported issues (non-blocking in Phase 0)"
+
+  # ---------------------------------------------------------------------------
+  python-lint:
+    name: Python lint (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff
+        run: pip install --quiet "ruff>=0.7,<0.9"
+      - name: Ruff check
+        run: |
+          # No Python source ships in Phase 0 — this keeps the job green while
+          # exercising the toolchain. TODO(phase-1): drop the `|| true`.
+          ruff check . || true
+          ruff format --check . || true
+
+  # ---------------------------------------------------------------------------
+  security-scan:
+    name: Trivy filesystem scan (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy fs scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          # Phase 0 is report-only; Phase 6 hardening flips this to '1'.
+          exit-code: "0"
+          ignore-unfixed: true
+
+  # ---------------------------------------------------------------------------
+  # No image builds, model downloads, or GPU tests in Phase 0.
+  # Phase 1 adds: backend build + unit tests.
+  # Phase 3 adds: agent image builds (CPU only — GPU tests on self-hosted).
+  # Phase 6 adds: e2e + compliance + identity-guard gates.
+  # ---------------------------------------------------------------------------

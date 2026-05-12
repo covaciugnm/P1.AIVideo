@@ -1,0 +1,97 @@
+# Default reel pipeline. Treat this as a documented template until the
+# Orchestrator implementation in Phase 2 consumes it.
+
+name: reel_default
+schema_version: 1
+
+# Pipeline-level defaults. Stages may override individual values in their params.
+defaults:
+  duration:
+    target_seconds: ${TARGET_DURATION_SECONDS:-30}
+    min_seconds: ${MIN_REEL_DURATION_SECONDS:-15}
+    max_seconds: ${MAX_REEL_DURATION_SECONDS:-60}
+  compliance:
+    watermark_required: true              # visible "AI-generated" overlay
+    c2pa_required: true                   # Content Credentials manifest
+    compliance_token_required: true       # LipSync rejects requests without one
+
+budget:
+  max_wall_minutes: 15
+  max_gpu_minutes: 12
+
+stages:
+  # --- Compliance gate: intake ---
+  - id: policy_gate
+    agent: compliance_officer
+    role: intake_gate
+    params:
+      target_duration_seconds: ${TARGET_DURATION_SECONDS:-30}
+      min_duration_seconds: ${MIN_REEL_DURATION_SECONDS:-15}
+      max_duration_seconds: ${MAX_REEL_DURATION_SECONDS:-60}
+
+  - id: script
+    agent: scriptwriter
+    needs: [policy_gate]
+    params:
+      llm_backend: "${LLM_BACKEND}"
+      model_id: "${LLM_MODEL_ID}"
+      target_duration_seconds: ${TARGET_DURATION_SECONDS:-30}
+
+  - id: voice
+    agent: voice
+    needs: [script]
+    params:
+      tts_backend: "${TTS_BACKEND}"
+
+  - id: face
+    agent: face
+    needs: [policy_gate]
+    params:
+      persona: "caucasian_male_30s_neutral"
+
+  # --- Compliance gate: identity guard (post-Face) ---
+  - id: identity_guard
+    agent: compliance_officer
+    role: identity_guard
+    needs: [face]
+
+  # --- Compliance gate: mint compliance_token for LipSync ---
+  - id: pre_lipsync_auth
+    agent: compliance_officer
+    role: pre_lipsync_auth
+    needs: [identity_guard, voice]
+    params:
+      issue_token: true
+      token_ttl_seconds: 3600
+
+  - id: lipsync
+    agent: lipsync
+    needs: [pre_lipsync_auth]
+    params:
+      backend: "${LIPSYNC_BACKEND}"
+      fps: 25
+      compliance_token_required: true
+
+  - id: editor
+    agent: editor
+    needs: [lipsync, script]
+    params:
+      target_duration_seconds: ${TARGET_DURATION_SECONDS:-30}
+      watermark_required: true
+
+  - id: qc
+    agent: qc
+    needs: [editor]
+
+  # --- Compliance gate: pre-publish disclosure attestation ---
+  - id: export_disclosure_validation
+    agent: compliance_officer
+    role: export_disclosure_validation
+    needs: [qc]
+    params:
+      watermark_required: true
+      c2pa_required: true
+
+  - id: publisher
+    agent: publisher
+    needs: [export_disclosure_validation]

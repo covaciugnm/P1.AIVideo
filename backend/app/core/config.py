@@ -1,0 +1,75 @@
+"""Application settings, loaded from .env via pydantic-settings.
+
+`Settings` is intentionally instantiated as a module-level singleton so the
+rest of the app can `from app.core.config import settings` cheaply.
+
+DATABASE_URL is read at call time (not just at instantiation) so tests can
+override it just by setting the env var before importing the engine.
+"""
+from __future__ import annotations
+
+import os
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # --- Runtime ---
+    app_env: str = "development"
+    log_level: str = "INFO"
+
+    # --- Backend ---
+    backend_host: str = "0.0.0.0"
+    backend_port: int = 8000
+    backend_cors_origins: str = "http://localhost:3000"
+
+    # --- Postgres ---
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
+    postgres_db: str = "aivideo"
+    postgres_user: str = "aivideo"
+    postgres_password: str = "changeme"
+
+    # --- Redis ---
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_db: int = 0
+
+    # --- Queue topics ---
+    queue_topic_compliance: str = "stage.compliance"
+    queue_topic_orchestrator: str = "stage.orchestrator"
+    queue_topic_audit: str = "audit.compliance"
+
+    # --- Duration bounds ---
+    target_duration_seconds: int = 30
+    min_reel_duration_seconds: int = 15
+    max_reel_duration_seconds: int = 60
+
+    # --- Compliance posture ---
+    require_synthetic_person_flag: bool = True
+    allow_byo_likeness: bool = False
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
+
+    def get_database_url(self) -> str:
+        """Resolve at call time so tests can set DATABASE_URL after import."""
+        override = os.environ.get("DATABASE_URL")
+        if override:
+            return override
+        return (
+            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    def get_redis_url(self) -> str:
+        override = os.environ.get("REDIS_URL")
+        if override:
+            return override
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+
+settings = Settings()

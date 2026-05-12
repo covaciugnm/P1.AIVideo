@@ -1,0 +1,59 @@
+# P1.AIVideo backend (FastAPI) — Phase 1 scope: metadata-only flow.
+# No torch / diffusers / CUDA libraries. No model inference.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aivideo-backend"
+version = "0.1.0"
+description = "P1.AIVideo backend service (FastAPI). Phase 1: metadata-only flow."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "P1.AIVideo" }]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.4",
+  "sqlalchemy[asyncio]>=2.0.30",
+  "asyncpg>=0.29",
+  "aiosqlite>=0.20",
+  "redis>=5.0",
+  "pyyaml>=6.0",
+  "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "httpx>=0.27",
+  "fakeredis>=2.23",
+  "ruff>=0.7",
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["B008"]  # FastAPI's Depends() pattern
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+asyncio_mode = "auto"

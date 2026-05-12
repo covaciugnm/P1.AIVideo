@@ -1,0 +1,222 @@
+# =============================================================================
+# P1.AIVideo — development Compose file
+#
+# Phase 0 stub: services are wired up with image build contexts, env files,
+# named volumes, and a private network. Application code lands in Phase 1+;
+# until then most agent containers run a no-op stub command.
+#
+# Usage:
+#   - CPU-only:   docker compose -f docker/compose.dev.yml up -d
+#   - With GPUs:  docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml up -d
+#
+# Prerequisites for GPU services: NVIDIA driver + NVIDIA Container Toolkit on
+# the host. See docs/runbooks/gpu-docker.md.
+# =============================================================================
+
+name: aivideo
+
+# Common build args + env defaults reused across services.
+x-build-defaults: &build-defaults
+  context: ..
+  args:
+    PYTHON_VERSION: "3.11"
+
+x-env-defaults: &env-defaults
+  env_file:
+    - ../.env
+  restart: unless-stopped
+
+networks:
+  aivideo:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
+
+  postgres:
+    image: postgres:16-alpine
+    <<: *env-defaults
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aivideo}
+      POSTGRES_USER: ${POSTGRES_USER:-aivideo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [aivideo]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aivideo}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    <<: *env-defaults
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks: [aivideo]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    <<: *env-defaults
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aivideo}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme-please}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API (dev convenience)
+      - "9001:9001"   # MinIO console
+    networks: [aivideo]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Application services (Phase 1+ will replace stub CMDs)
+  # ---------------------------------------------------------------------------
+
+  backend:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/backend/Dockerfile
+    <<: *env-defaults
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    networks: [aivideo]
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        NODE_VERSION: "20"
+    <<: *env-defaults
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    networks: [aivideo]
+
+  orchestrator:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile
+    <<: *env-defaults
+    depends_on:
+      - redis
+      - postgres
+    networks: [aivideo]
+
+  # --- Agents (CPU base) -----------------------------------------------------
+  # GPU reservations live in compose.gpu.yml. Per-agent images can be split
+  # later; for Phase 0 they share docker/agents/Dockerfile.
+
+  agent-scriptwriter:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile
+    <<: *env-defaults
+    depends_on: [redis]
+    networks: [aivideo]
+
+  agent-editor:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile
+    <<: *env-defaults
+    depends_on: [redis, minio]
+    networks: [aivideo]
+
+  agent-qc:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile
+    <<: *env-defaults
+    depends_on: [redis, minio]
+    networks: [aivideo]
+
+  agent-publisher:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile
+    <<: *env-defaults
+    depends_on: [redis, minio]
+    networks: [aivideo]
+
+  agent-compliance:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile
+    <<: *env-defaults
+    depends_on: [redis, postgres]
+    networks: [aivideo]
+
+  # --- GPU-capable agents (CUDA base; reservations added in compose.gpu.yml) -
+
+  agent-voice:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile.cuda
+    <<: *env-defaults
+    depends_on: [redis, minio]
+    volumes:
+      - ../models:/models:ro
+    networks: [aivideo]
+
+  agent-face:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile.cuda
+    <<: *env-defaults
+    depends_on: [redis, minio]
+    volumes:
+      - ../models:/models:ro
+    networks: [aivideo]
+
+  agent-lipsync:
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile.cuda
+    <<: *env-defaults
+    depends_on: [redis, minio]
+    volumes:
+      - ../models:/models:ro
+    networks: [aivideo]
+
+  # --- Optional: local LLM server (vLLM) -------------------------------------
+  # Disabled by default in dev. Enable via the GPU overlay or by setting a
+  # profile. Treat as optional; the Scriptwriter adapter can target this or
+  # an external LLM at the operator's choice.
+  model-llm:
+    profiles: ["llm"]
+    build:
+      <<: *build-defaults
+      dockerfile: docker/agents/Dockerfile.cuda
+    <<: *env-defaults
+    volumes:
+      - ../models/llm:/models/llm:ro
+    networks: [aivideo]

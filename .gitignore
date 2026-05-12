@@ -1,0 +1,53 @@
+# --- Secrets & local config ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+configs/c2pa/*
+!configs/c2pa/.gitkeep
+
+# --- Model weights (large, license-tracked separately) ---
+models/**
+!models/**/README.md
+!models/**/.gitkeep
+!models/MODEL_CARDS.md
+
+# --- Local storage volumes ---
+storage/**
+!storage/README.md
+!storage/.gitkeep
+
+# --- Build artifacts ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# --- Node / frontend ---
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Job artifacts (dev convenience; real artifacts live in MinIO) ---
+tmp/
+out/

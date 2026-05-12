@@ -1,0 +1,52 @@
+# Example policy ruleset. Operators copy to banned_topics.yaml and adjust.
+# See docs/compliance/prohibited-use.md for the canonical category list.
+
+version: 1
+rules:
+  - id: real_person_impersonation
+    severity: block
+    keywords:
+      - "president of"
+      - "prime minister"
+      - "ceo of"
+    semantic:
+      description: "Generating likeness or speech attributed to a specific real public or private individual."
+
+  - id: political_electoral
+    severity: block
+    keywords:
+      - "vote for"
+      - "election"
+      - "campaign"
+      - "ballot"
+    semantic:
+      description: "Election-related advocacy, candidate endorsements, voter targeting."
+
+  - id: nsfw_adult
+    severity: block
+    semantic:
+      description: "Sexual content, nudity, sexually suggestive material."
+
+  - id: minors_likeness
+    severity: block
+    semantic:
+      description: "Any depiction of minors as the synthetic persona."
+
+  - id: hate_harassment
+    severity: block
+    semantic:
+      description: "Content attacking protected classes or targeting individuals."
+
+  - id: medical_legal_financial_authoritative
+    severity: review
+    semantic:
+      description: "Specific medical, legal, or financial recommendations presented as authoritative."
+
+  - id: violence_self_harm
+    severity: block
+    semantic:
+      description: "Graphic violence, glorification of violence, self-harm enabling content."
+
+thresholds:
+  block: 0.85          # classifier score above which we hard-block
+  review: 0.6          # classifier score above which we send to human review

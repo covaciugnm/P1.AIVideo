@@ -1,0 +1,52 @@
+# =============================================================================
+# P1.AIVideo agents — CUDA base — Phase 0 stub
+#
+# Base image for agents that need a GPU at runtime: voice (XTTS path), face
+# (SDXL), lipsync (SadTalker default; MuseTalk/Wav2Lip via the adapter).
+# Also used by the optional `model-llm` vLLM service.
+#
+# Phase 0 deliberately keeps this lean — no torch, no diffusers, no SadTalker
+# installs. Those land in Phase 3 alongside the corresponding agent code.
+#
+# Requires the NVIDIA Container Toolkit on the host. See
+# docs/runbooks/gpu-docker.md.
+# =============================================================================
+# syntax=docker/dockerfile:1.7
+
+ARG CUDA_VERSION=12.4.1
+ARG UBUNTU_VERSION=22.04
+
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# TODO(phase-3): install Python + ffmpeg (and any per-agent OS deps).
+# Keeping these out of Phase 0 to avoid heavy build downloads during scaffold.
+# RUN apt-get update \
+#     && apt-get install -y --no-install-recommends \
+#         python3.11 python3-pip ffmpeg ca-certificates \
+#     && rm -rf /var/lib/apt/lists/* \
+#     && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# TODO(phase-3): install the agent's Python deps (torch, diffusers, etc.).
+# Pin versions and verify against models/MODEL_CARDS.md.
+
+# TODO(phase-3): copy agent code (selected by build ARG, same convention as
+# the CPU Dockerfile).
+# ARG AGENT
+# COPY agents/${AGENT}/ ./agent/
+
+# Bind-mount /models read-only from the host at runtime (configured in
+# compose.dev.yml / compose.gpu.yml). No model weights are baked in.
+
+RUN useradd --create-home --uid 1000 app || true
+USER 1000
+
+# TODO(phase-3): real entrypoint per agent.
+CMD ["bash", "-lc", "echo 'gpu agent stub — Phase 3 lands here' && sleep infinity"]

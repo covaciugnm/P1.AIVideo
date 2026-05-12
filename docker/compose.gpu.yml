@@ -1,0 +1,44 @@
+# =============================================================================
+# P1.AIVideo — GPU overlay
+#
+# Adds NVIDIA GPU reservations to the agents that need them. Use alongside
+# compose.dev.yml or compose.prod.yml. Requires the NVIDIA Container Toolkit
+# on the host — see docs/runbooks/gpu-docker.md.
+#
+# Usage:
+#   docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml up -d
+# =============================================================================
+
+name: aivideo
+
+x-gpu-reservation: &gpu-one
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  environment:
+    NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+    NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+
+services:
+  agent-voice:
+    <<: *gpu-one
+
+  agent-face:
+    <<: *gpu-one
+
+  agent-lipsync:
+    <<: *gpu-one
+
+  # Local LLM server — enable with `--profile llm`.
+  model-llm:
+    profiles: ["llm"]
+    <<: *gpu-one
+
+  # Optional: QC may want a GPU for sync-confidence / vision checks.
+  # Uncomment if your host has spare VRAM.
+  # agent-qc:
+  #   <<: *gpu-one
