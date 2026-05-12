@@ -2,8 +2,13 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 2 — no-op multi-agent DAG.**
-> Phase 1 (metadata-only intake) plus the full 11-stage DAG running with **no-op** handlers end-to-end: `policy_gate → scriptwriter → voice → face → identity_guard → pre_lipsync_auth → lipsync → editor → qc → export_disclosure_validation → publisher`. A valid job reaches `published`; a rejected job stops at the gate that rejected it. **No model weights, no GPU libraries, no real video/audio/lip-sync — stub MinIO URIs only.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> **Current status: Phase 3A — model-provider contracts + healthchecks.**
+> Phase 2 (no-op DAG end-to-end) plus a real `LipSyncProvider` / `VoiceProvider` adapter contract with:
+> - **SadTalker** and **Piper** stubs that declare their required assets, resolve `*_MODELS_ROOT` env vars, and return a structured `ProviderHealth` (`ok` / `missing_assets` / `not_configured`).
+> - **MuseTalk** and **Wav2Lip** placeholders that report `not_implemented` and refuse to run.
+> - `synthesize()` is still a placeholder: it verifies the compliance token (LipSync) and the on-disk assets, then raises `ProviderNotImplementedError`. Real inference lands in Phase 3B.
+>
+> **No model weights downloaded. No torch / diffusers / transformers / SadTalker / MuseTalk / Wav2Lip / Piper runtime deps installed.** All model assets must be manually mounted under `./models/`. See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
 
 ## Hard guarantees
 
@@ -50,7 +55,27 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 2 scope (current)
+## Phase 3A scope (current)
+
+Implemented on top of Phase 2:
+
+- `LipSyncProvider` and `VoiceProvider` abstract contracts (`agents/lipsync/core/provider.py`, `agents/voice/core/provider.py`) with `required_assets()`, `healthcheck()`, `synthesize()` — plus `validate_compliance_token()` for LipSync.
+- `AssetSpec` + `ProviderHealth` + `ProviderHealthStatus` in `common/` so both providers + future ones share the same shape.
+- Registries (`agents/lipsync/core/registry.py`, `agents/voice/core/registry.py`) — orchestrator resolves a provider by name (`LIPSYNC_BACKEND`, `TTS_BACKEND`) without importing concrete classes.
+- **SadTalker stub** — declares the 5 required checkpoints, resolves `SADTALKER_MODELS_ROOT` (or falls back to `LIPSYNC_MODELS_ROOT/sadtalker`), on-disk healthcheck, fail-fast `synthesize()` (token first, then assets, then `ProviderNotImplementedError`).
+- **Piper stub** — declares the configured voice's `.onnx` + `.onnx.json`, resolves `PIPER_MODELS_ROOT` (or `TTS_MODELS_ROOT/piper`), on-disk healthcheck, fail-fast `synthesize()`.
+- **MuseTalk + Wav2Lip placeholders** — implement the contract; report `not_implemented`; refuse to run.
+- 23-test Phase 3A suite covering: healthcheck states, fail-fast token + asset checks, placeholders, registry resolution, and a subprocess-isolated check that no `torch` / `diffusers` / `transformers` / `sadtalker` / `musetalk` / `piper` imports leak in.
+
+Explicitly **not** in Phase 3A:
+
+- No model weights downloaded. All assets must be manually placed under `./models/` per `docs/runbooks/model-management.md`.
+- No `torch` / `torchvision` / `torchaudio` / `diffusers` / `transformers` / SadTalker / MuseTalk / Wav2Lip / GFPGAN / Piper runtime dependencies.
+- No real video / audio / face / lip-sync generation. `synthesize()` raises `ProviderNotImplementedError` even when the provider is fully configured.
+- No external paid APIs.
+- DAG handlers (Phase 2) are still no-ops; the providers exist alongside but are NOT wired into the DAG yet — that wiring is Phase 3B.
+
+## Phase 2 scope (still active)
 
 Implemented on top of Phase 1:
 

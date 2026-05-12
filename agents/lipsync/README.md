@@ -33,16 +33,22 @@ See [`docs/architecture/lipsync-adapter.md`](../../docs/architecture/lipsync-ada
 
 | Backend | Status | Default | VRAM | Notes |
 |---|---|---|---|---|
-| `sadtalker` | v1 default — to be implemented Phase 3 | ✅ | ~6 GB | Apache-2.0; good quality; mature. |
-| `musetalk`  | v2 roadmap (placeholder provider) | — | ~10 GB | Higher quality; not yet implemented. |
-| `wav2lip`   | rapid-fallback roadmap (placeholder) | — | ~4 GB | Fastest; +GFPGAN restoration; not yet implemented. |
+| `sadtalker` | **Phase 3A**: stub + healthcheck (real inference Phase 3B) | ✅ | ~6 GB | Apache-2.0; good quality; mature. |
+| `musetalk`  | Placeholder (v2 roadmap) | — | ~10 GB | Higher quality; not yet implemented. |
+| `wav2lip`   | Placeholder (fallback tier) | — | ~4 GB | Fastest; +GFPGAN restoration; original weights non-commercial. |
 
 ## Files in this directory
 
 ```
-README.md                      this file
-core/README.md                 the adapter contract (no code yet)
-providers/sadtalker/README.md  default provider (no code yet)
-providers/musetalk/README.md   placeholder (v2)
-providers/wav2lip/README.md    placeholder (fallback)
+README.md                          this file
+handler.py                         Phase 2 no-op DAG handler (still wired)
+core/
+├── provider.py                    LipSyncProvider ABC + LipSyncRequest/Result
+└── registry.py                    resolve(name) → provider instance
+providers/
+├── sadtalker/provider.py          Phase 3A stub (real inference: Phase 3B)
+├── musetalk/provider.py           Placeholder (not_implemented)
+└── wav2lip/provider.py            Placeholder (not_implemented)
 ```
+
+Phase 3A coupling note: the Phase 2 DAG handler (`handler.py`) still runs as a no-op; the providers in `providers/` are NOT yet invoked from the DAG. Phase 3B will replace `handler.py`'s body with a call into `core.registry.resolve(LIPSYNC_BACKEND).synthesize(req)`.

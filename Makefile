@@ -7,7 +7,7 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test
+        check-env models-check phase1-test phase2-test phase3a-test
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -46,6 +46,9 @@ phase1-test: ## Run the Phase 1 integration test only
 
 phase2-test: ## Run the Phase 2 no-op DAG integration test only
 	pytest -v tests/integration/test_phase2_noop_dag.py
+
+phase3a-test: ## Run the Phase 3A provider-healthcheck tests only
+	pytest -v tests/integration/test_phase3a_provider_healthchecks.py
 
 test-integration: ## Alias for `pytest tests/integration`
 	pytest -v tests/integration

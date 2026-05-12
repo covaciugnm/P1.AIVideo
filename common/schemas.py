@@ -11,7 +11,38 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from common.enums import StageName
+from common.enums import ProviderHealthStatus, StageName
+
+
+class AssetSpec(BaseModel):
+    """Declaration of a file a provider needs at load time.
+
+    Used by ``LipSyncProvider.required_assets()`` and
+    ``VoiceProvider.required_assets()``. Phase 3A only checks file
+    *existence*; sha256 verification lands in Phase 3B.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    relative_path: str          # relative to the provider's models_root
+    description: str = ""       # human-readable
+    sha256: str | None = None   # expected checksum (verified in Phase 3B)
+    size_bytes: int | None = None
+    source_url: str | None = None  # documentation only; never auto-fetched
+    license_note: str = ""
+
+
+class ProviderHealth(BaseModel):
+    """Structured result of a provider ``healthcheck()`` call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    backend: str
+    status: ProviderHealthStatus
+    models_root: str | None = None
+    missing_assets: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class ArtifactRef(BaseModel):

@@ -19,3 +19,30 @@ class ComplianceTokenError(Exception):
     """Raised by LipSync (and any other token-gated stage) when the
     `compliance_token` is missing, malformed, expired, or carries the wrong
     claims for the current job."""
+
+
+class MissingAssetsError(Exception):
+    """A model provider can't run because required asset files are not on disk.
+
+    Always carries the backend name and a list of missing relative paths so
+    the operator gets an actionable error.
+    """
+
+    def __init__(self, backend: str, missing: list[str]):
+        self.backend = backend
+        self.missing = list(missing)
+        joined = ", ".join(self.missing) if self.missing else "<unspecified>"
+        super().__init__(f"{backend}: missing required assets: {joined}")
+
+
+class UnsupportedBackendError(Exception):
+    """A backend name was requested that the registry doesn't know about."""
+
+
+class ProviderNotImplementedError(NotImplementedError):
+    """A provider stub that hasn't reached real-inference state yet.
+
+    Inherits from ``NotImplementedError`` so existing handler code that
+    catches ``NotImplementedError`` (e.g. tests using ``pytest.raises``)
+    keeps working.
+    """
