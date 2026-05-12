@@ -1,8 +1,18 @@
 """Async SQLAlchemy engine + session factory.
 
 Engine is lazily created on first use so DATABASE_URL overrides made by tests
-take effect even if `app.core.db` has already been imported. Tests call
-`reset_engine()` to drop any cached engine before changing the URL.
+take effect even if `app.core.db` has already been imported.
+
+Tests dispose the cached engine via one of two helpers:
+
+- ``async_reset_engine()`` — **the right one for async tests.** Awaits
+  ``engine.dispose()`` so any background driver threads (e.g. aiosqlite's
+  worker) are joined before the event loop closes. Failing to do this
+  produces ``PytestUnhandledThreadExceptionWarning: RuntimeError: Event
+  loop is closed`` warnings.
+- ``reset_engine()`` — synchronous fallback for non-async contexts. Does
+  NOT call ``dispose()`` (it can't, since dispose is async). Prefer the
+  async variant whenever an event loop is available.
 """
 from __future__ import annotations
 
@@ -39,8 +49,29 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 def reset_engine() -> None:
-    """Drop the cached engine. For tests; not for production use."""
+    """Drop the cached engine without awaiting dispose.
+
+    Synchronous fallback. Async tests MUST call ``async_reset_engine``
+    instead — otherwise driver worker threads (notably aiosqlite's) can
+    outlive the test's event loop and emit ``RuntimeError: Event loop is
+    closed`` from their teardown path.
+    """
     global _engine, _sessionmaker
+    _engine = None
+    _sessionmaker = None
+
+
+async def async_reset_engine() -> None:
+    """Dispose the cached engine, then drop the references.
+
+    ``AsyncEngine.dispose()`` closes every connection in the pool and
+    joins driver background threads. Calling this from async test
+    teardown ensures aiosqlite's worker thread is shut down before the
+    event loop closes.
+    """
+    global _engine, _sessionmaker
+    if _engine is not None:
+        await _engine.dispose()
     _engine = None
     _sessionmaker = None
 

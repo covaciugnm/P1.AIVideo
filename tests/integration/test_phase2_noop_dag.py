@@ -36,7 +36,7 @@ async def app_under_test():
     from app.main import create_app
     from app.services import queue_publisher
 
-    core_db.reset_engine()
+    await core_db.async_reset_engine()
     await core_db.init_db()
 
     fake = fakeaioredis.FakeRedis(decode_responses=True)
@@ -49,7 +49,9 @@ async def app_under_test():
 
     await fake.aclose()
     queue_publisher.reset_redis_client()
-    core_db.reset_engine()
+    # Await dispose so aiosqlite worker threads exit before the event loop
+    # closes (otherwise pytest emits PytestUnhandledThreadExceptionWarning).
+    await core_db.async_reset_engine()
 
 
 def _valid_payload() -> dict:

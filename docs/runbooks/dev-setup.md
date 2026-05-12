@@ -2,9 +2,9 @@
 
 How to bring up a P1.AIVideo dev environment on a Linux workstation. The first half of this runbook covers what works **today (Phase 1)**; the second half describes the full stack that lights up in later phases.
 
-## Phase 1 + 2 + 3A quickstart (no Docker, no models)
+## Phases 1 → 3B quickstart (no Docker, no model weights required)
 
-Phases 1, 2, and 3A are all metadata-only / contract-only. You can exercise them without Docker, GPU, or any model weight:
+Phases 1, 2, 3A, and 3B (narrow) are all runnable without GPU and without model weights. Phase 3B's real-TTS path activates only when you explicitly opt in by installing `piper-tts` (a CPU-only Python package; no torch). The test suite passes whether or not Piper is installed.
 
 ```bash
 python -m venv .venv
@@ -19,8 +19,26 @@ pip install -e ./agents[dev]
 make phase1-test
 make phase2-test
 make phase3a-test
+make phase3b-test
 # or together:
 make test
+```
+
+### Optional: enable the real Piper TTS path (Phase 3B)
+
+```bash
+# Add Piper to the venv (CPU-only Python package; no torch).
+pip install piper-tts
+
+# Place a voice manually under $PIPER_MODELS_ROOT, e.g.:
+#   ./models/tts/piper/en_US-amy-medium.onnx
+#   ./models/tts/piper/en_US-amy-medium.onnx.json
+# Download from the official Piper voices index per its license terms.
+# (We do not auto-download.)
+
+# Point the integration test at the voice directory and re-run:
+export PIPER_TEST_VOICE_ROOT=$(pwd)/models/tts/piper
+make phase3b-test
 ```
 
 You can also run the API locally without Docker:

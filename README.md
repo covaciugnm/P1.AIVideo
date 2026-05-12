@@ -2,13 +2,10 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3A — model-provider contracts + healthchecks.**
-> Phase 2 (no-op DAG end-to-end) plus a real `LipSyncProvider` / `VoiceProvider` adapter contract with:
-> - **SadTalker** and **Piper** stubs that declare their required assets, resolve `*_MODELS_ROOT` env vars, and return a structured `ProviderHealth` (`ok` / `missing_assets` / `not_configured`).
-> - **MuseTalk** and **Wav2Lip** placeholders that report `not_implemented` and refuse to run.
-> - `synthesize()` is still a placeholder: it verifies the compliance token (LipSync) and the on-disk assets, then raises `ProviderNotImplementedError`. Real inference lands in Phase 3B.
+> **Current status: Phase 3B (narrow) — Piper TTS integration path only.**
+> Phase 3A (provider contracts + healthchecks) plus a single real integration: the **Piper** voice provider's `synthesize()` now performs actual TTS — **only when** the `piper` Python package is installed AND the voice assets are present at `$PIPER_MODELS_ROOT`. The package is loaded lazily; without it, `synthesize()` raises a clear `ProviderNotImplementedError` and never reaches a Piper API call. The test suite passes whether or not `piper` is installed.
 >
-> **No model weights downloaded. No torch / diffusers / transformers / SadTalker / MuseTalk / Wav2Lip / Piper runtime deps installed.** All model assets must be manually mounted under `./models/`. See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> **No torch / torchvision / torchaudio / diffusers / transformers added. SadTalker is still a Phase 3A stub. No real lip-sync. No model weights downloaded.** Operators install `piper-tts` and place the `.onnx` + `.onnx.json` voice files manually under `./models/tts/piper/`. See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
 
 ## Hard guarantees
 
@@ -55,7 +52,26 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3A scope (current)
+## Phase 3B (narrow) scope — current
+
+Implemented on top of Phase 3A:
+
+- **Piper provider's `synthesize()` is now real.** When `piper` is installed and the voice assets are on disk, it loads the voice and writes a WAV via the standard library's `wave` module. The output path is either explicit (`VoiceRequest.output_path`) or a tempfile.
+- **Lazy import.** `agents.voice.providers.piper.provider` does **not** import `piper` at module load. The import happens inside `synthesize()` after the assets check. A subprocess-isolated test asserts that importing the provider module does not pull in `piper`, `torch`, `onnxruntime`, `transformers`, or `diffusers`.
+- **No auto-download.** Operators place `.onnx` + `.onnx.json` manually under `$PIPER_MODELS_ROOT`. The `ALLOW_MODEL_AUTODOWNLOAD` flag is intentionally not honored at runtime — a future explicit fetch helper will own that.
+- **`PiperProvider.healthcheck()`** now reports `piper_runtime_installed` in its `extra` dict so an operator-level healthcheck shows both asset status and runtime availability.
+- **5 Phase 3B tests** in `tests/integration/test_phase3b_piper.py` — all pass without `piper` installed; the real-TTS smoke test is skipped unless both `piper` and `$PIPER_TEST_VOICE_ROOT` are provided.
+
+Explicitly **not** in Phase 3B (narrow):
+
+- **No torch / torchvision / torchaudio.**
+- **No SadTalker implementation.** SadTalker remains the Phase 3A stub.
+- **No real lip-sync.** All three lip-sync providers (SadTalker / MuseTalk / Wav2Lip) still raise `ProviderNotImplementedError` from `synthesize()`.
+- **No model weights downloaded.** `piper-tts` itself is not added as a hard dependency in any pyproject.toml.
+- **No DAG wiring.** The Phase 2 no-op voice + lipsync DAG handlers are untouched. Wiring the Piper provider into the voice DAG stage is deferred.
+- **No external paid APIs.**
+
+## Phase 3A scope (still active)
 
 Implemented on top of Phase 2:
 

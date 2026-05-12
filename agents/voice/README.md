@@ -34,7 +34,17 @@ Synthesizes narration from the script using a **synthetic** voice profile. **No 
 ```
 core/provider.py                VoiceProvider ABC + VoiceRequest/Result
 core/registry.py                resolve(name) → provider instance
-providers/piper/provider.py     Phase 3A stub (real Piper inference: Phase 3B)
+providers/piper/provider.py     Phase 3B (narrow): real TTS via lazy-imported piper
 ```
 
-The Phase 3A Piper stub declares the configured voice's `.onnx` + `.onnx.json`, resolves `PIPER_MODELS_ROOT` (or falls back to `TTS_MODELS_ROOT/piper`), runs an on-disk healthcheck, and raises `ProviderNotImplementedError` from `synthesize()` after asset validation. Real Piper inference lands in Phase 3B.
+**Phase 3A** introduced the Piper stub: it declares the configured voice's `.onnx` + `.onnx.json`, resolves `PIPER_MODELS_ROOT` (or falls back to `TTS_MODELS_ROOT/piper`), runs an on-disk healthcheck, and raised `ProviderNotImplementedError` from `synthesize()` after asset validation.
+
+**Phase 3B (narrow)** activates the real Piper path. `synthesize()` now:
+
+1. checks assets (unchanged from 3A);
+2. lazy-imports `piper.voice.PiperVoice` (falling back to `piper.PiperVoice`) — if the `piper` package isn't installed, raises a clear `ProviderNotImplementedError` and never touches a Piper API;
+3. loads the voice and writes a WAV via the stdlib `wave` module to `VoiceRequest.output_path` (or a tempfile).
+
+The `piper` package is **NOT** a hard dependency. Install it manually (`pip install piper-tts`) and place voice files under `$PIPER_MODELS_ROOT` to enable. The test suite passes whether or not `piper` is installed.
+
+No torch / torchvision / torchaudio / onnxruntime imports leak in — verified by a subprocess-isolated test in `tests/integration/test_phase3b_piper.py`. The Phase 2 DAG handler in `agents/voice/handler.py` is still a no-op; wiring it to call `PiperProvider.synthesize()` is deferred.

@@ -28,8 +28,9 @@ async def app_under_test():
     from app.services import queue_publisher
 
     # Force a clean engine for each test (SQLite :memory: is per-connection,
-    # so we must reuse the same engine for the whole test).
-    core_db.reset_engine()
+    # so we must reuse the same engine for the whole test). Use the async
+    # reset so any prior engine is disposed cleanly before we build a new one.
+    await core_db.async_reset_engine()
     await core_db.init_db()
 
     # Patch queue publisher with fakeredis so xadd is captured locally.
@@ -44,7 +45,10 @@ async def app_under_test():
 
     await fake.aclose()
     queue_publisher.reset_redis_client()
-    core_db.reset_engine()
+    # Await dispose so aiosqlite's worker thread shuts down before the
+    # event loop closes — otherwise pytest reports
+    # "PytestUnhandledThreadExceptionWarning: Event loop is closed".
+    await core_db.async_reset_engine()
 
 
 async def test_healthz(app_under_test):

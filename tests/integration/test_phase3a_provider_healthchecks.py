@@ -351,7 +351,21 @@ async def test_piper_synthesize_refuses_when_assets_missing(isolated_env, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_piper_synthesize_phase3a_does_not_run_inference(isolated_env, tmp_path):
+async def test_piper_synthesize_refuses_without_piper_runtime(isolated_env, tmp_path):
+    """Piper provider's ``synthesize()`` must fail cleanly when the
+    ``piper`` Python package isn't installed — even if asset files exist
+    on disk. This pins the no-piper branch.
+
+    When Piper IS installed, the real-TTS path activates and a different
+    set of expectations applies (covered by
+    ``tests/integration/test_phase3b_piper.py``); we skip here in that
+    case so this test stays meaningful in either environment.
+    """
+    import importlib.util
+
+    if importlib.util.find_spec("piper") is not None:
+        pytest.skip("piper is installed; see test_phase3b_piper.py for the real-TTS path")
+
     isolated_env.setenv("PIPER_MODELS_ROOT", str(tmp_path))
     provider = PiperProvider()
     _stub_assets(provider, tmp_path)

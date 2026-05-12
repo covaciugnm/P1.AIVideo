@@ -33,8 +33,18 @@ dev = [
   "fakeredis>=2.23",
   "ruff>=0.7",
 ]
-# TODO(phase-3): per-agent GPU extras
-# voice = [...], face = [...], lipsync-sadtalker = [...], ...
+# Phase 3B (narrow) voice extra. Enables the real Piper TTS path in
+# `agents/voice/providers/piper/provider.py` via lazy import. Install with:
+#   pip install -e ./agents[voice]
+# Operators must still place voice .onnx + .onnx.json files manually under
+# $PIPER_MODELS_ROOT — no auto-download.
+voice = [
+  "soundfile",
+  "piper-tts",
+]
+# TODO(future phases): face / lipsync-sadtalker extras. Those introduce
+# torch / safetensors / opencv / gfpgan and are deliberately NOT listed
+# here while the project stays in the narrow Piper-only integration scope.
 
 [tool.setuptools]
 packages = ["compliance_officer", "orchestrator"]

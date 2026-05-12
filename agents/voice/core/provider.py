@@ -32,6 +32,10 @@ class VoiceRequest(BaseModel):
     text: str                       # plain text or SSML; provider-specific
     voice_id: str                   # references configs/voices/<id>.yaml
     sample_rate: int = 48000
+    # Local filesystem path to write the produced narration.wav. Optional —
+    # if omitted, providers may default to a tempfile under the OS temp dir
+    # and report the chosen path back via VoiceResult.narration_uri.
+    output_path: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
 
 
