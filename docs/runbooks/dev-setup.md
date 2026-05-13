@@ -23,9 +23,12 @@ make phase3b-test
 make phase3c-test
 make phase3d-test
 make phase3e-test
+make phase3f-test
 # or together:
 make test
 ```
+
+> Phase 3F made packaging strict: the test suite imports every project module through the **installed** editable packages, not via a project-root `sys.path` hack. If `pytest` fails with `ModuleNotFoundError: No module named 'app'` (or `agents`, or `common`), re-run the three `pip install -e` commands above.
 
 ### Optional: enable the real Piper TTS path (Phase 3B)
 

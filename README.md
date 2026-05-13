@@ -2,7 +2,17 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3E — image input validation + face artifact contract.**
+> **Current status: Phase 3F — packaging cleanup + ArtifactType enum hardening.**
+> No new model providers in this phase; Phase 3F is purely structural:
+>
+> - **`agents/pyproject.toml` rewritten** — explicit `package-dir = {"agents": "."}` plus an enumerated list of every `agents.*` subpackage. After `pip install -e ./agents` you can `import agents.compliance_officer`, `import agents.lipsync.providers.sadtalker.provider`, etc. from any process — including subprocesses — with **no `sys.path` manipulation**.
+> - **`tests/conftest.py` no longer mutates `sys.path`.** It only sets test-mode env defaults. The previous project-root and `backend/` entries are gone.
+> - **`ArtifactType` enum** in `common.enums` (`audio` / `image` / `script` / `video` / `metadata` / `final_export`) is now used by both Phase 3 handlers that produce real artifacts (voice + face). Historical handlers keep their string literals (narrow change per the Phase 3F brief; the enum is `str`-compatible so legacy comparisons keep working).
+> - **10 packaging tests** prove the contract: every required `agents.*` / `common.*` / `app.*` module imports from a fresh interpreter with empty `PYTHONPATH`; the enum carries the expected six values; voice + face handlers reference the enum by name; audio + image DAG runs land in the `artifacts` table with `artifact_type == ArtifactType.<name>.value`.
+>
+> **No Scriptwriter / LLM provider implemented. No openai / langchain / langgraph / transformers / torch / diffusers / accelerate / xformers / Whisper / SadTalker / SDXL added.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+
+> **Previous milestone: Phase 3E — image input validation + face artifact contract.**
 > Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
 >
 > - **`common/image_validation.py`** — stdlib-only header parsing for **PNG / JPEG / WebP** (VP8 / VP8L / VP8X variants). Returns `(width, height, size, sha256, format)` with no Pillow / OpenCV / imageio / numpy.
@@ -59,7 +69,24 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3E scope — current
+## Phase 3F scope — current
+
+Structural / test-only cleanup. No new providers, no new features.
+
+- **`agents/pyproject.toml`** — uses `package-dir = {"agents": "."}` plus an enumerated list of all 18 subpackages (`compliance_officer`, `orchestrator`, `scriptwriter`, `voice` + `voice.core` + `voice.providers` + `voice.providers.piper`, `face`, `editor`, `qc`, `publisher`, `lipsync` + `lipsync.core` + `lipsync.providers` + `lipsync.providers.{sadtalker,musetalk,wav2lip}`). Bumped to version `0.3.0`.
+- **`tests/conftest.py`** — no longer touches `sys.path`. Only sets test env defaults (`DATABASE_URL`, `APP_ENV`, `LOG_LEVEL`, `COMPLIANCE_SIGNING_KEY`). The previous project-root + backend/ entries are gone.
+- **`ArtifactType` enum (`common.enums`)** — six members: `audio`, `image`, `script`, `video`, `metadata`, `final_export`. Voice + face handlers now emit `artifact_type=ArtifactType.<name>.value`. The enum inherits from `str` so legacy code comparing the column to bare strings keeps working.
+- **`tests/integration/test_phase3f_packaging_contracts.py`** — 10 packaging-contract tests, four of them subprocess-isolated with `PYTHONPATH` explicitly stripped. Proves the package graph works without any test-only hacks AND that the `agents.*` tree pulls in zero LLM / ML libraries.
+
+Explicitly **not** in Phase 3F:
+
+- **No Scriptwriter / LLM provider implemented.** No `openai`, `langchain`, `langgraph`, `transformers`, `torch`, `diffusers`, `accelerate`, `xformers`, `whisper` added.
+- **No SadTalker / lip-sync / SDXL / face-generation / Whisper changes.**
+- **No model weights downloaded.**
+- **No Docker builds.**
+- **No refactor of historical artifact_type literals.** Scriptwriter, lipsync, editor, qc, publisher keep their `"audio"` / `"video"` / `"json"` strings — they're enum-compatible because `ArtifactType` is `str`-derived, and the user spec called the broader refactor "out of scope".
+
+## Phase 3E scope (still active)
 
 Implemented on top of Phase 3D:
 

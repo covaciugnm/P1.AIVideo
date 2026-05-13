@@ -51,3 +51,4 @@ logs/
 # --- Job artifacts (dev convenience; real artifacts live in MinIO) ---
 tmp/
 out/
+.claude/

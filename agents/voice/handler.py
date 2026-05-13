@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 
 from common.audio_validation import validate_and_inspect_wav
-from common.enums import StageName
+from common.enums import ArtifactType, StageName
 from common.exceptions import StageRejection
 from common.path_safety import validate_local_audio_path
 from common.schemas import ArtifactRef, AudioRef, DagState, StageOutput
@@ -71,7 +71,7 @@ def _run_tts_noop(state: DagState) -> StageOutput:
         )
 
     narration_ref = ArtifactRef(
-        artifact_type="audio",
+        artifact_type=ArtifactType.audio.value,
         uri=_stub_uri(str(state.job_id), "narration.wav"),
         extra={
             "source": "tts",
@@ -82,7 +82,7 @@ def _run_tts_noop(state: DagState) -> StageOutput:
         },
     )
     phonemes_ref = ArtifactRef(
-        artifact_type="json",
+        artifact_type=ArtifactType.metadata.value,
         uri=_stub_uri(str(state.job_id), "phonemes.json"),
         extra={"source": "tts", "phase": "phase3d_tts_noop"},
     )
@@ -144,7 +144,7 @@ def _run_provided_audio(state: DagState) -> StageOutput:
         local_path = str(audio_meta.path)
 
     narration_ref = ArtifactRef(
-        artifact_type="audio",
+        artifact_type=ArtifactType.audio.value,
         uri=_audio_ref_to_uri(ref),
         local_path=local_path,
         # Prefer inspected metadata over operator-declared; fall back to
@@ -168,7 +168,7 @@ def _run_provided_audio(state: DagState) -> StageOutput:
     )
     # Phonemes remain a stub — alignment lands in a later phase.
     phonemes_ref = ArtifactRef(
-        artifact_type="json",
+        artifact_type=ArtifactType.metadata.value,
         uri=_stub_uri(str(state.job_id), "phonemes.json"),
         extra={"source": "provided_audio", "phase": "phase3d_stub"},
     )

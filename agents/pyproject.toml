@@ -1,9 +1,15 @@
-# P1.AIVideo agents — Phase 1 scope.
+# P1.AIVideo agents — installable as the ``agents`` top-level package.
 #
-# This is the shared root for agent code. Phase 1 only ships the compliance
-# officer's policy_gate and the orchestrator skeleton — no GPU deps.
+# Layout: pyproject.toml lives INSIDE the agents/ directory. We map the
+# directory itself to the ``agents`` Python package via ``package-dir`` and
+# enumerate every subpackage explicitly. After ``pip install -e ./agents``,
+# ``import agents.X.Y`` resolves without any ``sys.path`` manipulation.
 #
-# Per-agent GPU extras (torch / diffusers / SadTalker etc.) land in Phase 3.
+# An auto-``find`` approach with ``where = [".."]`` would also work in
+# theory, but reaching above the project directory is fragile (some
+# setuptools versions reject it). The explicit list below is the trade-off:
+# slightly verbose, but every subpackage is checked-in code so the list
+# only grows when a new agent dir lands.
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -11,8 +17,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aivideo-agents"
-version = "0.1.0"
-description = "P1.AIVideo specialist agents. Phase 1: compliance + orchestrator skeletons only."
+version = "0.3.0"
+description = "P1.AIVideo specialist agents — installable as `agents.*` (Phase 3F packaging)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -47,10 +53,31 @@ voice = [
 # here while the project stays in the narrow Piper-only integration scope.
 
 [tool.setuptools]
-packages = ["compliance_officer", "orchestrator"]
+packages = [
+    "agents",
+    "agents.compliance_officer",
+    "agents.orchestrator",
+    "agents.scriptwriter",
+    "agents.voice",
+    "agents.voice.core",
+    "agents.voice.providers",
+    "agents.voice.providers.piper",
+    "agents.face",
+    "agents.editor",
+    "agents.qc",
+    "agents.publisher",
+    "agents.lipsync",
+    "agents.lipsync.core",
+    "agents.lipsync.providers",
+    "agents.lipsync.providers.sadtalker",
+    "agents.lipsync.providers.musetalk",
+    "agents.lipsync.providers.wav2lip",
+]
 
+# Tell setuptools: the `agents` Python package's source root is `.` (this
+# directory). Subpackages then resolve naturally as agents/<name>/.
 [tool.setuptools.package-dir]
-"" = "."
+"agents" = "."
 
 [tool.ruff]
 line-length = 100
