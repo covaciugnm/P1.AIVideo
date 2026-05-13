@@ -63,7 +63,7 @@ async def run(
         raise StageRejection(StageName.lipsync.value, "upstream face missing portrait")
 
     talking_head_ref = ArtifactRef(
-        kind="video",
+        artifact_type="video",
         uri=_stub_uri(str(state.job_id), "talking_head.mp4"),
         extra={
             "fps": 25,

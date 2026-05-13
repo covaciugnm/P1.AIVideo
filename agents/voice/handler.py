@@ -1,30 +1,33 @@
-"""Voice — Phase 3C: voice-mode routing (still metadata-only).
+"""Voice — Phase 3D: validate provided audio + populate full ArtifactRef metadata.
 
-Routes the DAG's voice stage by ``DagState.voice_mode``:
+Routing (unchanged from Phase 3C):
 
-- ``"tts"`` (default) — keeps the Phase 2 no-op behavior: emits stub
-  narration + phonemes artifact references. Wiring this branch to the
-  real ``PiperProvider.synthesize()`` is a later phase; this preserves
-  every existing Phase 1/2 test while the voice mode contract lands.
-- ``"provided_audio"`` — new in Phase 3C. Validates the audio_ref's
-  consent flags and (for ``local_path``) re-checks path safety as a
-  defense-in-depth backstop to the API-layer schema validation. Emits an
-  ``ArtifactRef`` whose ``uri`` points at the operator-supplied audio.
-  No bytes are read; no transcoding is performed.
+- ``voice_mode="tts"`` — emits a stub ``narration.wav`` ``ArtifactRef``
+  (no checksum, no real file). The DAG runner does NOT promote this to
+  the ``artifacts`` table. Wiring the real Piper provider into the DAG
+  remains a later phase.
+- ``voice_mode="provided_audio"`` — validates the audio_ref's consent
+  flags and path safety (defense-in-depth on top of the API schema), and
+  for ``type="local_path"`` inspects the WAV file via
+  ``common.audio_validation.validate_and_inspect_wav``. The resulting
+  ``ArtifactRef`` carries ``checksum_sha256``, ``size_bytes``,
+  ``duration_seconds``, ``sample_rate``, ``channels``, and
+  ``local_path``. The DAG runner promotes any ``ArtifactRef`` with
+  ``checksum_sha256`` set to the ``artifacts`` table.
 
-The handler never imports a TTS backend or reads the audio file. The
-provider stubs in ``providers/`` (and the lazy-import Piper integration
-shipped in Phase 3B) remain the only real-inference entry point and are
-NOT wired into the DAG yet.
+Module-level imports stay light: ``wave`` + ``hashlib`` (via
+``common.audio_validation``), no piper / torch / soundfile / numpy.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+from common.audio_validation import validate_and_inspect_wav
 from common.enums import StageName
 from common.exceptions import StageRejection
-from common.schemas import ArtifactRef, AudioRef, DagState, StageOutput
 from common.path_safety import validate_local_audio_path
+from common.schemas import ArtifactRef, AudioRef, DagState, StageOutput
 
 
 def _stub_uri(job_id: str, filename: str) -> str:
@@ -42,17 +45,25 @@ def _audio_ref_to_uri(ref: AudioRef) -> str:
     return ref.path
 
 
+def _parse_int_csv(value: str) -> list[int] | None:
+    """Parse a comma-separated env value into ints. Empty → None."""
+    if not value:
+        return None
+    out: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if part:
+            out.append(int(part))
+    return out or None
+
+
 # ---------------------------------------------------------------------------
 # Mode handlers
 # ---------------------------------------------------------------------------
 
 
 def _run_tts_noop(state: DagState) -> StageOutput:
-    """Phase 2 behavior preserved: emit stub narration + phonemes URIs.
-
-    Phase 3C requires ``script_text`` on TTS mode (API schema enforces it;
-    this is the defense-in-depth re-check at the handler boundary).
-    """
+    """Phase 2/3C behavior preserved: emit stub narration + phonemes URIs."""
     if not state.script_text or not state.script_text.strip():
         raise StageRejection(
             StageName.voice.value,
@@ -60,20 +71,20 @@ def _run_tts_noop(state: DagState) -> StageOutput:
         )
 
     narration_ref = ArtifactRef(
-        kind="audio",
+        artifact_type="audio",
         uri=_stub_uri(str(state.job_id), "narration.wav"),
         extra={
             "source": "tts",
             "tts_backend": state.tts_backend,
             "sample_rate": 48000,
             "channels": 1,
-            "phase": "phase3c_tts_noop",
+            "phase": "phase3d_tts_noop",
         },
     )
     phonemes_ref = ArtifactRef(
-        kind="json",
+        artifact_type="json",
         uri=_stub_uri(str(state.job_id), "phonemes.json"),
-        extra={"source": "tts", "phase": "phase3c_tts_noop"},
+        extra={"source": "tts", "phase": "phase3d_tts_noop"},
     )
     return StageOutput(
         noop=True,
@@ -87,25 +98,15 @@ def _run_tts_noop(state: DagState) -> StageOutput:
 
 
 def _run_provided_audio(state: DagState) -> StageOutput:
-    """Phase 3C: validate metadata + path safety and emit an ArtifactRef.
-
-    No bytes are read here. The handler just records what the operator
-    declared (path, mime type, duration, checksum) and produces a
-    reference that downstream stages can use exactly like a TTS-produced
-    narration.
-    """
+    """Validate audio_ref metadata + WAV header, emit fully-populated ref."""
     ref = state.audio_ref
     if ref is None:
-        # Should be unreachable — API schema requires audio_ref for this
-        # mode — but defense in depth.
         raise StageRejection(
             StageName.voice.value,
             "voice_mode='provided_audio' requires audio_ref (handler check)",
         )
 
-    # Re-validate consent flags. They were validated at API time, but a
-    # job could theoretically reach the handler via a non-API path in
-    # future phases; the handler must not trust upstream alone.
+    # Defense-in-depth consent re-check.
     if not ref.consent_confirmed:
         raise StageRejection(
             StageName.voice.value,
@@ -118,38 +119,75 @@ def _run_provided_audio(state: DagState) -> StageOutput:
             "(voice cloning is not allowed)",
         )
 
-    # Defense-in-depth path safety re-check.
+    # Path-safety re-check and (for local files) WAV header inspection.
+    audio_meta = None
+    local_path: str | None = None
     if ref.type == "local_path":
         try:
             validate_local_audio_path(ref.path)
         except ValueError as exc:
             raise StageRejection(StageName.voice.value, str(exc)) from exc
 
+        max_size = _get_max_size_bytes()
+        allowed_rates = _parse_int_csv(os.environ.get("AUDIO_ALLOWED_SAMPLE_RATES", ""))
+        allowed_chans = _parse_int_csv(os.environ.get("AUDIO_ALLOWED_CHANNELS", ""))
+        try:
+            audio_meta = validate_and_inspect_wav(
+                ref.path,
+                mime_type=ref.mime_type,
+                max_size_bytes=max_size,
+                allowed_sample_rates=allowed_rates,
+                allowed_channels=allowed_chans,
+            )
+        except ValueError as exc:
+            raise StageRejection(StageName.voice.value, str(exc)) from exc
+        local_path = str(audio_meta.path)
+
     narration_ref = ArtifactRef(
-        kind="audio",
+        artifact_type="audio",
         uri=_audio_ref_to_uri(ref),
-        sha256=ref.checksum,
+        local_path=local_path,
+        # Prefer inspected metadata over operator-declared; fall back to
+        # declared values if inspection didn't run (e.g. artifact_uri refs).
+        checksum_sha256=(
+            audio_meta.checksum_sha256 if audio_meta else ref.checksum
+        ),
+        size_bytes=audio_meta.size_bytes if audio_meta else None,
+        duration_seconds=(
+            audio_meta.duration_seconds if audio_meta else ref.duration_seconds
+        ),
+        sample_rate=audio_meta.sample_rate if audio_meta else None,
+        channels=audio_meta.channels if audio_meta else None,
         extra={
             "source": "provided_audio",
             "mime_type": ref.mime_type,
-            "duration_seconds": ref.duration_seconds,
             "ref_type": ref.type,
-            "phase": "phase3c",
+            "phase": "phase3d",
+            "inspected": audio_meta is not None,
         },
     )
-    # No real phoneme extraction in Phase 3C (would require analyzing the
-    # actual audio). Downstream stages get a stub phonemes URI; a future
-    # phase can replace this with a real aligner-derived artifact.
+    # Phonemes remain a stub — alignment lands in a later phase.
     phonemes_ref = ArtifactRef(
-        kind="json",
+        artifact_type="json",
         uri=_stub_uri(str(state.job_id), "phonemes.json"),
-        extra={"source": "provided_audio", "phase": "phase3c_stub"},
+        extra={"source": "provided_audio", "phase": "phase3d_stub"},
     )
     return StageOutput(
         noop=False,
-        notes="voice mode='provided_audio': validated metadata, no transcoding",
+        notes="voice mode='provided_audio': validated WAV header, no transcoding",
         artifacts={"narration": narration_ref, "phonemes": phonemes_ref},
     )
+
+
+def _get_max_size_bytes() -> int | None:
+    raw = os.environ.get("AUDIO_MAX_FILE_SIZE_BYTES")
+    if not raw:
+        return 52_428_800  # 50 MB default
+    try:
+        v = int(raw)
+        return v if v > 0 else None
+    except ValueError:
+        return 52_428_800
 
 
 # ---------------------------------------------------------------------------

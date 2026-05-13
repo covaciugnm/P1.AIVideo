@@ -22,7 +22,7 @@ async def run(state: DagState) -> StageOutput:
         raise StageRejection(StageName.qc.value, "upstream editor missing reel_draft")
 
     qc_report_ref = ArtifactRef(
-        kind="json",
+        artifact_type="json",
         uri=_stub_uri(str(state.job_id), "qc_report.json"),
         extra={
             "result": "pass",

@@ -34,12 +34,12 @@ async def run(state: DagState) -> StageOutput:
         )
 
     reel_final_ref = ArtifactRef(
-        kind="video",
+        artifact_type="video",
         uri=_stub_uri(str(state.job_id), "reel_final.mp4"),
         extra={"phase": "phase2_noop"},
     )
     sidecar_ref = ArtifactRef(
-        kind="json",
+        artifact_type="json",
         uri=_stub_uri(str(state.job_id), "sidecar.json"),
         extra={
             "c2pa_present": False,  # noop — would be True after Phase 5

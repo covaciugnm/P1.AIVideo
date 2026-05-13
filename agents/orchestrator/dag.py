@@ -45,7 +45,7 @@ from common.schemas import DagState, StageOutput
 # Backend imports — Phase 2 coupling; tracked for Phase 3 refactor.
 from app.models.compliance import ComplianceEvent
 from app.models.job import Job
-from app.services import job_service, stage_run_service
+from app.services import artifact_service, job_service, stage_run_service
 
 from agents.compliance_officer import (
     export_disclosure_validation,
@@ -163,7 +163,11 @@ class DagRunner:
             return run.id
 
     async def _record_stage_success(
-        self, run_id: uuid.UUID, output: StageOutput
+        self,
+        run_id: uuid.UUID,
+        output: StageOutput,
+        *,
+        job_id: uuid.UUID,
     ) -> None:
         artifacts_json = {k: v.model_dump(mode="json") for k, v in output.artifacts.items()}
         async with self._sm() as session:
@@ -177,6 +181,22 @@ class DagRunner:
                     "extra": _json_safe(output.extra),
                 },
             )
+
+        # Phase 3D: promote any ArtifactRef that carries a real checksum
+        # (i.e. an inspected file) to the first-class `artifacts` table.
+        # Stub refs (s3://… URIs without a checksum) stay in
+        # `stage_runs.artifacts` only — same as before.
+        for name, ref in output.artifacts.items():
+            if not ref.checksum_sha256:
+                continue
+            async with self._sm() as session:
+                await artifact_service.register_artifact_ref(
+                    session,
+                    ref=ref,
+                    job_id=job_id,
+                    stage_run_id=run_id,
+                    name=name,
+                )
 
     async def _record_stage_rejected(self, run_id: uuid.UUID, reason: str) -> None:
         async with self._sm() as session:
@@ -380,7 +400,7 @@ class DagRunner:
                 log.exception("dag: job %s unexpected error at %s", job_id, stage)
                 return JobStatus.failed
 
-            await self._record_stage_success(run_id, output)
+            await self._record_stage_success(run_id, output, job_id=state.job_id)
             state.stage_outputs[stage] = output
             state.completed_stages.append(stage)
 

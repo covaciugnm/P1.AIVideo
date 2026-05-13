@@ -25,7 +25,7 @@ async def run(state: DagState) -> StageOutput:
         raise StageRejection(StageName.scriptwriter.value, "brief is empty")
 
     script_ref = ArtifactRef(
-        kind="json",
+        artifact_type="json",
         uri=_stub_uri(str(state.job_id), "script.json"),
         extra={
             "estimated_duration_sec": state.target_duration_seconds,

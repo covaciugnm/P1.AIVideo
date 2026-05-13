@@ -2,14 +2,15 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3C — voice mode routing + provided-audio contract.**
-> Phase 3B (Piper integration path, lazy-imported) plus a declarative voice input contract:
+> **Current status: Phase 3D — audio validation + artifact registry.**
+> Phase 3C (voice mode routing) plus first-class audio artifacts:
 >
-> - `voice_mode="tts"` (default) keeps the existing DAG path; requires `script_text`; `tts_backend` defaults to `"piper"`.
-> - `voice_mode="provided_audio"` accepts an operator-supplied `.wav` via `audio_ref`. The path must be **absolute, traversal-free, and resolve under one of `$PROVIDED_AUDIO_ALLOWED_ROOTS`**; the mime type must be `audio/wav` or `audio/x-wav`; both `consent_confirmed` and `synthetic_or_owned_voice` must be `true` (the schema refuses anything else). The voice stage emits a `file://` `ArtifactRef` — no audio bytes are ever read or copied.
-> - The `policy_gate` compliance row records `extra={"voice_source": "tts" | "provided_audio"}` for audit.
+> - **`common/audio_validation.py`** — stdlib-only WAV inspection (`wave` + `hashlib`). Verifies the file exists, the header parses, the size is under `$AUDIO_MAX_FILE_SIZE_BYTES`, and (optionally) the sample rate / channel count are in the configured allowlists. Returns size, sample_rate, channels, n_frames, duration_seconds, and the SHA-256 checksum. No `ffmpeg`, no `librosa`, no `soundfile`.
+> - **`artifacts` table** — new first-class artifact rows with `artifact_type`, `uri`, `local_path`, `mime_type`, `checksum_sha256`, `size_bytes`, `duration_seconds`, `sample_rate`, `channels`, `metadata_json`. Distinct from the denormalized snapshot in `stage_runs.artifacts`.
+> - **Voice handler** inspects provided WAVs and emits an `ArtifactRef` carrying real metadata. The DAG runner promotes any `ArtifactRef` with `checksum_sha256` set to the `artifacts` table; stub URIs (TTS no-op) are not promoted.
+> - `ArtifactRef` schema renamed: `kind` → `artifact_type`, `sha256` → `checksum_sha256`; new fields `local_path` / `duration_seconds` / `sample_rate` / `channels`.
 >
-> **No torch / torchvision / torchaudio / diffusers / transformers added. SadTalker is still a Phase 3A stub. No real lip-sync. No model weights downloaded. No voice cloning.** Operators install `piper-tts` (optional, `pip install -e ./agents[voice]`) and place voice files manually under `./models/tts/piper/`. See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> **No Whisper. No SadTalker. No real lip-sync. No SDXL / face generation. No torch / torchvision / torchaudio / diffusers / transformers / accelerate / xformers / gfpgan dependencies added. No model weights downloaded. No voice cloning.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
 
 ## Hard guarantees
 
@@ -56,7 +57,31 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3C scope — current
+## Phase 3D scope — current
+
+Implemented on top of Phase 3C:
+
+- **`common/audio_validation.py`** — `validate_and_inspect_wav(path, *, mime_type, max_size_bytes=None, allowed_sample_rates=None, allowed_channels=None)` returns an `AudioMetadata` dataclass on success. Stdlib-only.
+- **`Artifact` model** (`backend/app/models/artifact.py`) — `artifacts` table with the spec fields; uses `metadata_json` (not `metadata`) to dodge the SQLAlchemy reserved name.
+- **`artifact_service`** — `register_artifact` + `register_artifact_ref` + `list_for_job`.
+- **Voice handler** — for `voice_mode="provided_audio"` with `type="local_path"`, runs the audio validator and emits a fully-populated `ArtifactRef`. On invalid header / size / sample rate / channels, the stage is rejected (the job moves to `rejected`); no Artifact row is created.
+- **DAG runner** — `_record_stage_success` now promotes any `ArtifactRef` with `checksum_sha256` set into the `artifacts` table, linking the row to the originating `stage_run_id`. Stubs are not promoted.
+- **`ArtifactRef` schema** — `kind` → `artifact_type`, `sha256` → `checksum_sha256`; added `local_path`, `duration_seconds`, `sample_rate`, `channels`.
+- **Config** — `AUDIO_MAX_FILE_SIZE_BYTES` (50 MB default), `AUDIO_ALLOWED_SAMPLE_RATES`, `AUDIO_ALLOWED_CHANNELS`, `ARTIFACTS_LOCAL_ROOT` added.
+- **13 Phase 3D tests** — unit-level coverage of `validate_and_inspect_wav` (valid file, missing file, bad header, oversize, unsupported mime, disallowed sample-rate / channels), end-to-end DAG tests (provided_audio creates artifact row with correct extracted metadata; TTS does NOT create an audio artifact; bad WAV rejects at the voice stage; oversize rejects at the voice stage; metadata-only invariant on artifact rows), and a subprocess-isolated check that no audio-ML library is pulled in.
+
+Explicitly **not** in Phase 3D:
+
+- **No Whisper / transcription / alignment.** No `whisper`, `whisperx`, or any speech-to-text library.
+- **No SadTalker / real lip-sync changes.**
+- **No SDXL / face generation.**
+- **No torch / torchvision / torchaudio / diffusers / transformers / accelerate / xformers / gfpgan added.**
+- **No ffmpeg / ffprobe** invocations. WAV inspection uses stdlib `wave` exclusively.
+- **No model weights downloaded.**
+- **No voice cloning.** The schema still refuses any `synthetic_or_owned_voice=False`.
+- **No copy / transcode** of provided audio. The file stays where the operator placed it; the registry just records a `file://` URI + metadata.
+
+## Phase 3C scope (still active)
 
 Implemented on top of Phase 3B:
 

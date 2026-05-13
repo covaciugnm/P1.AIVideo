@@ -49,16 +49,27 @@ class ProviderHealth(BaseModel):
 class ArtifactRef(BaseModel):
     """Reference to an artifact in object storage.
 
-    Metadata only — `uri` points at MinIO/S3. No bytes are carried in
-    queue messages, DB rows, or agent state.
+    Metadata only — ``uri`` points at MinIO/S3 (or a ``file://`` URI for
+    operator-supplied local files). No bytes are carried in queue
+    messages, DB rows, or agent state.
+
+    Phase 3D added ``local_path``, ``checksum_sha256``, ``duration_seconds``,
+    ``sample_rate``, and ``channels`` so an ``ArtifactRef`` produced by the
+    voice handler carries the inspection result of the underlying WAV.
+    The DAG runner persists any ref with ``checksum_sha256`` set to the
+    ``artifacts`` table.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: str  # "image" | "audio" | "video" | "json" | "text"
-    uri: str  # e.g. "s3://aivideo-jobs/{job_uuid}/portrait.png"
-    sha256: str | None = None
+    artifact_type: str  # "image" | "audio" | "video" | "json" | "text"
+    uri: str  # e.g. "s3://aivideo-jobs/{job_uuid}/portrait.png" or "file://..."
+    local_path: str | None = None
+    checksum_sha256: str | None = None
     size_bytes: int | None = None
+    duration_seconds: float | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 

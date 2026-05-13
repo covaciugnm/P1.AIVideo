@@ -28,7 +28,7 @@ async def run(state: DagState) -> StageOutput:
         raise StageRejection(StageName.editor.value, "upstream lipsync missing talking_head")
 
     reel_draft_ref = ArtifactRef(
-        kind="video",
+        artifact_type="video",
         uri=_stub_uri(str(state.job_id), "reel_draft.mp4"),
         extra={
             "width": 1080,

@@ -229,12 +229,12 @@ async def test_lipsync_refuses_without_compliance_token():
     # Provide upstream artifacts so the only blocker is the missing token.
     state.stage_outputs["face"] = StageOutput(
         artifacts={
-            "portrait": ArtifactRef(kind="image", uri=f"s3://bucket/{state.job_id}/portrait.png")
+            "portrait": ArtifactRef(artifact_type="image", uri=f"s3://bucket/{state.job_id}/portrait.png")
         }
     )
     state.stage_outputs["voice"] = StageOutput(
         artifacts={
-            "narration": ArtifactRef(kind="audio", uri=f"s3://bucket/{state.job_id}/narration.wav")
+            "narration": ArtifactRef(artifact_type="audio", uri=f"s3://bucket/{state.job_id}/narration.wav")
         }
     )
 
@@ -274,11 +274,11 @@ async def test_lipsync_refuses_token_with_wrong_signing_key():
         compliance_token=bad_token,
     )
     state.stage_outputs["face"] = StageOutput(
-        artifacts={"portrait": ArtifactRef(kind="image", uri=f"s3://bucket/{job_id}/portrait.png")}
+        artifacts={"portrait": ArtifactRef(artifact_type="image", uri=f"s3://bucket/{job_id}/portrait.png")}
     )
     state.stage_outputs["voice"] = StageOutput(
         artifacts={
-            "narration": ArtifactRef(kind="audio", uri=f"s3://bucket/{job_id}/narration.wav")
+            "narration": ArtifactRef(artifact_type="audio", uri=f"s3://bucket/{job_id}/narration.wav")
         }
     )
 

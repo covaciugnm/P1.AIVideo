@@ -26,7 +26,7 @@ async def run(state: DagState) -> StageOutput:
         raise StageRejection(StageName.face.value, "synthetic_person_confirmed must be true")
 
     portrait_ref = ArtifactRef(
-        kind="image",
+        artifact_type="image",
         uri=_stub_uri(str(state.job_id), "portrait.png"),
         extra={
             "synthetic": True,

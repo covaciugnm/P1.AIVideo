@@ -37,6 +37,8 @@ import sys
 import uuid
 from pathlib import Path
 
+import wave
+
 import pytest
 import pytest_asyncio
 from fakeredis import aioredis as fakeaioredis
@@ -118,6 +120,23 @@ def _runner_config():
         allowed_lipsync_backend="sadtalker",
         token_ttl_seconds=3600,
     )
+
+
+def _write_real_wav(
+    path: Path,
+    *,
+    duration_sec: float = 0.5,
+    sample_rate: int = 22050,
+    channels: int = 1,
+) -> None:
+    """Write a real (silent) PCM WAV that ``wave`` and Phase 3D's audio
+    validator will both happily parse."""
+    n_frames = int(duration_sec * sample_rate)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(b"\x00\x00" * n_frames * channels)
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +262,9 @@ async def test_provided_audio_dag_publishes_with_file_uri(app_under_test):
 
     client, _, tmp_path = app_under_test
     audio_path = tmp_path / "narration.wav"
-    audio_path.write_bytes(b"RIFF" + b"\x00" * 36)
+    # Phase 3D's voice handler now inspects the WAV header — write a real
+    # (silent) PCM WAV rather than a fake RIFF prefix.
+    _write_real_wav(audio_path)
     r = await client.post("/jobs", json=_provided_audio_payload(audio_path))
     assert r.status_code == 201
     job_id = uuid.UUID(r.json()["id"])

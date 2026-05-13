@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     compliance_token_ttl_seconds: int = 3600
     allowed_lipsync_backend: str = "sadtalker"
 
+    # --- Audio validation + artifacts (Phase 3D) ---
+    audio_max_file_size_bytes: int = 52_428_800  # 50 MB
+    audio_allowed_sample_rates: str = ""  # comma-separated; empty = any
+    audio_allowed_channels: str = ""      # comma-separated; empty = any
+    artifacts_local_root: str = "/storage/artifacts"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
