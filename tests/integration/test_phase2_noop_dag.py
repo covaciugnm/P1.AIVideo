@@ -62,6 +62,8 @@ def _valid_payload() -> dict:
         "target_duration_seconds": 30,
         "watermark_required": True,
         "c2pa_required": True,
+        # Phase 3C: voice_mode defaults to "tts" and requires script_text.
+        "script_text": "Three calming bedtime habits for better sleep.",
     }
 
 

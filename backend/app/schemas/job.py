@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from common.schemas import AudioRef, VoiceMode
 
 from app.core.config import settings
 from app.models.job import JobStatus
@@ -26,6 +29,12 @@ class JobCreateRequest(BaseModel):
     target_duration_seconds: int = Field(default_factory=lambda: settings.target_duration_seconds)
     watermark_required: bool = True
     c2pa_required: bool = True
+
+    # Phase 3C: voice mode + audio source.
+    voice_mode: VoiceMode = "tts"
+    script_text: str | None = Field(default=None, max_length=8000)
+    tts_backend: str = "piper"
+    audio_ref: AudioRef | None = None
 
     @field_validator("synthetic_person_confirmed")
     @classmethod
@@ -63,6 +72,28 @@ class JobCreateRequest(BaseModel):
             raise ValueError(f"target_duration_seconds must be between {lo} and {hi}")
         return v
 
+    @model_validator(mode="after")
+    def _validate_voice_mode_requirements(self) -> "JobCreateRequest":
+        # voice_mode="tts": script_text is required. The scriptwriter agent
+        # may later REPLACE this with its own draft, but a TTS-mode job must
+        # arrive at the API with a base script (Phase 3C contract).
+        if self.voice_mode == "tts":
+            if not self.script_text or not self.script_text.strip():
+                raise ValueError(
+                    "script_text is required when voice_mode='tts'"
+                )
+
+        # voice_mode="provided_audio": audio_ref is required. AudioRef's own
+        # validators already enforce consent / synthetic_or_owned / mime /
+        # path-safety, so we just check presence here.
+        elif self.voice_mode == "provided_audio":
+            if self.audio_ref is None:
+                raise ValueError(
+                    "audio_ref is required when voice_mode='provided_audio'"
+                )
+
+        return self
+
 
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -73,6 +104,11 @@ class JobResponse(BaseModel):
     target_duration_seconds: int
     watermark_required: bool
     c2pa_required: bool
+    # Phase 3C voice metadata.
+    voice_mode: str
+    script_text: str | None = None
+    tts_backend: str
+    audio_ref: dict[str, Any] | None = None
     rejection_reason: str | None = None
     created_at: datetime
     updated_at: datetime

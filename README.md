@@ -2,10 +2,14 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3B (narrow) — Piper TTS integration path only.**
-> Phase 3A (provider contracts + healthchecks) plus a single real integration: the **Piper** voice provider's `synthesize()` now performs actual TTS — **only when** the `piper` Python package is installed AND the voice assets are present at `$PIPER_MODELS_ROOT`. The package is loaded lazily; without it, `synthesize()` raises a clear `ProviderNotImplementedError` and never reaches a Piper API call. The test suite passes whether or not `piper` is installed.
+> **Current status: Phase 3C — voice mode routing + provided-audio contract.**
+> Phase 3B (Piper integration path, lazy-imported) plus a declarative voice input contract:
 >
-> **No torch / torchvision / torchaudio / diffusers / transformers added. SadTalker is still a Phase 3A stub. No real lip-sync. No model weights downloaded.** Operators install `piper-tts` and place the `.onnx` + `.onnx.json` voice files manually under `./models/tts/piper/`. See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> - `voice_mode="tts"` (default) keeps the existing DAG path; requires `script_text`; `tts_backend` defaults to `"piper"`.
+> - `voice_mode="provided_audio"` accepts an operator-supplied `.wav` via `audio_ref`. The path must be **absolute, traversal-free, and resolve under one of `$PROVIDED_AUDIO_ALLOWED_ROOTS`**; the mime type must be `audio/wav` or `audio/x-wav`; both `consent_confirmed` and `synthetic_or_owned_voice` must be `true` (the schema refuses anything else). The voice stage emits a `file://` `ArtifactRef` — no audio bytes are ever read or copied.
+> - The `policy_gate` compliance row records `extra={"voice_source": "tts" | "provided_audio"}` for audit.
+>
+> **No torch / torchvision / torchaudio / diffusers / transformers added. SadTalker is still a Phase 3A stub. No real lip-sync. No model weights downloaded. No voice cloning.** Operators install `piper-tts` (optional, `pip install -e ./agents[voice]`) and place voice files manually under `./models/tts/piper/`. See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
 
 ## Hard guarantees
 
@@ -52,7 +56,28 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3B (narrow) scope — current
+## Phase 3C scope — current
+
+Implemented on top of Phase 3B:
+
+- **`voice_mode`** added to `JobCreateRequest` (`"tts"` default, `"provided_audio"` opt-in).
+- **`AudioRef`** (`common/schemas.py`) — typed reference to an operator-supplied `.wav`. Fields: `type` (`local_path` | `artifact_uri`), `path`, `mime_type` (`audio/wav` | `audio/x-wav`), `duration_seconds`, `checksum`, `consent_confirmed`, `synthetic_or_owned_voice`. Validators refuse anything but `true` on both consent flags.
+- **Path safety** (`common/path_safety.py`) — `local_path` audio refs must be absolute, free of `..` segments, end in `.wav`, and resolve under one of the directories listed in `$PROVIDED_AUDIO_ALLOWED_ROOTS`. Validation is re-applied at the voice handler as defense-in-depth.
+- **Voice handler routes by mode.** `tts` → existing Phase 2 no-op (preserves all previous tests); `provided_audio` → validates + emits `ArtifactRef` with a `file://` URI pointing at the operator's file. Never reads bytes; never transcodes.
+- **Compliance audit** — the `policy_gate` event row gains an `extra` JSON column carrying `{"voice_source": "tts" | "provided_audio"}`.
+- **Job DB** — `Job` model gains `voice_mode`, `script_text`, `tts_backend`, and `audio_ref` (JSON) columns. `JobResponse` exposes them.
+- 13 Phase 3C tests covering schema validation (8 failure modes + happy path), end-to-end DAG runs for both modes, and a subprocess-isolated check that no heavy audio/ML library is pulled in by importing the voice handler.
+
+Explicitly **not** in Phase 3C:
+
+- **No torch / torchvision / torchaudio / diffusers / transformers / accelerate / xformers / gfpgan / SDXL / SadTalker / MuseTalk / Wav2Lip dependencies.**
+- **No real lip-sync, no face generation, no SDXL.** All three lip-sync providers + SadTalker are unchanged.
+- **No voice cloning.** Hard-coded: the schema refuses `synthetic_or_owned_voice=False`.
+- **No external paid APIs.**
+- **No DAG wiring of the real Piper provider.** The Phase 3B lazy-import provider remains standalone; the TTS branch of the voice handler is still a no-op stub.
+- **No `ffprobe` or real audio validation.** Duration/checksum are recorded verbatim from the operator's declaration; a future phase can add deeper validation.
+
+## Phase 3B (narrow) scope — still active
 
 Implemented on top of Phase 3A:
 

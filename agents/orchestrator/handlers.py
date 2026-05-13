@@ -91,6 +91,8 @@ def make_policy_gate_handler(
                     else ComplianceDecisionType.reject
                 ),
                 reasons=decision.reasons,
+                # Phase 3C: record what voice source was declared, for audit.
+                extra={"voice_source": job.voice_mode},
             )
             session.add(event)
 

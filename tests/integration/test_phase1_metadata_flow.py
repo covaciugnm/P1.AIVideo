@@ -74,6 +74,7 @@ async def test_valid_job_reaches_accepted(app_under_test):
         "target_duration_seconds": 30,
         "watermark_required": True,
         "c2pa_required": True,
+        "script_text": "Three calming bedtime habits for better sleep.",
     }
     r = await client.post("/jobs", json=payload)
     assert r.status_code == 201, r.text
@@ -188,6 +189,7 @@ async def test_compliance_event_row_recorded(app_under_test):
         "target_duration_seconds": 30,
         "watermark_required": True,
         "c2pa_required": True,
+        "script_text": "Three calming bedtime habits for better sleep.",
     }
     r = await client.post("/jobs", json=payload)
     assert r.status_code == 201

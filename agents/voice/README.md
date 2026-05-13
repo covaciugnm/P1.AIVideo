@@ -29,6 +29,15 @@ Synthesizes narration from the script using a **synthetic** voice profile. **No 
 - `ALLOW_VOICE_CLONING` must remain `false`.
 - The API does not expose a "clone from reference" endpoint.
 
+## Voice modes (Phase 3C+)
+
+`JobCreateRequest.voice_mode` selects how narration is produced:
+
+- `"tts"` (default) — narration is generated from `script_text` by the configured TTS provider (Piper by default). The DAG's voice handler currently emits a stub URI; wiring the real `PiperProvider.synthesize()` from `providers/piper/` into the handler is a later phase.
+- `"provided_audio"` — narration is operator-supplied as a `.wav` file referenced by `audio_ref`. The schema enforces consent + synthetic_or_owned_voice flags, mime type, and path safety against `$PROVIDED_AUDIO_ALLOWED_ROOTS`. The voice handler validates the reference again (defense in depth) and emits a `file://` `ArtifactRef`. No audio bytes are read or copied at this stage.
+
+The policy_gate compliance row records the chosen mode in `extra.voice_source`.
+
 ## Provider contract (Phase 3A+)
 
 ```

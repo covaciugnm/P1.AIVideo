@@ -35,4 +35,7 @@ class ComplianceEvent(Base):
         Enum(ComplianceDecisionType, name="compliance_decision"), nullable=False
     )
     reasons: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # Phase 3C: free-form metadata for the event. Currently used to record
+    # `{"voice_source": "tts" | "provided_audio"}` on the policy_gate row.
+    extra: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)

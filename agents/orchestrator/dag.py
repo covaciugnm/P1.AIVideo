@@ -132,6 +132,14 @@ class DagRunner:
             job = await job_service.get_job(session, job_id)
             if job is None:
                 raise StageError("orchestrator", f"job {job_id} not found")
+            # Reconstruct AudioRef from the JSON column if present. The model
+            # validators run again here as a defensive step — they ran at API
+            # time, but the DB roundtrip should remain self-validating.
+            audio_ref = None
+            if job.audio_ref:
+                from common.schemas import AudioRef
+
+                audio_ref = AudioRef.model_validate(job.audio_ref)
             state = DagState(
                 job_id=job.id,
                 brief=job.brief,
@@ -140,6 +148,10 @@ class DagRunner:
                 consent_confirmed=job.consent_confirmed,
                 watermark_required=job.watermark_required,
                 c2pa_required=job.c2pa_required,
+                voice_mode=job.voice_mode,
+                script_text=job.script_text,
+                tts_backend=job.tts_backend,
+                audio_ref=audio_ref,
             )
             return state, job
 
@@ -180,10 +192,15 @@ class DagRunner:
         gate: str,
         decision: ComplianceDecisionType,
         reasons: list[str],
+        extra: dict | None = None,
     ) -> None:
         async with self._sm() as session:
             event = ComplianceEvent(
-                job_id=job_id, gate=gate, decision=decision, reasons=reasons
+                job_id=job_id,
+                gate=gate,
+                decision=decision,
+                reasons=reasons,
+                extra=extra or {},
             )
             session.add(event)
             await session.commit()
@@ -220,6 +237,7 @@ class DagRunner:
                 else ComplianceDecisionType.reject
             ),
             reasons=decision.reasons,
+            extra={"voice_source": state.voice_mode},
         )
         if not decision.accepted:
             raise StageRejection(

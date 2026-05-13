@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from common.enums import ProviderHealthStatus, StageName
+from common.path_safety import validate_local_audio_path
 
 
 class AssetSpec(BaseModel):
@@ -72,6 +73,72 @@ class StageOutput(BaseModel):
     noop: bool = True
 
 
+AudioRefType = Literal["local_path", "artifact_uri"]
+AudioMimeType = Literal["audio/wav", "audio/x-wav"]
+VoiceMode = Literal["tts", "provided_audio"]
+
+
+class AudioRef(BaseModel):
+    """Reference to an operator-supplied audio file (Phase 3C).
+
+    Carried as METADATA — neither the API nor the queue ever loads the
+    actual audio bytes. The voice handler (or a downstream stage) reads
+    the file when it actually needs it.
+
+    Compliance fields are load-bearing:
+
+    - ``consent_confirmed`` must be ``True`` — the operator asserts they
+      have lawful authority to use this recording.
+    - ``synthetic_or_owned_voice`` must be ``True`` — the recording is
+      either synthetic or a voice the operator owns/has rights to. Voice
+      cloning of a third party is **never** allowed (no Phase 3C path
+      enables it, and the schema refuses anything but ``True`` here).
+
+    Path safety (``type="local_path"`` only) is enforced via
+    ``common.path_safety.validate_local_audio_path``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: AudioRefType
+    path: str
+    mime_type: AudioMimeType
+    duration_seconds: float | None = None
+    checksum: str | None = None  # operator-supplied sha256 hex, optional
+    consent_confirmed: bool
+    synthetic_or_owned_voice: bool
+
+    @field_validator("consent_confirmed")
+    @classmethod
+    def _must_consent(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("audio_ref.consent_confirmed must be true")
+        return v
+
+    @field_validator("synthetic_or_owned_voice")
+    @classmethod
+    def _must_be_synthetic_or_owned(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError(
+                "audio_ref.synthetic_or_owned_voice must be true "
+                "(voice cloning of others is not allowed)"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _validate_path_for_type(self) -> "AudioRef":
+        if self.type == "local_path":
+            validate_local_audio_path(self.path)
+        else:
+            # artifact_uri — must look like a URI scheme (s3://, file://, ...)
+            if "://" not in self.path:
+                raise ValueError(
+                    "audio_ref.path with type='artifact_uri' must be a URI "
+                    f"(e.g. 's3://bucket/key.wav'); got: {self.path!r}"
+                )
+        return self
+
+
 class ComplianceTokenClaims(BaseModel):
     """Claims carried inside a `compliance_token`. See pre_lipsync_auth."""
 
@@ -105,6 +172,12 @@ class DagState(BaseModel):
     consent_confirmed: bool
     watermark_required: bool
     c2pa_required: bool
+
+    # Phase 3C: voice mode + optional provided-audio reference.
+    voice_mode: VoiceMode = "tts"
+    script_text: str | None = None
+    tts_backend: str = "piper"
+    audio_ref: AudioRef | None = None
 
     # Accumulated stage outputs (keyed by stage id).
     stage_outputs: dict[str, StageOutput] = Field(default_factory=dict)

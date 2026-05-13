@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, Integer, String, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 # Re-export from common so existing `from app.models.job import JobStatus`
@@ -35,6 +35,12 @@ class Job(Base):
     consent_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     watermark_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     c2pa_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Phase 3C: voice routing metadata. `audio_ref` stores the operator-supplied
+    # AudioRef as a JSON object — never binary audio.
+    voice_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="tts")
+    script_text: Mapped[str | None] = mapped_column(String(8000), nullable=True)
+    tts_backend: Mapped[str] = mapped_column(String(32), nullable=False, default="piper")
+    audio_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
