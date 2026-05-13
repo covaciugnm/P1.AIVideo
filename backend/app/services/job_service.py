@@ -12,10 +12,15 @@ from app.services.queue_publisher import publish_job_created
 
 
 async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
-    # Audio refs are stored as plain JSON dicts in the DB — never binary.
+    # Audio + image refs are stored as plain JSON dicts in the DB — never binary.
     audio_ref_dict = (
         payload.audio_ref.model_dump(mode="json")
         if payload.audio_ref is not None
+        else None
+    )
+    image_ref_dict = (
+        payload.image_ref.model_dump(mode="json")
+        if payload.image_ref is not None
         else None
     )
     job = Job(
@@ -29,6 +34,8 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         script_text=payload.script_text,
         tts_backend=payload.tts_backend,
         audio_ref=audio_ref_dict,
+        face_mode=payload.face_mode,
+        image_ref=image_ref_dict,
         status=JobStatus.pending_compliance,
     )
     session.add(job)

@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from common.schemas import AudioRef, VoiceMode
+from common.schemas import AudioRef, FaceMode, ImageRef, VoiceMode
 
 from app.core.config import settings
 from app.models.job import JobStatus
@@ -35,6 +35,13 @@ class JobCreateRequest(BaseModel):
     script_text: str | None = Field(default=None, max_length=8000)
     tts_backend: str = "piper"
     audio_ref: AudioRef | None = None
+
+    # Phase 3E: face mode + image source. ``face_mode`` is optional (no
+    # default) so jobs created before Phase 3E (and Phase 1–3D tests)
+    # don't need an image_ref. When face_mode="provided_image" is set
+    # explicitly, image_ref is required and validated.
+    face_mode: FaceMode | None = None
+    image_ref: ImageRef | None = None
 
     @field_validator("synthetic_person_confirmed")
     @classmethod
@@ -92,6 +99,14 @@ class JobCreateRequest(BaseModel):
                     "audio_ref is required when voice_mode='provided_audio'"
                 )
 
+        # Phase 3E: face_mode="provided_image" requires image_ref. ImageRef
+        # already validates consent + synthetic_person + mime + path-safety.
+        if self.face_mode == "provided_image":
+            if self.image_ref is None:
+                raise ValueError(
+                    "image_ref is required when face_mode='provided_image'"
+                )
+
         return self
 
 
@@ -109,6 +124,9 @@ class JobResponse(BaseModel):
     script_text: str | None = None
     tts_backend: str
     audio_ref: dict[str, Any] | None = None
+    # Phase 3E face metadata.
+    face_mode: str | None = None
+    image_ref: dict[str, Any] | None = None
     rejection_reason: str | None = None
     created_at: datetime
     updated_at: datetime

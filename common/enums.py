@@ -31,6 +31,24 @@ class StageStatus(str, enum.Enum):
     skipped = "skipped"
 
 
+class ArtifactType(str, enum.Enum):
+    """Canonical artifact types stored in the ``artifacts`` table.
+
+    Phase 3E introduced this enum to replace ad-hoc string literals on
+    ``ArtifactRef.artifact_type``. The field type stays ``str`` (so older
+    code still works), but new code should prefer ``ArtifactType.<name>.value``
+    to avoid magic strings. De-duplication across jobs is a future
+    optimization — Phase 3E does NOT implement content-addressed dedupe.
+    """
+
+    audio = "audio"
+    image = "image"
+    script = "script"
+    video = "video"
+    metadata = "metadata"
+    final_export = "final_export"
+
+
 class ProviderHealthStatus(str, enum.Enum):
     """Result categories from a model provider's `healthcheck()` call.
 

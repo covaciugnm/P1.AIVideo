@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     audio_allowed_channels: str = ""      # comma-separated; empty = any
     artifacts_local_root: str = "/storage/artifacts"
 
+    # --- Provided face image (Phase 3E) ---
+    image_max_file_size_bytes: int = 10_485_760  # 10 MB
+    image_min_width: str = ""   # empty = no minimum
+    image_min_height: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]

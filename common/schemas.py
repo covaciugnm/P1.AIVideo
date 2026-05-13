@@ -12,7 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from common.enums import ProviderHealthStatus, StageName
-from common.path_safety import validate_local_audio_path
+from common.path_safety import validate_local_audio_path, validate_local_image_path
 
 
 class AssetSpec(BaseModel):
@@ -62,14 +62,19 @@ class ArtifactRef(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    artifact_type: str  # "image" | "audio" | "video" | "json" | "text"
+    artifact_type: str  # one of common.enums.ArtifactType
     uri: str  # e.g. "s3://aivideo-jobs/{job_uuid}/portrait.png" or "file://..."
     local_path: str | None = None
+    mime_type: str | None = None
     checksum_sha256: str | None = None
     size_bytes: int | None = None
+    # Audio metadata (set by the voice handler for provided_audio).
     duration_seconds: float | None = None
     sample_rate: int | None = None
     channels: int | None = None
+    # Image metadata (Phase 3E — set by the face handler for provided_image).
+    width: int | None = None
+    height: int | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -150,6 +155,74 @@ class AudioRef(BaseModel):
         return self
 
 
+ImageRefType = Literal["local_path", "artifact_uri"]
+ImageMimeType = Literal["image/png", "image/jpeg", "image/webp"]
+FaceMode = Literal["provided_image"]
+
+
+class ImageRef(BaseModel):
+    """Reference to an operator-supplied portrait/face image (Phase 3E).
+
+    Metadata-only — the API and queue never touch the image bytes. The
+    face handler reads the file only to inspect its header for
+    width/height/checksum.
+
+    Compliance fields are load-bearing:
+
+    - ``consent_confirmed`` must be ``True``.
+    - ``synthetic_person_confirmed`` must be ``True``. The Phase 3E
+      contract refuses BYO real-person likeness without an explicit
+      consent workflow (which doesn't exist yet). The schema simply
+      blocks ``False`` here.
+
+    Path safety (``type="local_path"`` only) is enforced via
+    ``common.path_safety.validate_local_image_path``.
+
+    Phase 3E does NOT perform celebrity / public-figure matching — the
+    identity-guard CLIP-NN check lands in a later phase. For now, the
+    operator's attestation under the two boolean flags is the
+    authoritative compliance signal.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: ImageRefType
+    path: str
+    mime_type: ImageMimeType
+    checksum: str | None = None
+    consent_confirmed: bool
+    synthetic_person_confirmed: bool
+
+    @field_validator("consent_confirmed")
+    @classmethod
+    def _must_consent(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError("image_ref.consent_confirmed must be true")
+        return v
+
+    @field_validator("synthetic_person_confirmed")
+    @classmethod
+    def _must_be_synthetic(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError(
+                "image_ref.synthetic_person_confirmed must be true "
+                "(BYO real-person likeness is not allowed)"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _validate_path_for_type(self) -> "ImageRef":
+        if self.type == "local_path":
+            validate_local_image_path(self.path)
+        else:
+            if "://" not in self.path:
+                raise ValueError(
+                    "image_ref.path with type='artifact_uri' must be a URI "
+                    f"(e.g. 's3://bucket/key.png'); got: {self.path!r}"
+                )
+        return self
+
+
 class ComplianceTokenClaims(BaseModel):
     """Claims carried inside a `compliance_token`. See pre_lipsync_auth."""
 
@@ -189,6 +262,13 @@ class DagState(BaseModel):
     script_text: str | None = None
     tts_backend: str = "piper"
     audio_ref: AudioRef | None = None
+
+    # Phase 3E: face mode + optional provided-image reference. ``face_mode``
+    # is None by default to preserve every earlier-phase test that didn't
+    # opt into a face input mode; when set to "provided_image" the schema
+    # requires image_ref.
+    face_mode: FaceMode | None = None
+    image_ref: ImageRef | None = None
 
     # Accumulated stage outputs (keyed by stage id).
     stage_outputs: dict[str, StageOutput] = Field(default_factory=dict)

@@ -41,6 +41,9 @@ class Job(Base):
     script_text: Mapped[str | None] = mapped_column(String(8000), nullable=True)
     tts_backend: Mapped[str] = mapped_column(String(32), nullable=False, default="piper")
     audio_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 3E: optional face input mode + image reference.
+    face_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    image_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

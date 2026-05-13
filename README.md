@@ -2,15 +2,17 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3D — audio validation + artifact registry.**
-> Phase 3C (voice mode routing) plus first-class audio artifacts:
+> **Current status: Phase 3E — image input validation + face artifact contract.**
+> Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
 >
-> - **`common/audio_validation.py`** — stdlib-only WAV inspection (`wave` + `hashlib`). Verifies the file exists, the header parses, the size is under `$AUDIO_MAX_FILE_SIZE_BYTES`, and (optionally) the sample rate / channel count are in the configured allowlists. Returns size, sample_rate, channels, n_frames, duration_seconds, and the SHA-256 checksum. No `ffmpeg`, no `librosa`, no `soundfile`.
-> - **`artifacts` table** — new first-class artifact rows with `artifact_type`, `uri`, `local_path`, `mime_type`, `checksum_sha256`, `size_bytes`, `duration_seconds`, `sample_rate`, `channels`, `metadata_json`. Distinct from the denormalized snapshot in `stage_runs.artifacts`.
-> - **Voice handler** inspects provided WAVs and emits an `ArtifactRef` carrying real metadata. The DAG runner promotes any `ArtifactRef` with `checksum_sha256` set to the `artifacts` table; stub URIs (TTS no-op) are not promoted.
-> - `ArtifactRef` schema renamed: `kind` → `artifact_type`, `sha256` → `checksum_sha256`; new fields `local_path` / `duration_seconds` / `sample_rate` / `channels`.
+> - **`common/image_validation.py`** — stdlib-only header parsing for **PNG / JPEG / WebP** (VP8 / VP8L / VP8X variants). Returns `(width, height, size, sha256, format)` with no Pillow / OpenCV / imageio / numpy.
+> - **`ImageRef`** schema with the same compliance shape as `AudioRef`: both `consent_confirmed` and `synthetic_person_confirmed` must be `true`; path safety against `$PROVIDED_IMAGE_ALLOWED_ROOTS`; only `image/png` / `image/jpeg` / `image/webp` mime types.
+> - **`face_mode`** added to `JobCreateRequest` (optional). When set to `"provided_image"`, `image_ref` is required and the face handler validates + emits an `ArtifactRef` with real `width` / `height` / `size_bytes` / `checksum_sha256` / `mime_type`. The DAG runner promotes it into the `artifacts` table just like audio.
+> - **`ArtifactType` enum** (`common/enums.py`) — `audio` / `image` / `script` / `video` / `metadata` / `final_export`. Used by the new face artifact registration; existing handlers keep their string literals (no large refactor).
+> - **`Artifact` model** gains `width` and `height` columns (None for non-image artifacts).
+> - **Compliance event** records `extra={"voice_source": ..., "face_source": "provided_image" | "stub"}`.
 >
-> **No Whisper. No SadTalker. No real lip-sync. No SDXL / face generation. No torch / torchvision / torchaudio / diffusers / transformers / accelerate / xformers / gfpgan dependencies added. No model weights downloaded. No voice cloning.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> **No SDXL. No face generation. No identity / celebrity matching. No SadTalker. No real lip-sync. No Whisper. No torch / torchvision / torchaudio / Pillow / OpenCV / imageio / numpy / diffusers / transformers added. No model weights downloaded. No voice cloning.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
 
 ## Hard guarantees
 
@@ -57,7 +59,37 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3D scope — current
+## Phase 3E scope — current
+
+Implemented on top of Phase 3D:
+
+- **`common/image_validation.py`** — `validate_and_inspect_image(path, *, mime_type, max_size_bytes=None, min_width=None, min_height=None) -> ImageMetadata`. Hand-rolled header parsers:
+  - **PNG**: 8-byte signature + IHDR width/height (24 bytes total).
+  - **JPEG**: walks markers until SOF0..SOF15 (excluding DHT/JPG/DAC) and reads height/width from the segment.
+  - **WebP**: walks RIFF chunks; supports VP8X (extended), VP8L (lossless), VP8 (lossy) — each variant decoded per its packed format.
+- **`ImageRef`** in `common/schemas.py` — `type` (`local_path` | `artifact_uri`), `path`, `mime_type` (`image/png` | `image/jpeg` | `image/webp`), `checksum`, `consent_confirmed` (must be `true`), `synthetic_person_confirmed` (must be `true`). Path safety enforced via `validate_local_image_path`.
+- **`face_mode`** + **`image_ref`** added to `JobCreateRequest` / `Job` / `DagState`. `face_mode` is **optional** with no default — jobs that don't opt in keep the existing Phase 2 stub face handler. When explicitly set to `"provided_image"`, `image_ref` is required.
+- **Face handler** routes by `face_mode`: stub (default) or `provided_image` (validate + emit populated `ArtifactRef`).
+- **`ArtifactType` enum** — `audio` / `image` / `script` / `video` / `metadata` / `final_export`. Used by the new face artifact registration. De-duplication is documented as a future optimization.
+- **`Artifact` model** — new `width` and `height` columns.
+- **`ArtifactRef`** — gains `mime_type` (top-level), `width`, `height`.
+- **`common/path_safety.py`** — refactored to a shared `_validate_local_path` helper used by both audio and image; new `validate_local_image_path` + `get_allowed_image_roots`.
+- **Compliance event extra** — `face_source` records `"provided_image"` or `"stub"`.
+- **Config** — `PROVIDED_IMAGE_ALLOWED_ROOTS`, `IMAGE_MAX_FILE_SIZE_BYTES` (10 MB default), optional `IMAGE_MIN_WIDTH` / `IMAGE_MIN_HEIGHT`.
+- **22 Phase 3E tests** — unit-level coverage of `validate_and_inspect_image` (PNG / JPEG / WebP happy path, missing file, bad header, oversize, unsupported mime, min-dimension enforcement), end-to-end DAG tests (provided_image creates an artifact row with correct width/height; default mode records `face_source="stub"` and creates no image artifact; bad header rejects at face stage; oversize rejects at face stage; metadata-only invariant on artifact rows), and a subprocess-isolated check that no image-ML library is pulled in.
+
+Explicitly **not** in Phase 3E:
+
+- **No SDXL / face generation.**
+- **No identity / celebrity / public-figure matching.** The CLIP-NN identity guard documented in `docs/compliance/identity-guard.md` is still deferred. Operator consent flags are the only compliance signal for provided images.
+- **No SadTalker / real lip-sync.**
+- **No Whisper / LLM script generation.**
+- **No torch / torchvision / torchaudio / Pillow / OpenCV / imageio / numpy / diffusers / transformers / accelerate / xformers / gfpgan added.**
+- **No model weights downloaded.**
+- **No voice cloning.**
+- **No artifact deduplication.** A future optimization may dedupe by `checksum_sha256` across jobs; Phase 3E does not.
+
+## Phase 3D scope (still active)
 
 Implemented on top of Phase 3C:
 

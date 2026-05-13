@@ -30,6 +30,8 @@ async def register_artifact(
     duration_seconds: float | None = None,
     sample_rate: int | None = None,
     channels: int | None = None,
+    width: int | None = None,
+    height: int | None = None,
     metadata_json: dict | None = None,
 ) -> Artifact:
     artifact = Artifact(
@@ -44,6 +46,8 @@ async def register_artifact(
         duration_seconds=duration_seconds,
         sample_rate=sample_rate,
         channels=channels,
+        width=width,
+        height=height,
         metadata_json=metadata_json or {},
     )
     session.add(artifact)
@@ -69,7 +73,10 @@ async def register_artifact_ref(
     metadata: dict = dict(ref.extra)
     if name is not None:
         metadata["name"] = name
-    mime = ref.extra.get("mime_type") if isinstance(ref.extra, dict) else None
+    # Prefer the ref's mime_type field (Phase 3E), fall back to extra dict.
+    mime = ref.mime_type
+    if mime is None and isinstance(ref.extra, dict):
+        mime = ref.extra.get("mime_type")
     return await register_artifact(
         session,
         job_id=job_id,
@@ -83,6 +90,8 @@ async def register_artifact_ref(
         duration_seconds=ref.duration_seconds,
         sample_rate=ref.sample_rate,
         channels=ref.channels,
+        width=ref.width,
+        height=ref.height,
         metadata_json=metadata,
     )
 

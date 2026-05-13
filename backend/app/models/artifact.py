@@ -60,5 +60,8 @@ class Artifact(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     sample_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     channels: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Phase 3E: image dimensions (None for non-image artifacts).
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
