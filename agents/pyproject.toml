@@ -17,8 +17,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aivideo-agents"
-version = "0.3.0"
-description = "P1.AIVideo specialist agents — installable as `agents.*` (Phase 3F packaging)."
+version = "0.4.0"
+description = "P1.AIVideo specialist agents — installable as `agents.*` (Phase 3G: scriptwriter contract)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -58,6 +58,15 @@ packages = [
     "agents.compliance_officer",
     "agents.orchestrator",
     "agents.scriptwriter",
+    "agents.scriptwriter.core",
+    "agents.scriptwriter.providers",
+    "agents.scriptwriter.providers.template",
+    "agents.scriptwriter.providers.ollama",
+    "agents.scriptwriter.providers.vllm",
+    "agents.scriptwriter.providers.openai_compatible",
+    "agents.scriptwriter.providers.openai",
+    "agents.scriptwriter.providers.anthropic",
+    "agents.scriptwriter.providers.local_http",
     "agents.voice",
     "agents.voice.core",
     "agents.voice.providers",

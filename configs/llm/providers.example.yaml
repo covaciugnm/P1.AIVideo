@@ -1,0 +1,105 @@
+# LLM provider registry — example / default schema.
+#
+# Operators copy this file to `configs/llm/providers.yaml` (or set
+# $LLM_PROVIDER_CONFIG_PATH to point elsewhere) and edit values per
+# deployment. The schema is meant to let operators ADD new models or
+# providers without code changes — anything listed here is reachable from
+# `agents.scriptwriter.core.registry.resolve()`.
+#
+# Phase 3G ships this as a documented placeholder. Real consumers of
+# this file land in a later phase. The `template` provider is the only
+# functional one today; every other entry is a stub.
+#
+# Hard rules:
+#   - No real API keys belong in this file. Use environment variables
+#     (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) and reference them from
+#     the deployment's secret store.
+#   - `enabled: true` does NOT activate real network calls on its own —
+#     SCRIPTWRITER_ENABLE_NETWORK_CALLS=true must also be set.
+
+version: 1
+
+providers:
+
+  template:
+    enabled: true
+    type: template
+    default_model: template-v1
+    notes: |
+      Deterministic, dependency-free. Default for offline DAG runs and
+      tests. No external services touched.
+
+  ollama:
+    enabled: false
+    type: ollama
+    base_url: http://localhost:11434
+    default_model: qwen3.6
+    fallback_model: qwen3:8b
+    timeout_seconds: 60
+    models:
+      - name: qwen3.6
+        role: preferred
+        notes: high-quality local model (project default)
+      - name: qwen3:8b
+        role: fallback
+        notes: smaller local fallback when 3.6 isn't pulled
+      - name: custom-local-model
+        role: custom
+        notes: |
+          Add future local models here. The scriptwriter handler will
+          pick this up automatically once Ollama is activated; no code
+          change required.
+
+  vllm:
+    enabled: false
+    type: openai_compatible
+    base_url: http://localhost:8000/v1
+    default_model: qwen3.6
+    fallback_model: qwen3:8b
+    timeout_seconds: 60
+    notes: |
+      vLLM exposes an OpenAI-compatible HTTP API. The dedicated `vllm`
+      backend lets operators distinguish it from the generic
+      `openai_compatible` backend in their .env without changing code.
+
+  openai_compatible:
+    enabled: false
+    type: openai_compatible
+    base_url: ""
+    default_model: ""
+    fallback_model: ""
+    timeout_seconds: 60
+    notes: |
+      Generic OpenAI-compatible endpoint. Use this for LM Studio,
+      LocalAI, OpenRouter, or any other service that speaks
+      /v1/chat/completions. API key (if any) comes from
+      OPENAI_COMPATIBLE_API_KEY.
+
+  openai:
+    enabled: false
+    type: openai
+    default_model: ""
+    timeout_seconds: 60
+    notes: |
+      Hosted OpenAI API. Key must come from OPENAI_API_KEY env var —
+      NEVER commit the key in this file.
+
+  anthropic:
+    enabled: false
+    type: anthropic
+    default_model: ""
+    timeout_seconds: 60
+    notes: |
+      Hosted Anthropic API. Key must come from ANTHROPIC_API_KEY env
+      var — NEVER commit the key in this file.
+
+  local_http:
+    enabled: false
+    type: local_http
+    url: ""
+    default_model: qwen3.6
+    timeout_seconds: 60
+    notes: |
+      Generic HTTP endpoint for self-hosted services that aren't
+      OpenAI-compatible. Future implementation will use stdlib HTTP to
+      keep the dep tree small.

@@ -486,8 +486,13 @@ async def test_provided_image_bad_header_rejects_at_face_stage(app_under_test):
     assert "PNG" in (face_run.error or "")
 
     async with sm() as session:
+        # No IMAGE artifact — face rejected before it could register one.
+        # Phase 3G's scriptwriter that ran earlier may have produced a
+        # script-type artifact; that's expected and unrelated to this test.
         result = await session.execute(
-            select(Artifact).where(Artifact.job_id == job_id)
+            select(Artifact).where(
+                Artifact.job_id == job_id, Artifact.artifact_type == "image"
+            )
         )
         assert result.scalars().all() == []
 

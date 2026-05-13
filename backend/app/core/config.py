@@ -68,6 +68,23 @@ class Settings(BaseSettings):
     image_min_width: str = ""   # empty = no minimum
     image_min_height: str = ""
 
+    # --- Scriptwriter (Phase 3G) ---
+    # Provider registry + contract config. NO real LLM calls happen until
+    # both ``scriptwriter_enable_network_calls`` is True AND a real
+    # provider has been activated. Default backend is "template".
+    scriptwriter_backend: str = "template"
+    scriptwriter_model: str = "qwen3.6"
+    scriptwriter_fallback_model: str = "qwen3:8b"
+    scriptwriter_allowed_backends: str = (
+        "template,mock,ollama,vllm,openai_compatible,openai,anthropic,local_http"
+    )
+    scriptwriter_enable_network_calls: bool = False
+    scriptwriter_timeout_seconds: int = 60
+    scriptwriter_max_output_tokens: int = 800
+    scriptwriter_temperature: float = 0.7
+    scriptwriter_prompt_version: str = "v1"
+    llm_provider_config_path: str = "configs/llm/providers.example.yaml"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]

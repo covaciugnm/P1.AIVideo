@@ -294,10 +294,14 @@ async def test_tts_mode_does_not_create_audio_artifact(app_under_test):
     sm = get_sessionmaker()
     async with sm() as session:
         result = await session.execute(
-            select(Artifact).where(Artifact.job_id == job_id)
+            select(Artifact).where(
+                Artifact.job_id == job_id, Artifact.artifact_type == "audio"
+            )
         )
         artifacts = list(result.scalars().all())
-    # No artifact rows: the TTS branch only emits stubs without checksums.
+    # No audio artifact rows: the TTS branch only emits stubs without
+    # checksums. (Phase 3G's scriptwriter does create a script-type artifact,
+    # which is unrelated to this test's concern.)
     assert artifacts == []
 
 
@@ -335,8 +339,14 @@ async def test_provided_audio_bad_header_rejects_at_voice_stage(app_under_test):
     assert "WAV" in (voice_run.error or "") or "header" in (voice_run.error or "")
 
     async with sm() as session:
+        # No AUDIO artifact for this job — voice rejected before it
+        # could register one. The Phase 3G scriptwriter that runs
+        # earlier may have created a script artifact; that's expected
+        # and not part of this test's concern.
         result = await session.execute(
-            select(Artifact).where(Artifact.job_id == job_id)
+            select(Artifact).where(
+                Artifact.job_id == job_id, Artifact.artifact_type == "audio"
+            )
         )
         assert result.scalars().all() == []
 

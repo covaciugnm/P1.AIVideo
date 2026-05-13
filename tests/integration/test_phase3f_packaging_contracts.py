@@ -63,6 +63,16 @@ EXPECTED_AGENT_SUBPACKAGES: tuple[str, ...] = (
     "compliance_officer",
     "orchestrator",
     "scriptwriter",
+    # Phase 3G: scriptwriter provider tree.
+    "scriptwriter.core",
+    "scriptwriter.providers",
+    "scriptwriter.providers.template",
+    "scriptwriter.providers.ollama",
+    "scriptwriter.providers.vllm",
+    "scriptwriter.providers.openai_compatible",
+    "scriptwriter.providers.openai",
+    "scriptwriter.providers.anthropic",
+    "scriptwriter.providers.local_http",
     "voice",
     "voice.core",
     "voice.providers",
@@ -235,6 +245,7 @@ def test_full_agents_import_has_no_heavy_or_llm_dependencies():
     image ML library."""
     forbidden = [
         "openai",
+        "anthropic",
         "langchain",
         "langchain_core",
         "langgraph",
@@ -256,6 +267,10 @@ def test_full_agents_import_has_no_heavy_or_llm_dependencies():
         "librosa",
         "soundfile",
         "gfpgan",
+        # Scriptwriter stubs must not import HTTP clients at module load.
+        "httpx",
+        "requests",
+        "aiohttp",
     ]
     leaf_modules = [
         "agents.compliance_officer.policy_gate",
@@ -267,6 +282,16 @@ def test_full_agents_import_has_no_heavy_or_llm_dependencies():
         "agents.orchestrator.handlers",
         "agents.orchestrator.orchestrator",
         "agents.scriptwriter.handler",
+        # Phase 3G scriptwriter provider tree:
+        "agents.scriptwriter.core.provider",
+        "agents.scriptwriter.core.registry",
+        "agents.scriptwriter.providers.template.provider",
+        "agents.scriptwriter.providers.ollama.provider",
+        "agents.scriptwriter.providers.vllm.provider",
+        "agents.scriptwriter.providers.openai_compatible.provider",
+        "agents.scriptwriter.providers.openai.provider",
+        "agents.scriptwriter.providers.anthropic.provider",
+        "agents.scriptwriter.providers.local_http.provider",
         "agents.voice.handler",
         "agents.voice.core.provider",
         "agents.voice.core.registry",

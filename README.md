@@ -2,15 +2,17 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3F — packaging cleanup + ArtifactType enum hardening.**
-> No new model providers in this phase; Phase 3F is purely structural:
+> **Current status: Phase 3G — Scriptwriter provider contract + extensible LLM backend registry.**
 >
-> - **`agents/pyproject.toml` rewritten** — explicit `package-dir = {"agents": "."}` plus an enumerated list of every `agents.*` subpackage. After `pip install -e ./agents` you can `import agents.compliance_officer`, `import agents.lipsync.providers.sadtalker.provider`, etc. from any process — including subprocesses — with **no `sys.path` manipulation**.
-> - **`tests/conftest.py` no longer mutates `sys.path`.** It only sets test-mode env defaults. The previous project-root and `backend/` entries are gone.
-> - **`ArtifactType` enum** in `common.enums` (`audio` / `image` / `script` / `video` / `metadata` / `final_export`) is now used by both Phase 3 handlers that produce real artifacts (voice + face). Historical handlers keep their string literals (narrow change per the Phase 3F brief; the enum is `str`-compatible so legacy comparisons keep working).
-> - **10 packaging tests** prove the contract: every required `agents.*` / `common.*` / `app.*` module imports from a fresh interpreter with empty `PYTHONPATH`; the enum carries the expected six values; voice + face handlers reference the enum by name; audio + image DAG runs land in the `artifacts` table with `artifact_type == ArtifactType.<name>.value`.
+> - **`agents/scriptwriter/core/`** ships the `ScriptProvider` ABC and a structured `ScriptRequest` / `ScriptResult` contract — never a raw string.
+> - **Registry** (`agents/scriptwriter/core/registry.py`) resolves `SCRIPTWRITER_BACKEND` to one of: `template`, `mock`, `ollama`, `vllm`, `openai_compatible`, `openai`, `anthropic`, `local_http`.
+> - **Default backend is `template`** — a deterministic, dependency-free provider that produces structured scripts. It is the only Phase 3G provider that actually runs; every other backend is a contract-only stub whose `healthcheck()` reports `not_configured` / `not_implemented` and whose `generate()` raises `ProviderNotImplementedError`.
+> - **Preferred local model**: `qwen3.6`. **Fallback**: `qwen3:8b`. **`qwen3.6:7b` is not hardcoded anywhere** — verified by a test that greps the source tree.
+> - **`configs/llm/providers.example.yaml`** lets operators add future models / endpoints without code changes; the registry+handler will pick them up once a real backend lands.
+> - **Script artifact** now registered as `ArtifactType.script` with a content checksum so it appears in the `artifacts` table alongside audio and image artifacts.
+> - **28 Phase 3G tests** cover registry shape, template determinism, stub refusal, `Settings` defaults, YAML extensibility, end-to-end DAG promotion, and two subprocess-isolated import audits confirming no `openai` / `anthropic` / `langchain` / `langgraph` / `transformers` / `torch` / `httpx` / `requests` / `aiohttp` is pulled in.
 >
-> **No Scriptwriter / LLM provider implemented. No openai / langchain / langgraph / transformers / torch / diffusers / accelerate / xformers / Whisper / SadTalker / SDXL added.** See [`docs/PROJECT_PLAN.md`](docs/PROJECT_PLAN.md) for the full multi-phase plan.
+> **No real LLM calls happen. No OpenAI / Anthropic / vLLM / Ollama dependency added. No API keys required. No model weights downloaded. No SadTalker / Whisper / SDXL / real lip-sync / video generation implemented.**
 
 > **Previous milestone: Phase 3E — image input validation + face artifact contract.**
 > Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
@@ -69,7 +71,32 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3F scope — current
+## Phase 3G scope — current
+
+Implemented on top of Phase 3F:
+
+- **`agents/scriptwriter/core/provider.py`** — `ScriptProvider` ABC with `provider_name`, `model_name`, `supports_streaming`, `supports_json_mode`, `required_config()`, `healthcheck()`, `generate()`. Plus the structured `ScriptRequest` and `ScriptResult` Pydantic models (hook / body / cta / full_script / estimated_duration_seconds / language / provider / model / prompt_version / metadata).
+- **`agents/scriptwriter/core/registry.py`** — `resolve(name)` lazy-imports providers; `known_backends()` advertises the eight names. Unknown backends raise `UnsupportedBackendError`.
+- **Template provider** (`agents/scriptwriter/providers/template/provider.py`) — deterministic, dependency-free, produces a structured script from `script_text` (paragraph-split) or from `brief` (placeholder). Default Phase 3G backend.
+- **Six stub providers** (`ollama`, `vllm`, `openai_compatible`, `openai`, `anthropic`, `local_http`) — each reads its env config, returns `not_configured` / `not_implemented` from `healthcheck()`, and raises `ProviderNotImplementedError` from `generate()`. Zero external client imports — verified by subprocess audit.
+- **DAG handler** wired through the registry. Default backend `template`; configured non-template backends fall back to `template` unless `SCRIPTWRITER_ENABLE_NETWORK_CALLS=true` AND the provider succeeds. Failure of a real provider also falls back, so the DAG keeps moving.
+- **Script artifact** carries `ArtifactType.script.value`, a SHA-256 of the serialized structured script, and the `structured_script` dict in `metadata_json` — promoted to the `artifacts` table.
+- **Configuration**:
+  - `.env.example` block: `SCRIPTWRITER_BACKEND=template`, `SCRIPTWRITER_MODEL=qwen3.6`, `SCRIPTWRITER_FALLBACK_MODEL=qwen3:8b`, `SCRIPTWRITER_ALLOWED_BACKENDS=...`, `SCRIPTWRITER_ENABLE_NETWORK_CALLS=false`, plus per-provider blocks for Ollama / vLLM / OpenAI-compatible / OpenAI / Anthropic / local_http and `LLM_MODEL_REGISTRY_JSON` / `LLM_PROVIDER_CONFIG_PATH`.
+  - `configs/llm/providers.example.yaml` — operators copy this and add models/providers without touching code.
+- **28 Phase 3G tests** in `tests/integration/test_phase3g_scriptwriter_contracts.py`.
+
+Explicitly **not** in Phase 3G:
+
+- **No real LLM calls.** Every non-template provider's `generate()` raises `ProviderNotImplementedError`.
+- **No OpenAI / Anthropic / LangChain / LangGraph / Transformers / Torch / Diffusers added.** Verified twice (Phase 3F + Phase 3G subprocess tests).
+- **No HTTP client (`httpx`, `requests`, `aiohttp`) imported at module load.**
+- **No API keys required.**
+- **No model weights downloaded.**
+- **No SadTalker / Whisper / SDXL / real lip-sync / video / face generation.**
+- **No Docker builds run.**
+
+## Phase 3F scope (still active)
 
 Structural / test-only cleanup. No new providers, no new features.
 
