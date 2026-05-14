@@ -2,14 +2,21 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3J — Publisher contract + final_export artifact.**
+> **Current status: Phase 4A — Job view API endpoints for the future web UI.**
 >
-> - **`FinalExport` / `FinalExportStatusType` / `DisclosureStatusType`** added to `common.schemas`. Carries `passed_qc`, `status` (`published` / `blocked` / `skipped`), `job_id`, back-references to `reel_draft` + `qc_report` (URI + checksum), `export_uri`/`export_type`/`mime_type` describing the future real export, `target_duration_seconds`, `watermark_required`, `c2pa_required`, `disclosure_status` (defaults to `"pending"` while C2PA signing is unimplemented), and free-form `metadata`.
-> - **Publisher handler rewritten** to gate the final export on QC. It refuses (with `StageRejection`) when: `qc_report` artifact is missing, `qc_passed` is False, `reel_draft` artifact is missing, the `export_disclosure_validation` compliance gate didn't run, or `watermark_required` / `c2pa_required` is False. On a clean pass it emits an `ArtifactType.final_export` artifact (mime `application/json`, content SHA-256) carrying the structured `FinalExport` manifest, while keeping the legacy `reel_final.mp4` + `sidecar.json` stub artifact names so a future real-export phase can drop into them.
-> - **No real video encoding.** No `ffmpeg` / `moviepy` / `OpenCV` / `imageio` / `numpy` / `PIL`. No C2PA signing (the manifest records `disclosure_status: "pending"`). No external uploads — a subprocess audit asserts the publisher module imports none of `requests` / `httpx` / `aiohttp` / `urllib3` / `boto3` / `botocore` / `aiobotocore` / `minio` / `google.cloud` / `c2pa`.
-> - **11 Phase 3J tests** cover the happy path (with stub cross-references), three QC-related rejections, two existing-rule rejections (disclosure gate, watermark flag), determinism, an end-to-end DAG promoting the `final_export` row into the `artifacts` table, a tmp-dir scan confirming no files written, and the no-HTTP/-media import audit.
+> - Eight read-only FastAPI endpoints under `/jobs`:
+>   - `GET /jobs` — paginated list of metadata-only `JobSummary` rows (status, brief, voice/face mode, current_stage, progress_percent, artifact_count).
+>   - `GET /jobs/{id}` — existing detail endpoint (Phase 1 contract preserved).
+>   - `GET /jobs/{id}/progress` — aggregate (completed / failed / total / current_stage / progress_percent) + per-stage `StageProgress` array, ordered by the canonical 11-stage DAG.
+>   - `GET /jobs/{id}/timeline` — `StageTimelineEntry` rows with `started_at` / `completed_at` / `duration_ms` / `error_message` / artifact names / metadata summary.
+>   - `GET /jobs/{id}/artifacts` — full `ArtifactResponse` metadata: id, type, uri, mime_type, checksum_sha256, size_bytes, duration_seconds, width/height/sample_rate/channels, local_path, created_at, stage_run_id, metadata_summary. **No binary content** — every value is JSON-native.
+>   - `GET /jobs/{id}/compliance-events` — typed compliance audit rows (event_type, decision, reasons, created_at, metadata_summary).
+>   - `GET /jobs/{id}/qc-report` — the structured QC report from the QC stage's metadata artifact; 404 when the QC stage hasn't run.
+>   - `GET /jobs/{id}/final-export` — the structured `FinalExport` manifest from the publisher's `final_export` artifact; 404 when the publisher hasn't run.
+> - **`CANONICAL_DAG_STAGES`** tuple added to `common.enums` so the API and the agent DAG agree about stage order — verified by a test pinning it against `agents.orchestrator.dag.load_stage_order()`.
+> - **20 Phase 4A tests** cover: list shape + pagination + ordering, detail fields, progress for both a published and a freshly-created job (0% → 100%), timeline order matches the canonical DAG, artifact metadata-only invariant, compliance event ordering, QC report + final-export 404s when the corresponding stage hasn't run, and a top-level "no binary leaks" sweep that JSON-round-trips every endpoint's response.
 >
-> **No real video export. No C2PA signing. No social publishing. No external uploads. No model weights downloaded. No SadTalker / Whisper / SDXL / lip-sync / face generation implemented.**
+> **No frontend yet. No real media generation. No new dependencies. No model weights downloaded. No SadTalker / Whisper / SDXL / real lip-sync / face generation implemented.**
 
 > **Previous milestone: Phase 3E — image input validation + face artifact contract.**
 > Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
@@ -68,7 +75,35 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3J scope — current
+## Phase 4A scope — current
+
+Implemented on top of Phase 3J:
+
+- **`common.enums.CANONICAL_DAG_STAGES`** — `tuple[str, ...]` mirroring `StageName`, in declared order. Backend + agent layer now share one canonical stage list.
+- **`backend/app/schemas/job_views.py`** — typed response models for every Phase 4A endpoint: `JobSummary`, `JobProgress`, `StageProgress`, `StageTimelineEntry`, `ArtifactResponse`, `ComplianceEventApiResponse`, `QCReportResponse`, `FinalExportResponse`.
+- **`backend/app/api/jobs.py`** — extended with eight read-only endpoints (one of which, `GET /jobs/{id}`, is the Phase 1 detail endpoint, preserved). Each endpoint:
+  - returns metadata only (no bytes, no binary blobs);
+  - 404s on unknown job id;
+  - additionally 404s on the QC / final-export endpoints when the corresponding stage hasn't produced an artifact yet.
+- **20 Phase 4A tests** in `tests/integration/test_phase4a_job_api.py`:
+  - canonical stage list matches the DAG runner's pipeline order;
+  - list shape + pagination + ordering;
+  - detail endpoint preserves Phase 1 contract;
+  - progress at 0% (pending job) and 100% (published job), with all 11 stages reflected;
+  - timeline ordered by canonical DAG;
+  - artifacts list carries metadata-only rows with the expected types (`script`, `edit_plan`, `metadata`, `final_export`);
+  - compliance events ordered by gate run + carry `voice_source`/`face_source` summary;
+  - QC report + final-export endpoints return structured payloads or 404 cleanly;
+  - "no binary leaks" sweep JSON-round-trips every endpoint's response.
+
+Explicitly **not** in Phase 4A:
+
+- **No frontend.** This phase is API-only.
+- **No real media generation.** Every endpoint exposes existing metadata; no new processing, no new dependencies.
+- **No authentication / authorization.** The endpoints are public for now; auth lands in a later phase.
+- **No streaming / WebSocket / SSE.** Polling is the assumed pattern.
+
+## Phase 3J scope (still active)
 
 Implemented on top of Phase 3I:
 

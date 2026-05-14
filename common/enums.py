@@ -86,3 +86,10 @@ class StageName(str, enum.Enum):
     qc = "qc"
     export_disclosure_validation = "export_disclosure_validation"
     publisher = "publisher"
+
+
+# Canonical DAG stage list, in declared order. Reused by the API
+# progress endpoint (Phase 4A) so the backend and the agent layer don't
+# disagree about which stage comes next. Mirrors the order of
+# ``StageName`` above; tests pin both lists together.
+CANONICAL_DAG_STAGES: tuple[str, ...] = tuple(s.value for s in StageName)
