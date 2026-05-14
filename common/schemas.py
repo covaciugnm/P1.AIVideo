@@ -223,6 +223,91 @@ class ImageRef(BaseModel):
         return self
 
 
+SegmentType = Literal["hook", "body", "cta"]
+
+
+class EditSegment(BaseModel):
+    """One reel segment in an ``EditPlan`` — purely timing + text metadata.
+
+    Timings are stored in seconds (float) but compared in milliseconds
+    inside the validator to keep the contract robust against float
+    rounding when downstream code derives durations from start/end.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    segment_type: SegmentType
+    start_seconds: float
+    end_seconds: float
+    duration_seconds: float
+    text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_timings(self) -> "EditSegment":
+        if self.start_seconds < 0:
+            raise ValueError(f"start_seconds must be >= 0; got {self.start_seconds}")
+        if self.end_seconds < self.start_seconds:
+            raise ValueError(
+                f"end_seconds ({self.end_seconds}) < start_seconds ({self.start_seconds})"
+            )
+        if self.duration_seconds < 0:
+            raise ValueError(
+                f"duration_seconds must be >= 0; got {self.duration_seconds}"
+            )
+        computed_ms = round((self.end_seconds - self.start_seconds) * 1000)
+        declared_ms = round(self.duration_seconds * 1000)
+        if computed_ms != declared_ms:
+            raise ValueError(
+                f"segment {self.segment_type}: end-start ({computed_ms} ms) "
+                f"!= duration ({declared_ms} ms)"
+            )
+        return self
+
+
+class EditPlan(BaseModel):
+    """Deterministic timing plan produced by the editor stage.
+
+    Phase 3H ships this as the editor's metadata-only output: there is
+    no actual video composited yet. Downstream stages (qc, publisher)
+    can read the plan to validate timing, subtitles, or to drive future
+    real compositing.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_duration_seconds: float
+    source_script_uri: str
+    source_script_checksum: str | None = None
+    segments: list[EditSegment]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_total_duration(self) -> "EditPlan":
+        target_ms = round(self.target_duration_seconds * 1000)
+        total_ms = sum(round(seg.duration_seconds * 1000) for seg in self.segments)
+        if total_ms != target_ms:
+            raise ValueError(
+                f"edit plan segments sum to {total_ms} ms; target is {target_ms} ms"
+            )
+        # And segments must tile from 0 to target without gaps/overlaps.
+        cursor_ms = 0
+        for seg in self.segments:
+            start_ms = round(seg.start_seconds * 1000)
+            end_ms = round(seg.end_seconds * 1000)
+            if start_ms != cursor_ms:
+                raise ValueError(
+                    f"segment {seg.segment_type}: gap/overlap "
+                    f"(expected start {cursor_ms} ms, got {start_ms} ms)"
+                )
+            cursor_ms = end_ms
+        if cursor_ms != target_ms:
+            raise ValueError(
+                f"last segment ends at {cursor_ms} ms; target is {target_ms} ms"
+            )
+        return self
+
+
 class ComplianceTokenClaims(BaseModel):
     """Claims carried inside a `compliance_token`. See pre_lipsync_auth."""
 

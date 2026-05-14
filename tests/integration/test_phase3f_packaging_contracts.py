@@ -331,7 +331,17 @@ def test_artifact_type_enum_has_expected_values():
     from common.enums import ArtifactType
 
     actual = sorted(member.value for member in ArtifactType)
-    expected = sorted(["audio", "image", "script", "video", "metadata", "final_export"])
+    expected = sorted(
+        [
+            "audio",
+            "image",
+            "script",
+            "edit_plan",  # added in Phase 3H
+            "video",
+            "metadata",
+            "final_export",
+        ]
+    )
     assert actual == expected
 
 

@@ -2,17 +2,15 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3G — Scriptwriter provider contract + extensible LLM backend registry.**
+> **Current status: Phase 3H — Editor timing contract + edit_plan artifact.**
 >
-> - **`agents/scriptwriter/core/`** ships the `ScriptProvider` ABC and a structured `ScriptRequest` / `ScriptResult` contract — never a raw string.
-> - **Registry** (`agents/scriptwriter/core/registry.py`) resolves `SCRIPTWRITER_BACKEND` to one of: `template`, `mock`, `ollama`, `vllm`, `openai_compatible`, `openai`, `anthropic`, `local_http`.
-> - **Default backend is `template`** — a deterministic, dependency-free provider that produces structured scripts. It is the only Phase 3G provider that actually runs; every other backend is a contract-only stub whose `healthcheck()` reports `not_configured` / `not_implemented` and whose `generate()` raises `ProviderNotImplementedError`.
-> - **Preferred local model**: `qwen3.6`. **Fallback**: `qwen3:8b`. **`qwen3.6:7b` is not hardcoded anywhere** — verified by a test that greps the source tree.
-> - **`configs/llm/providers.example.yaml`** lets operators add future models / endpoints without code changes; the registry+handler will pick them up once a real backend lands.
-> - **Script artifact** now registered as `ArtifactType.script` with a content checksum so it appears in the `artifacts` table alongside audio and image artifacts.
-> - **28 Phase 3G tests** cover registry shape, template determinism, stub refusal, `Settings` defaults, YAML extensibility, end-to-end DAG promotion, and two subprocess-isolated import audits confirming no `openai` / `anthropic` / `langchain` / `langgraph` / `transformers` / `torch` / `httpx` / `requests` / `aiohttp` is pulled in.
+> - **`ArtifactType.edit_plan`** added to the canonical enum (now 7 values).
+> - **`EditPlan` / `EditSegment` schemas** in `common.schemas` — structured timing metadata with validators that enforce per-segment `start + duration == end` (in ms, float-safe) and that segments tile exactly from 0 to `target_duration_seconds` without gaps or overlaps.
+> - **Editor handler** reads the structured script from the Phase 3G scriptwriter output, splits the target duration **20% / 65% / 15%** across hook / body / cta (computed in milliseconds for exact summing), and emits an `ArtifactType.edit_plan` artifact carrying the plan + a SHA-256 of the serialized plan + a reference to the source script. The existing `reel_draft.mp4` stub stays in the output so the QC stage keeps working.
+> - **No video compositing.** No `ffmpeg`, no `moviepy`, no `cv2`, no `imageio`. The plan's URI is still an `s3://` stub; a subprocess audit confirms no media library is pulled in by importing the editor handler.
+> - **14 Phase 3H tests** cover the schema validators, the handler's happy path + rejection paths, determinism, non-integer target durations (e.g. 33s) tiling exactly, and an end-to-end DAG run promoting the `edit_plan` row into the `artifacts` table.
 >
-> **No real LLM calls happen. No OpenAI / Anthropic / vLLM / Ollama dependency added. No API keys required. No model weights downloaded. No SadTalker / Whisper / SDXL / real lip-sync / video generation implemented.**
+> **No real video editing. No ffmpeg. No moviepy / OpenCV / imageio / numpy. No model weights downloaded. No SadTalker / Whisper / SDXL / real lip-sync / face generation implemented.**
 
 > **Previous milestone: Phase 3E — image input validation + face artifact contract.**
 > Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
@@ -71,7 +69,34 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3G scope — current
+## Phase 3H scope — current
+
+Implemented on top of Phase 3G:
+
+- **`ArtifactType.edit_plan`** added to `common.enums` (7 values now).
+- **`EditSegment`** and **`EditPlan`** Pydantic schemas in `common.schemas`. Strict validators:
+  - per-segment `end - start == duration` (compared in ms, so float ops don't break it);
+  - per-plan: sum of segment durations equals `target_duration_seconds`, and segments tile from 0 to the target without gaps or overlaps.
+- **Editor handler rewritten** (`agents/editor/handler.py`):
+  - Reads the structured script from the scriptwriter stage output (`state.stage_outputs["scriptwriter"].artifacts["script"].extra["structured_script"]`).
+  - Allocates `target_duration_seconds` as 20% / 65% / 15% across hook / body / cta. Allocation is done in **milliseconds** so segments sum exactly to the target for any reasonable target duration (30s, 33s, 45s, etc.).
+  - Builds an `EditPlan` with three segments, serializes it to JSON, computes a content SHA-256, and emits an `ArtifactType.edit_plan` artifact whose `extra["edit_plan"]` carries the full plan, the source script URI + checksum, and a `no_video_generated: true` flag.
+  - Keeps the existing `reel_draft.mp4` stub in the output (downstream QC still checks for it), now cross-referencing the edit plan.
+- **14 Phase 3H tests** in `tests/integration/test_phase3h_editor_plan.py`:
+  - 5 schema-level tests covering mismatched durations, negative starts, end-before-start, total mismatch, gap-between-segments.
+  - 8 editor handler tests: happy path artifact shape, segment percentages exact, reel_draft stub preserved, deterministic same-input output, non-integer target (33s) tiles exactly, missing scriptwriter rejects, missing `structured_script` rejects, no files written to disk.
+  - 1 end-to-end DAG test promoting the `edit_plan` row into the `artifacts` table with mime `application/json`, content checksum, and source-script back-references.
+  - 1 subprocess-isolated check that importing the editor handler doesn't pull in `ffmpeg` / `moviepy` / `cv2` / `imageio` / `numpy` / `PIL` / `torch` / `diffusers` / `transformers`.
+
+Explicitly **not** in Phase 3H:
+
+- **No real video editing.** Editor remains metadata-only; the URI on the `edit_plan` artifact is an `s3://` stub.
+- **No `ffmpeg` / `moviepy` / `OpenCV` / `imageio` / `numpy` / `PIL` added.**
+- **No SadTalker / Whisper / SDXL / real lip-sync / face generation.**
+- **No model weights downloaded.**
+- **No Docker builds run.**
+
+## Phase 3G scope (still active)
 
 Implemented on top of Phase 3F:
 

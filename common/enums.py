@@ -44,6 +44,7 @@ class ArtifactType(str, enum.Enum):
     audio = "audio"
     image = "image"
     script = "script"
+    edit_plan = "edit_plan"
     video = "video"
     metadata = "metadata"
     final_export = "final_export"
