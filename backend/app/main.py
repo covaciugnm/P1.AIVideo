@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import healthz, jobs, system, uploads
+from app.api import artifacts, healthz, jobs, providers, system, tts, uploads
 from app.core.config import settings
 from app.core.db import init_db
 
@@ -49,6 +49,10 @@ def create_app() -> FastAPI:
     # Phase 4B: /api/v1/stages, /api/v1/artifact-types,
     # /api/v1/config/ui-options, /api/v1/system/status.
     app.include_router(system.router)
+    # Phase 4F: providers metadata, TTS preview, artifact content serving.
+    app.include_router(providers.router)
+    app.include_router(tts.router)
+    app.include_router(artifacts.router)
     return app
 
 

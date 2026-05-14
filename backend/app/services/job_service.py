@@ -23,6 +23,12 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         if payload.image_ref is not None
         else None
     )
+    provider_selection_dict = (
+        payload.provider_selection.to_dict()
+        if payload.provider_selection is not None
+        and any(payload.provider_selection.to_dict().values())
+        else None
+    )
     job = Job(
         brief=payload.brief,
         target_duration_seconds=payload.target_duration_seconds,
@@ -36,6 +42,7 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         audio_ref=audio_ref_dict,
         face_mode=payload.face_mode,
         image_ref=image_ref_dict,
+        provider_selection=provider_selection_dict,
         status=JobStatus.pending_compliance,
     )
     session.add(job)
@@ -84,6 +91,7 @@ _PRE_COMPLIANCE_FIELDS = frozenset(
         "tts_backend",
         "watermark_required",
         "c2pa_required",
+        "provider_selection",
     }
 )
 

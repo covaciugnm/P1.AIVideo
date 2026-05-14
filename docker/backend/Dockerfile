@@ -27,7 +27,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
+        ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+# ``ffmpeg`` pulls in ``ffprobe`` as part of the same Debian package and
+# is bounded to audio decode/encode by the Phase 4F conversion service
+# (see app/services/audio_conversion.py). NO real video pipeline yet.
 
 # Order matters: ``aivideo-common`` is a path dependency of
 # ``aivideo-backend``. Install it first so pip resolves the local source

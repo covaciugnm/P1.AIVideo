@@ -232,10 +232,12 @@ async def update_job(
             status_code=400, detail="no editable fields provided"
         )
     await _load_job_or_404(session, job_id)
+    patch = payload.model_dump(exclude_none=True)
+    if "provider_selection" in patch and payload.provider_selection is not None:
+        # Persist as a plain dict, not a nested model.
+        patch["provider_selection"] = payload.provider_selection.to_dict() or None
     try:
-        updated = await job_service.update_job(
-            session, job_id, payload.model_dump(exclude_none=True)
-        )
+        updated = await job_service.update_job(session, job_id, patch)
     except job_service.JobEditError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if updated is None:

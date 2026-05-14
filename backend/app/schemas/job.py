@@ -11,6 +11,7 @@ from common.schemas import AudioRef, FaceMode, ImageRef, VoiceMode
 
 from app.core.config import settings
 from app.models.job import JobStatus
+from app.schemas.providers import ProviderSelection
 
 
 class JobCreateRequest(BaseModel):
@@ -42,6 +43,9 @@ class JobCreateRequest(BaseModel):
     # explicitly, image_ref is required and validated.
     face_mode: FaceMode | None = None
     image_ref: ImageRef | None = None
+
+    # Phase 4F: optional per-job provider selection.
+    provider_selection: ProviderSelection | None = None
 
     @field_validator("synthetic_person_confirmed")
     @classmethod
@@ -127,6 +131,8 @@ class JobResponse(BaseModel):
     # Phase 3E face metadata.
     face_mode: str | None = None
     image_ref: dict[str, Any] | None = None
+    # Phase 4F per-job provider selection.
+    provider_selection: dict[str, Any] | None = None
     rejection_reason: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -162,6 +168,7 @@ class JobUpdateRequest(BaseModel):
     tts_backend: str | None = Field(default=None, max_length=32)
     watermark_required: bool | None = None
     c2pa_required: bool | None = None
+    provider_selection: ProviderSelection | None = None
 
     @field_validator("target_duration_seconds")
     @classmethod

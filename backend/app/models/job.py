@@ -45,6 +45,10 @@ class Job(Base):
     face_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     image_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Phase 4F: per-job provider selection (LLM/TTS/video). Plain JSON dict
+    # with a whitelisted shape (see app.schemas.providers.ProviderSelection).
+    # Nullable so every pre-4F test keeps passing.
+    provider_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False

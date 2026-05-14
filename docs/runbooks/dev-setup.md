@@ -98,6 +98,21 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 4F: ffmpeg for audio conversion
+
+Audio uploads now accept WAV / MP3 / M4A / AAC / FLAC / OGG. Non-WAV input
+is transcoded to PCM WAV via ffmpeg. The light Docker image installs
+ffmpeg already. For non-Docker dev install it via your package manager:
+
+```bash
+sudo apt install ffmpeg            # Debian / Ubuntu
+brew install ffmpeg                # macOS
+```
+
+Without ffmpeg, non-WAV uploads still succeed but are flagged
+`needs_conversion=true` and downstream stages refuse them. See
+[`media-intake-and-providers.md`](media-intake-and-providers.md).
+
 ### Phase 4E note: CORS allow-list
 
 If the browser shows "Failed to fetch" even with the correct Backend API Base

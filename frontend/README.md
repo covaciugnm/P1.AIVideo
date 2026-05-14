@@ -72,6 +72,14 @@ make frontend-check     # runs lint + build (also invoked by phase4b-test)
 | `/jobs/new` | Create-job form. Loads `GET /api/v1/config/ui-options` once; supports `tts` (inline script_text) and `provided_audio` (upload + reference) flows; optional `provided_image` face mode. Submits via `POST /api/v1/jobs/from-inputs`. |
 | `/jobs/[jobId]` | Live job detail. Polls 7 endpoints in parallel every 3 s and renders progress, stage timeline, artifacts, compliance events, QC report, and final export. |
 
+## Phase 4F additions
+
+- **Settings → Providers** section: live catalog from `GET /api/v1/providers`, per-category default selector, **Test** button on TTS rows that calls `/api/v1/tts/generate` and surfaces the 503 inline.
+- **Create Job → Providers** dropdowns prefilled from Settings defaults; selecting a `not_configured` / `not_implemented` provider shows an inline warning.
+- **Create Job → Voice → Script** gains a **Generate audio** button (currently a clean `tts_provider_not_configured` 503 in light mode).
+- Uploaded + future-generated audio play via HTML5 `<audio controls>` pointed at `GET /api/v1/artifacts/{id}/content`. Uploaded portraits get an inline `<img>` preview.
+- Audio file input accepts `.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`; non-WAV is transcoded to PCM WAV server-side when ffmpeg is on PATH (it is in the light Docker image).
+
 ## Routes (Phase 4E)
 
 | Path | Purpose |

@@ -21,9 +21,13 @@ import type {
   JobProgress,
   JobResponse,
   JobSummary,
+  ProviderInfo,
+  ProvidersResponse,
   QCReportResponse,
   StageTimelineEntry,
   SystemStatus,
+  TTSGenerateError,
+  TTSGenerateRequest,
   UIOptions,
   UploadAudioResponse,
   UploadImageResponse,
@@ -366,4 +370,81 @@ export function uploadImage(
     body: form,
     signal,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4F: providers + TTS preview + artifact content URLs.
+// ---------------------------------------------------------------------------
+
+export function getProviders(signal?: AbortSignal): Promise<ProvidersResponse> {
+  return request<ProvidersResponse>("/api/v1/providers", { signal });
+}
+
+export function getProvidersForCategory(
+  category: "llm" | "tts" | "video_generator",
+  signal?: AbortSignal,
+): Promise<ProviderInfo[]> {
+  const path =
+    category === "video_generator"
+      ? "/api/v1/providers/video-generators"
+      : `/api/v1/providers/${category}`;
+  return request<ProviderInfo[]>(path, { signal });
+}
+
+export interface TTSGenerateResult {
+  readonly ok: false;
+  readonly error: TTSGenerateError;
+  readonly httpStatus: number;
+}
+
+export async function generateTts(
+  body: TTSGenerateRequest,
+  signal?: AbortSignal,
+): Promise<TTSGenerateResult> {
+  try {
+    await request<unknown>("/api/v1/tts/generate", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(body),
+      signal,
+    });
+    // No real provider is implemented in Phase 4F — every call should
+    // result in the 503 branch below. Reaching here means a future phase
+    // wired generation and the caller should be updated to handle it.
+    return {
+      ok: false,
+      httpStatus: 200,
+      error: {
+        code: "tts_provider_not_implemented",
+        message: "TTS generation succeeded but the result schema is not yet wired.",
+        provider_id: body.tts_provider_id,
+      },
+    };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      // The 503 body is JSON-stringified by the request wrapper if not a
+      // plain string; try to parse it back.
+      let parsed: TTSGenerateError | null = null;
+      try {
+        parsed = JSON.parse(err.detail) as TTSGenerateError;
+      } catch {
+        parsed = null;
+      }
+      return {
+        ok: false,
+        httpStatus: err.status,
+        error:
+          parsed ?? {
+            code: "tts_provider_not_configured",
+            message: err.detail,
+            provider_id: body.tts_provider_id,
+          },
+      };
+    }
+    throw err;
+  }
+}
+
+export function artifactContentUrl(artifactId: string): string {
+  return `${getActiveApiBaseUrl()}/api/v1/artifacts/${artifactId}/content`;
 }

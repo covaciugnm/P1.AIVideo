@@ -53,6 +53,7 @@ export interface JobResponse {
   readonly audio_ref: Record<string, unknown> | null;
   readonly face_mode: string | null;
   readonly image_ref: Record<string, unknown> | null;
+  readonly provider_selection: ProviderSelection | null;
   readonly rejection_reason: string | null;
   readonly created_at: string;
   readonly updated_at: string;
@@ -276,6 +277,61 @@ export interface UploadImageResponse {
   readonly metadata_summary: Record<string, unknown>;
 }
 
+// Phase 4F providers + TTS preview.
+
+export type ProviderCategory = "llm" | "tts" | "video_generator";
+
+export type ProviderStatus =
+  | "available"
+  | "configured"
+  | "not_configured"
+  | "not_implemented"
+  | "disabled";
+
+export interface ProviderInfo {
+  readonly category: ProviderCategory;
+  readonly provider_id: string;
+  readonly label: string;
+  readonly backend_type: string;
+  readonly default_model: string | null;
+  readonly is_local: boolean;
+  readonly status: ProviderStatus;
+  readonly notes: string;
+}
+
+export interface ProvidersResponse {
+  readonly llm: readonly ProviderInfo[];
+  readonly tts: readonly ProviderInfo[];
+  readonly video_generator: readonly ProviderInfo[];
+}
+
+export interface ProviderSelection {
+  readonly script_provider_id?: string | null;
+  readonly script_model?: string | null;
+  readonly tts_provider_id?: string | null;
+  readonly tts_model?: string | null;
+  readonly video_provider_id?: string | null;
+  readonly video_model?: string | null;
+}
+
+export interface TTSGenerateRequest {
+  readonly script_text: string;
+  readonly tts_provider_id: string;
+  readonly tts_model?: string | null;
+  readonly language?: string;
+  readonly output_format?: "wav" | "mp3";
+  readonly target_duration_seconds?: number | null;
+}
+
+export interface TTSGenerateError {
+  readonly code:
+    | "tts_provider_not_configured"
+    | "tts_provider_disabled"
+    | "tts_provider_not_implemented";
+  readonly message: string;
+  readonly provider_id: string;
+}
+
 export interface CreateJobBody {
   readonly brief: string;
   readonly synthetic_person_confirmed: boolean;
@@ -289,6 +345,7 @@ export interface CreateJobBody {
   readonly audio_ref?: Record<string, unknown> | null;
   readonly face_mode?: FaceMode | null;
   readonly image_ref?: Record<string, unknown> | null;
+  readonly provider_selection?: ProviderSelection | null;
 }
 
 export interface CreateJobFromInputsBody {
@@ -308,4 +365,5 @@ export interface CreateJobFromInputsBody {
   readonly image_artifact_id?: string | null;
   readonly image_consent_confirmed?: boolean;
   readonly image_synthetic_person_confirmed?: boolean;
+  readonly provider_selection?: ProviderSelection | null;
 }

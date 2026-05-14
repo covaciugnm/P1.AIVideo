@@ -27,6 +27,11 @@ export interface Settings {
   readonly defaultTargetDurationSeconds: number;
   readonly defaultVoiceMode: "tts" | "provided_audio";
   readonly defaultFaceModeEnabled: boolean;
+  // Phase 4F: per-category default providers used to prefill the
+  // create-job + edit-job forms. ``null`` means "use backend default".
+  readonly defaultLlmProvider: string | null;
+  readonly defaultTtsProvider: string | null;
+  readonly defaultVideoProvider: string | null;
 }
 
 const DEFAULT_API_BASE_URL =
@@ -55,6 +60,9 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultTargetDurationSeconds: 30,
   defaultVoiceMode: "tts",
   defaultFaceModeEnabled: false,
+  defaultLlmProvider: null,
+  defaultTtsProvider: null,
+  defaultVideoProvider: null,
 };
 
 function clampPort(n: unknown, fallback: number): number {
@@ -188,6 +196,18 @@ function mergeSettings(partial: Partial<Settings>): Settings {
       typeof partial.defaultFaceModeEnabled === "boolean"
         ? partial.defaultFaceModeEnabled
         : DEFAULT_SETTINGS.defaultFaceModeEnabled,
+    defaultLlmProvider:
+      typeof partial.defaultLlmProvider === "string" && partial.defaultLlmProvider
+        ? partial.defaultLlmProvider
+        : DEFAULT_SETTINGS.defaultLlmProvider,
+    defaultTtsProvider:
+      typeof partial.defaultTtsProvider === "string" && partial.defaultTtsProvider
+        ? partial.defaultTtsProvider
+        : DEFAULT_SETTINGS.defaultTtsProvider,
+    defaultVideoProvider:
+      typeof partial.defaultVideoProvider === "string" && partial.defaultVideoProvider
+        ? partial.defaultVideoProvider
+        : DEFAULT_SETTINGS.defaultVideoProvider,
   };
 }
 

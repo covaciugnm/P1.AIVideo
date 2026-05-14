@@ -2,7 +2,36 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4E — Full operator UI + browser CORS fix.**
+> **Current status: Phase 4F — Provider settings, broader media intake, TTS preview, audio playback.**
+>
+> Adds the operator-facing controls the pipeline needs *before* any real generation phase lands: a provider catalog with status badges, per-job provider selection dropdowns, a TTS "Generate audio" hook (which intentionally stays a clean `503 tts_provider_not_configured` in light mode), a safe artifact content serving endpoint that powers HTML5 audio + image preview, and a much wider audio upload allow-list (WAV / MP3 / M4A / AAC / FLAC / OGG) with optional ffmpeg-backed conversion to PCM WAV.
+>
+> **Backend**
+> - `Job.provider_selection` — nullable JSON column. Accepted by `JobCreateRequest`, `JobUpdateRequest`, `JobFromInputsRequest`. Whitelisted six-key shape (`script_provider_id`, `script_model`, `tts_provider_id`, `tts_model`, `video_provider_id`, `video_model`); `extra="forbid"` rejects unknown fields with 422.
+> - **`GET /api/v1/providers`** (+ `/llm`, `/tts`, `/video-generators`) — metadata-only catalog. LLM list pulled live from `agents.scriptwriter.core.registry.known_backends()`; TTS reports `piper` with `not_configured` until `piper-tts` is installed and `PIPER_MODELS_ROOT` is set; video lists `sadtalker` / `musetalk` / `wav2lip` as `not_implemented`. **No secrets, no API keys, no endpoint URLs returned** — verified by `test_providers_response_carries_no_secret_keys`.
+> - **`POST /api/v1/tts/generate`** — accepts `script_text` + `tts_provider_id` + optional `tts_model`/`language`/`output_format`. Always returns `503 { code: "tts_provider_not_configured", message, provider_id }` in light mode. No fake audio is produced; a real provider must be wired into the voice stage.
+> - **`GET /api/v1/artifacts/{id}/content`** — streams the file behind an artifact row. Strict guards: must exist, must be `audio`/`image`/`script`, `local_path` must resolve, resolved path must live under one of the configured allowed roots (uploads + provided-asset roots), `..` segments rejected. Sends `FileResponse` with the recorded `mime_type` and `Content-Disposition: inline`.
+> - **Audio upload** now accepts `.wav` (canonical), `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`. Non-WAV input is transcoded to mono PCM WAV at 22050 Hz via ffmpeg when available; the converted WAV becomes the canonical artifact and the original is kept on disk + recorded in `metadata_json.original_local_path`. Without ffmpeg, non-WAV is stored as-is with `needs_conversion=true` (downstream stages will refuse it).
+> - **`ffmpeg`** is installed in `docker/backend/Dockerfile` via Debian apt (pulls `ffprobe` too). Bounded to audio decode/mux by `app/services/audio_conversion.py`. No video pipeline.
+>
+> **Frontend**
+> - **Settings → Providers** — new section listing all known LLM/TTS/video providers with status badges, per-category default-provider dropdown stored in `localStorage`, and a **Test** button for TTS providers (calls `/tts/generate` and surfaces the 503 inline).
+> - **Create Job → Providers** — three dropdowns prefilled from Settings defaults. A red-on-yellow warning surfaces when a not-`available` / not-`configured` provider is selected.
+> - **Create Job → Voice → Script** — **Generate audio** button next to the textarea. Triggers `/tts/generate`, surfaces "Provider 'piper' is not configured. Install the runtime + place voice assets, then enable in Settings." inline + as a `frontend warn`-level log entry.
+> - **AudioPreview** — HTML5 `<audio controls>` rendered immediately after a successful upload or generation. Points at `GET /api/v1/artifacts/{id}/content`. Browser plays MP3 / WAV / OGG / etc. natively.
+> - **ImagePreview** — HTML5 `<img>` with the artifact content URL + a `{width}×{height} · {mime}` caption.
+> - **Wider audio accept** — `UIOptions.upload_limits.accepted_audio_extensions` now lists `.wav`, `.mp3`, `.m4a`, `.aac`, `.flac`, `.ogg`. The `UploadCard` in the create-job + uploads pages picks up the new list automatically.
+> - **Min-quality hints** — inline below each upload control. Audio: target ≥ 22050 Hz, mono/stereo, ≥ 1 s, synthetic or owned. Image: ≥ 512×512 recommended, 1024×1024+ preferred, front-facing, synthetic only.
+>
+> **Tests**
+> - **+14 Phase 4F backend tests** (`tests/integration/test_phase4f_providers_tts_artifacts.py`): providers shape + secret-leak guard, TTS 503 + empty-script 422, artifact content 200 + 404 + 415 + 403 path-outside-roots, MP3 round-trip with ffmpeg (auto-skipped if ffmpeg missing), provider_selection round-trip on create + update, unknown-field 422.
+> - **One Phase 4A-2 test relaxed** — MP3 is now an accepted extension; the previous "non-WAV → 400 extension" test was rewritten to assert the policy is "extension outside the Phase 4F allow-list" (uses `.txt` instead).
+>
+> **Verification**: `npm run lint` (zero-warnings) ✓; `npm run build` 8 routes ✓; backend `make test` → **242 passed / 1 skipped** (216 → 228 → 242 = +14 Phase 4F); strict `-W error` pytest sweep clean. Dockerized smoke confirmed: ffmpeg in container (`ffmpeg 7.1.4`); `/api/v1/providers` returns 8 LLM + 1 TTS + 3 video; `/tts/generate` returns 503 with correct CORS headers; MP3 upload → converted WAV (`pcm_s16le`, 22050 Hz, mono); `/api/v1/artifacts/:id/content` serves the converted WAV (22128 bytes, valid RIFF). New runbook: `docs/runbooks/media-intake-and-providers.md`.
+>
+> **NOT in Phase 4F**: real TTS synthesis (always 503), real video generation, real lip-sync, browser-driven provider installation ("Add provider package" dialog is Phase 4G), WebSocket/SSE, log shipping, model auto-downloads, GPU work.
+
+> **Previous milestone: Phase 4E — Full operator UI + browser CORS fix.**
 >
 > Closes the loop on the Phase 4D regression where the browser still showed `Failed to fetch` even with Settings → Backend API Base URL set. Adds full operator routes (Jobs list with edit/delete, dedicated Uploads page, dedicated Settings page) and exposes the Docker light-runtime ports as editable operator settings with a copy-ready compose-up command.
 >

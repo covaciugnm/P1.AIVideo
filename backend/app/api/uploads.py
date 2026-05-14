@@ -46,7 +46,7 @@ from app.schemas.uploads import (
     UploadTextRequest,
     UploadTextResponse,
 )
-from app.services import artifact_service, job_service, upload_service
+from app.services import artifact_service, audio_conversion, job_service, upload_service
 
 
 uploads_router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
@@ -60,6 +60,33 @@ jobs_v1_router = APIRouter(prefix="/api/v1/jobs", tags=["jobs-v1"])
 
 _WAV_EXTENSIONS = {".wav"}
 _WAV_MIME_TYPES = {"audio/wav", "audio/x-wav", "audio/wave"}
+
+# Phase 4F: broader accept list. Non-WAV inputs are transcoded to a
+# normalized PCM WAV by ffmpeg when available; otherwise stored as-is
+# with a ``needs_conversion`` flag.
+_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"}
+_AUDIO_MIME_TYPES = {
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/aac",
+    "audio/flac",
+    "audio/x-flac",
+    "audio/ogg",
+    "audio/vorbis",
+}
+_AUDIO_MIME_BY_EXT = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+}
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 _IMAGE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
@@ -207,9 +234,10 @@ async def upload_audio(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db_session),
 ) -> UploadAudioResponse:
-    suffix = _safe_extension(file.filename, _WAV_EXTENSIONS)
-    declared_mime = (file.content_type or "").lower() or "audio/wav"
-    if declared_mime not in _WAV_MIME_TYPES:
+    suffix = _safe_extension(file.filename, _AUDIO_EXTENSIONS)
+    expected_mime = _AUDIO_MIME_BY_EXT[suffix]
+    declared_mime = (file.content_type or "").lower() or expected_mime
+    if declared_mime not in _AUDIO_MIME_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"unsupported audio mime_type {declared_mime!r}",
@@ -220,32 +248,100 @@ async def upload_audio(
     max_size = _max_audio_size()
     bytes_written = await upload_service.save_streaming_upload(file, dest, max_size=max_size)
 
-    try:
-        meta = validate_and_inspect_wav(
-            dest, mime_type="audio/wav", max_size_bytes=max_size
-        )
-    except ValueError as exc:
-        # Bad WAV — scrub the saved file before reporting.
-        dest.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    is_wav = suffix == ".wav"
+    converted_path: Path | None = None
+
+    if is_wav:
+        try:
+            meta = validate_and_inspect_wav(
+                dest, mime_type="audio/wav", max_size_bytes=max_size
+            )
+        except ValueError as exc:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        served_path = dest
+        served_mime = "audio/wav"
+        needs_conversion = False
+        ffmpeg_available = audio_conversion.has_ffmpeg()
+    else:
+        # Non-WAV: convert to PCM WAV alongside the original if ffmpeg is
+        # available. The frontend will reference the converted artifact as
+        # the canonical pipeline audio; the original is kept for audit.
+        ffmpeg_available = audio_conversion.has_ffmpeg()
+        if not ffmpeg_available:
+            # Compute basic metadata from the original; no transcode possible.
+            original_size = dest.stat().st_size
+            served_path = dest
+            served_mime = expected_mime
+            needs_conversion = True
+            # We can't safely invoke the WAV validator on a non-WAV stream;
+            # synthesise a minimal AudioMetadata-like view.
+            import hashlib
+
+            h = hashlib.sha256()
+            with dest.open("rb") as f:
+                for chunk in iter(lambda: f.read(64 * 1024), b""):
+                    h.update(chunk)
+
+            class _Meta:
+                sample_rate = 0
+                channels = 0
+                duration_seconds = 0.0
+                checksum_sha256 = h.hexdigest()
+                size_bytes = original_size
+
+            meta = _Meta()
+        else:
+            converted_path = dest.with_suffix(".converted.wav")
+            try:
+                conv = audio_conversion.convert_to_wav(dest, converted_path)
+            except audio_conversion.AudioConversionError as exc:
+                dest.unlink(missing_ok=True)
+                converted_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"audio_conversion_failed: {exc}",
+                ) from exc
+            # Validate the converted WAV with the existing Phase 3D
+            # validator so downstream invariants (header sanity, size cap)
+            # still hold.
+            try:
+                meta = validate_and_inspect_wav(
+                    converted_path,
+                    mime_type="audio/wav",
+                    max_size_bytes=max_size,
+                )
+            except ValueError as exc:
+                dest.unlink(missing_ok=True)
+                converted_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            served_path = converted_path
+            served_mime = "audio/wav"
+            needs_conversion = False
 
     metadata_json: dict[str, Any] = {
-        "phase": "phase4a2_upload_audio",
+        "phase": "phase4f_upload_audio",
         "source": "upload_audio",
-        "mime_type": "audio/wav",
+        "mime_type": served_mime,
         "declared_mime_type": declared_mime,
+        "original_extension": suffix,
+        "original_size_bytes": bytes_written,
+        "needs_conversion": needs_conversion,
+        "ffmpeg_available": ffmpeg_available,
         "sample_rate": meta.sample_rate,
         "channels": meta.channels,
         "duration_seconds": meta.duration_seconds,
-        "bytes_written": bytes_written,
     }
+    if converted_path is not None:
+        metadata_json["original_local_path"] = str(dest)
+        metadata_json["converted_to_wav"] = True
 
     artifact = await artifact_service.register_artifact(
         session,
         artifact_type=ArtifactType.audio.value,
-        uri=dest.as_uri(),
-        local_path=str(dest),
-        mime_type="audio/wav",
+        uri=served_path.as_uri(),
+        local_path=str(served_path),
+        mime_type=served_mime,
         checksum_sha256=meta.checksum_sha256,
         size_bytes=meta.size_bytes,
         duration_seconds=meta.duration_seconds,
@@ -256,8 +352,8 @@ async def upload_audio(
 
     audio_ref = {
         "type": "local_path",
-        "path": str(dest),
-        "mime_type": "audio/wav",
+        "path": str(served_path),
+        "mime_type": served_mime,
         "duration_seconds": meta.duration_seconds,
         "checksum": meta.checksum_sha256,
         "artifact_id": str(artifact.id),
@@ -266,8 +362,8 @@ async def upload_audio(
         artifact_id=artifact.id,
         artifact_type=artifact.artifact_type,
         uri=artifact.uri,
-        local_path=str(dest),
-        mime_type="audio/wav",
+        local_path=str(served_path),
+        mime_type=served_mime,
         checksum_sha256=meta.checksum_sha256,
         size_bytes=meta.size_bytes,
         duration_seconds=meta.duration_seconds,

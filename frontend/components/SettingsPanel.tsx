@@ -5,6 +5,7 @@ import { useState } from "react";
 import { getSystemStatus } from "@/lib/api";
 import * as logBus from "@/lib/log-bus";
 
+import { ProvidersSection } from "./ProvidersSection";
 import { useSettings } from "./SettingsContext";
 import styles from "./SettingsPanel.module.css";
 
@@ -399,6 +400,21 @@ export function SettingsPanel() {
           <span>Attach provided image by default</span>
         </label>
       </fieldset>
+
+      <ProvidersSection
+        defaults={{
+          llm: settings.defaultLlmProvider,
+          tts: settings.defaultTtsProvider,
+          video: settings.defaultVideoProvider,
+        }}
+        onDefaultsChange={(patch) => {
+          const next: Record<string, string | null> = {};
+          if (patch.llm !== undefined) next.defaultLlmProvider = patch.llm;
+          if (patch.tts !== undefined) next.defaultTtsProvider = patch.tts;
+          if (patch.video !== undefined) next.defaultVideoProvider = patch.video;
+          update(next);
+        }}
+      />
 
       <div className={styles.actions}>
         <button

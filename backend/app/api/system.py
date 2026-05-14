@@ -188,9 +188,18 @@ async def get_ui_options() -> UIOptionsResponse:
         audio_max_bytes=settings.audio_max_file_size_bytes,
         image_max_bytes=settings.image_max_file_size_bytes,
         script_text_max_chars=settings.script_text_max_chars,
-        accepted_audio_mime_types=["audio/wav", "audio/x-wav", "audio/wave"],
+        accepted_audio_mime_types=[
+            "audio/wav",
+            "audio/x-wav",
+            "audio/wave",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/aac",
+            "audio/flac",
+            "audio/ogg",
+        ],
         accepted_image_mime_types=["image/png", "image/jpeg", "image/webp"],
-        accepted_audio_extensions=[".wav"],
+        accepted_audio_extensions=[".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"],
         accepted_image_extensions=[".png", ".jpg", ".jpeg", ".webp"],
     )
     duration_bounds = DurationBounds(

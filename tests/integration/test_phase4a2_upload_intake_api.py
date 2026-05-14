@@ -230,9 +230,15 @@ async def test_audio_upload_accepts_valid_wav(app_under_test):
     assert Path(body["local_path"]).suffix == ".wav"
 
 
-async def test_audio_upload_rejects_non_wav_extension(app_under_test):
+async def test_audio_upload_rejects_unsupported_extension(app_under_test):
+    """Phase 4F broadens the audio allow-list to wav/mp3/m4a/aac/flac/ogg.
+
+    The Phase 4A-2 contract that *any* non-WAV extension is rejected was
+    relaxed; this test now pins the policy to "extensions outside the
+    Phase 4F allow-list are rejected" by trying a .txt upload.
+    """
     client, *_ = app_under_test
-    files = {"file": ("rec.mp3", b"\x00\x00", "audio/mpeg")}
+    files = {"file": ("rec.txt", b"\x00\x00", "audio/wav")}
     r = await client.post("/api/v1/uploads/audio", files=files)
     assert r.status_code == 400
     assert "extension" in r.text.lower()

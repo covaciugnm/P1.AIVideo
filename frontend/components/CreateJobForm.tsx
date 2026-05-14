@@ -1,7 +1,7 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
@@ -9,13 +9,17 @@ import * as logBus from "@/lib/log-bus";
 import type {
   CreateJobFromInputsBody,
   FaceMode,
+  ProviderInfo,
+  ProvidersResponse,
   UIOptions,
   UploadAudioResponse,
   UploadImageResponse,
   VoiceMode,
 } from "@/lib/types";
 
+import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
+import { useSettings } from "./SettingsContext";
 import { UploadCard } from "./UploadCard";
 import styles from "./CreateJobForm.module.css";
 
@@ -25,12 +29,86 @@ interface CreateJobFormProps {
 
 export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const router = useRouter();
+  const { settings } = useSettings();
   const [brief, setBrief] = useState("");
   const [duration, setDuration] = useState<number>(
-    uiOptions.duration_bounds.default_seconds,
+    settings.defaultTargetDurationSeconds || uiOptions.duration_bounds.default_seconds,
   );
-  const [voiceMode, setVoiceMode] = useState<VoiceMode>("tts");
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>(
+    settings.defaultVoiceMode,
+  );
   const [scriptText, setScriptText] = useState("");
+  // Per-job provider selection. Initialized from Settings defaults but
+  // operator-editable per job.
+  const [llmProvider, setLlmProvider] = useState<string | null>(
+    settings.defaultLlmProvider,
+  );
+  const [ttsProvider, setTtsProvider] = useState<string | null>(
+    settings.defaultTtsProvider,
+  );
+  const [videoProvider, setVideoProvider] = useState<string | null>(
+    settings.defaultVideoProvider,
+  );
+  const [providers, setProviders] = useState<ProvidersResponse | null>(null);
+  const [ttsBusy, setTtsBusy] = useState(false);
+  const [ttsStatus, setTtsStatus] = useState<string | null>(null);
+  const ttsAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const p = await api.getProviders(controller.signal);
+        setProviders(p);
+      } catch {
+        // Providers panel is optional; the form still works.
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  const handleTtsGenerate = async () => {
+    if (!scriptText.trim()) return;
+    ttsAbortRef.current?.abort();
+    const controller = new AbortController();
+    ttsAbortRef.current = controller;
+    setTtsBusy(true);
+    setTtsStatus("Generating…");
+    logBus.emit({
+      source: "frontend",
+      level: "info",
+      message: `tts-generate start (provider=${ttsProvider ?? "default"})`,
+      meta: { provider_id: ttsProvider ?? "default" },
+    });
+    const res = await api.generateTts(
+      {
+        script_text: scriptText.trim(),
+        tts_provider_id: ttsProvider ?? "piper",
+      },
+      controller.signal,
+    );
+    setTtsBusy(false);
+    if (!res.ok) {
+      const niceMsg =
+        res.error.code === "tts_provider_not_configured"
+          ? `Provider "${res.error.provider_id}" is not configured. Install the runtime + place voice assets, then enable in Settings.`
+          : res.error.message;
+      setTtsStatus(niceMsg);
+      logBus.emit({
+        source: "frontend",
+        level: res.httpStatus === 503 ? "warning" : "error",
+        message: `tts-generate ${res.error.code}`,
+        meta: { code: res.error.code, status: res.httpStatus },
+      });
+    } else {
+      setTtsStatus("Generated.");
+      logBus.emit({
+        source: "frontend",
+        level: "success",
+        message: "tts-generate succeeded",
+      });
+    }
+  };
   const [audioArtifact, setAudioArtifact] = useState<UploadAudioResponse | null>(
     null,
   );
@@ -98,6 +176,14 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       image_artifact_id: useFace ? imageArtifact?.artifact_id ?? null : null,
       image_consent_confirmed: useFace ? imageConsent : false,
       image_synthetic_person_confirmed: useFace ? imageSynthetic : false,
+      provider_selection:
+        llmProvider || ttsProvider || videoProvider
+          ? {
+              script_provider_id: llmProvider,
+              tts_provider_id: ttsProvider,
+              video_provider_id: videoProvider,
+            }
+          : null,
     };
 
     logBus.emit({
@@ -198,18 +284,37 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             <span className={styles.muted}>
               {scriptText.length} / {scriptMaxChars}
             </span>
+            <div className={styles.ttsRow}>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleTtsGenerate}
+                disabled={ttsBusy || scriptText.trim().length === 0}
+              >
+                {ttsBusy ? "Generating…" : "Generate audio"}
+              </button>
+              {ttsStatus && (
+                <span className={styles.ttsStatus}>{ttsStatus}</span>
+              )}
+            </div>
           </div>
         ) : (
           <>
             <UploadCard
               kind="audio"
-              title="Provided audio (WAV)"
-              help="A pre-recorded narration that you own or that is synthetic."
+              title="Provided audio"
+              help={`Accepted: ${audioExts.join(", ")}. Non-WAV is transcoded to PCM WAV on the server (requires ffmpeg). Minimum 1 s; 22050 Hz+ recommended; mono or stereo; synthetic or owned.`}
               acceptExtensions={audioExts}
               maxBytes={audioMax}
               onUploaded={(r) => setAudioArtifact(r as UploadAudioResponse)}
               currentArtifactId={audioArtifact?.artifact_id ?? null}
             />
+            {audioArtifact && (
+              <AudioPreview
+                src={{ kind: "artifact", artifactId: audioArtifact.artifact_id }}
+                label="Uploaded audio preview"
+              />
+            )}
             <div className={styles.consentBlock}>
               <label className={styles.checkbox}>
                 <input
@@ -239,6 +344,33 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       </section>
 
       <section className="card">
+        <h2>2b. Providers</h2>
+        <p className={styles.muted}>
+          Pick a provider per category, or leave blank to use the backend
+          default. Unconfigured providers are visible but selecting one
+          surfaces a warning later when generation is attempted.
+        </p>
+        <ProviderField
+          label="Script LLM"
+          value={llmProvider}
+          onChange={setLlmProvider}
+          providers={providers?.llm ?? []}
+        />
+        <ProviderField
+          label="TTS"
+          value={ttsProvider}
+          onChange={setTtsProvider}
+          providers={providers?.tts ?? []}
+        />
+        <ProviderField
+          label="Video generator"
+          value={videoProvider}
+          onChange={setVideoProvider}
+          providers={providers?.video_generator ?? []}
+        />
+      </section>
+
+      <section className="card">
         <h2>3. Face (optional)</h2>
         <label className={styles.checkbox}>
           <input
@@ -253,12 +385,20 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             <UploadCard
               kind="image"
               title="Portrait image"
-              help="PNG / JPEG / WebP. Must be a synthetic (AI-generated) person."
+              help="PNG / JPEG / WebP. ≥ 512×512 recommended (1024×1024+ preferred). Front-facing, well-lit, synthetic (AI-generated) only."
               acceptExtensions={imageExts}
               maxBytes={imageMax}
               onUploaded={(r) => setImageArtifact(r as UploadImageResponse)}
               currentArtifactId={imageArtifact?.artifact_id ?? null}
             />
+            {imageArtifact && (
+              <ImagePreview
+                artifactId={imageArtifact.artifact_id}
+                width={imageArtifact.width}
+                height={imageArtifact.height}
+                mimeType={imageArtifact.mime_type}
+              />
+            )}
             <div className={styles.consentBlock}>
               <label className={styles.checkbox}>
                 <input
@@ -329,5 +469,65 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
         </button>
       </div>
     </form>
+  );
+}
+
+interface ProviderFieldProps {
+  readonly label: string;
+  readonly value: string | null;
+  readonly onChange: (v: string | null) => void;
+  readonly providers: readonly ProviderInfo[];
+}
+
+function ProviderField({ label, value, onChange, providers }: ProviderFieldProps) {
+  const selected = providers.find((p) => p.provider_id === value);
+  const warn =
+    selected && selected.status !== "available" && selected.status !== "configured";
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <select
+        className={styles.select}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">— default —</option>
+        {providers.map((p) => (
+          <option key={p.provider_id} value={p.provider_id}>
+            {p.label} ({p.status.replace(/_/g, " ")})
+          </option>
+        ))}
+      </select>
+      {warn && (
+        <span className={styles.providerWarn}>
+          {selected.notes || `${selected.provider_id} is ${selected.status.replace(/_/g, " ")}.`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface ImagePreviewProps {
+  readonly artifactId: string;
+  readonly width: number;
+  readonly height: number;
+  readonly mimeType: string;
+}
+
+function ImagePreview({ artifactId, width, height, mimeType }: ImagePreviewProps) {
+  const url = api.artifactContentUrl(artifactId);
+  return (
+    <div className={styles.imagePreview}>
+      <span className={styles.imagePreviewLabel}>Uploaded image preview</span>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt="Uploaded portrait"
+        className={styles.imagePreviewImg}
+      />
+      <span className={styles.imagePreviewMeta}>
+        {width}×{height} · {mimeType}
+      </span>
+    </div>
   );
 }
