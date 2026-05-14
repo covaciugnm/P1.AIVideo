@@ -2,7 +2,34 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4B — Frontend dashboard + system / config endpoints.**
+> **Current status: Phase 4C — Docker light runtime.**
+>
+> First real container layer for the project. Until Phase 4C, all three application Dockerfiles were Phase 0 sleep-loop stubs (no source copied, no deps installed). Phase 4C replaces them with actual multi-stage builds and wires the dev compose file for a light, metadata-only run loop. **No GPU, no model weights, no torch / diffusers / transformers / SadTalker / Whisper / SDXL / ffmpeg / OpenCV / moviepy.**
+>
+> Five services come up via `make docker-light-up`:
+> - **`postgres`** + **`redis`** — unchanged from Phase 0.
+> - **`backend`** (`aivideo-backend`) — `python:3.12-slim`, multi-stage. Installs `aivideo-common` from `./common`, then `aivideo-backend` from `./backend`. Runs `uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir backend` as non-root user `app`. `HEALTHCHECK` curls `/healthz`. Storage roots `/storage/inputs` and `/storage/artifacts` come from named volumes.
+> - **`frontend`** (`aivideo-frontend`) — three-stage `node:20-alpine`. `deps` (`npm ci`), `builder` (`npm run lint && npm run build` with `ARG NEXT_PUBLIC_API_BASE_URL` baked into the bundle), `runner` (`npm run start` as the built-in `node` user). `HEALTHCHECK` via `wget --spider` on `/`.
+> - **`orchestrator`** (`aivideo-orchestrator`) — Phase 4C **idle launcher**. Installs `common` + `backend` (temporary Phase 4C coupling — `agents/orchestrator/{dag,handlers}.py` currently `import app.models.*`) + `agents`, then runs `python -m agents.orchestrator.light_idle` which imports every `agents.*` and `common.*` module, logs `ready`, and sleeps. Real worker entrypoint lands in a later phase.
+>
+> Compose wiring:
+> - **GPU agents profile-gated.** `agent-voice`, `agent-face`, `agent-lipsync` now carry `profiles: ["gpu"]`. `model-llm` already had `profiles: ["llm"]`. A default `docker compose up` skips them all — Phase 4C never pulls `nvidia/cuda:…`.
+> - **Storage volumes.** Two named volumes (`inputs_data`, `artifacts_data`) are mounted r/w on the backend at `/storage/inputs` and `/storage/artifacts`, and read-only on the orchestrator. Upload + from-inputs flow works end-to-end in Docker.
+> - **Backend healthcheck.** `curl /healthz` every 10 s; frontend `depends_on: backend: condition: service_healthy`.
+> - **`DATABASE_URL` + `REDIS_URL` overrides** are set on the backend + orchestrator so the in-container connection strings target `postgres:5432` and `redis:6379` (the service names) without depending on the `.env`'s per-component fields.
+>
+> Tooling:
+> - **`.dockerignore`** at the repo root excludes `.venv`, `**/node_modules`, `**/.next`, `**/__pycache__`, `**/*.egg-info`, `.git`, `storage/`, `models/`, and the model-weight extensions (`*.onnx`, `*.safetensors`, `*.pt`, `*.pth`, `*.ckpt`, `*.bin`, `*.gguf`). Build context drops from 521 MB to a few MB.
+> - **`frontend/.dockerignore`** for the frontend-stage build context.
+> - **`.env.example`** — renamed `NEXT_PUBLIC_API_BASE` → `NEXT_PUBLIC_API_BASE_URL` to match `frontend/lib/api.ts`. Frontend `.env.example` was already correct.
+> - **Seven new Make targets**: `docker-config-check`, `docker-light-build`, `docker-light-up`, `docker-light-down`, `docker-light-logs`, `docker-light-smoke`, `docker-light-check` (end-to-end: config → build → up → wait-healthy → smoke → down).
+> - **New runbook**: [`docs/runbooks/docker-light-runtime.md`](docs/runbooks/docker-light-runtime.md).
+>
+> Smoke results (`make docker-light-check`): `GET /healthz`, `GET /api/v1/system/status`, `GET /api/v1/jobs`, `GET /api/v1/stages`, `GET /` on the frontend all return 200 against the dockerized stack. Inside the built images, `python -c "import app.main, app.api.{jobs,uploads,system}, app.core.config"` and `python -c "import agents, agents.orchestrator, …"` resolve cleanly. `make phase4b-test` continues to pass; the strict-warnings pytest sweep (`python -W error -m pytest`) stays clean at 216 passed / 1 skipped.
+>
+> **Explicitly NOT in Phase 4C**: real video / lip-sync / face generation, SadTalker, Whisper, SDXL, C2PA signing, publishing, GPU image builds, model weight downloads. `docker/agents/Dockerfile.cuda` is unchanged.
+
+> **Previous milestone: Phase 4B — Frontend dashboard + system / config endpoints.**
 >
 > First-class operator UI in `frontend/` (Next.js 14 App Router, TypeScript, vanilla CSS modules — **no Tailwind, no component libraries, no charting libs**). The UI is **metadata-only**: every screen reads from the FastAPI backend's `/api/v1/*` JSON; no real media plays back, nothing is uploaded externally.
 >

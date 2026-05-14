@@ -1,19 +1,32 @@
 # =============================================================================
-# P1.AIVideo agents — CPU base — Phase 0 stub
+# P1.AIVideo agents — CPU base — Phase 4C light runtime.
 #
-# Shared base for agents that don't need a GPU at runtime (orchestrator,
-# scriptwriter LLM client, editor, qc, publisher, compliance-officer).
+# Phase 4C scope: import every ``agents.*`` package and idle. No real worker
+# loop, no Redis stream consumer, no model inference, no GPU.
 #
-# GPU-needing agents (voice, face, lipsync) use docker/agents/Dockerfile.cuda.
+# Build context is the repo root. The image installs three local packages
+# in dependency order:
 #
-# Real per-agent dependencies and entrypoints land in Phase 1+. Each agent
-# may later get its own Dockerfile when its dep set diverges enough.
+#   1. ``aivideo-common``  (path: ./common)
+#   2. ``aivideo-backend`` (path: ./backend) — temporary Phase 4C coupling.
+#      ``agents/orchestrator/dag.py`` + ``handlers.py`` import
+#      ``app.models.*`` and ``app.services.*``. A later phase will move the
+#      DB-touching code out of agents (or split it into a shared package)
+#      so this dependency disappears. For now we install backend to keep
+#      the orchestrator importable.
+#   3. ``aivideo-agents`` (path: ./agents)
+#
+# NO torch / diffusers / transformers / SadTalker / Whisper / SDXL / OpenCV
+# / ffmpeg / moviepy. NO ``[voice]`` extra (which would pull piper-tts).
+#
+# Single-stage build for the same BuildKit attestation reason as the
+# backend Dockerfile.
 # =============================================================================
 # syntax=docker/dockerfile:1.7
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12
 
-FROM python:${PYTHON_VERSION}-slim AS base
+FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -22,30 +35,30 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# TODO(phase-3): editor needs ffmpeg; qc needs ffmpeg + tesseract; publisher
-# needs c2patool + exiftool. Phase 0 keeps the base lean.
-# RUN apt-get update \
-#     && apt-get install -y --no-install-recommends ffmpeg \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# TODO(phase-1+): the `aivideo-common` package is a path dependency of
-# this image. Build context must include both `common/` and `agents/`,
-# and install order is `common` first, then `agents`:
-#
-#   COPY common/ ./common/
-#   RUN pip install -e ./common
-#
-#   COPY agents/pyproject.toml ./agents/pyproject.toml
-#   COPY agents/ ./agents/
-#   RUN pip install -e ./agents
+COPY common/ ./common/
+RUN pip install --no-cache-dir -e ./common
 
-# TODO(phase-1+): per-agent code is injected at build time via an ARG, e.g.:
-#   docker build --build-arg AGENT=scriptwriter ...
-# ARG AGENT
-# COPY agents/${AGENT}/ ./agent/
+COPY backend/pyproject.toml ./backend/pyproject.toml
+COPY backend/README.md ./backend/README.md
+COPY backend/app/ ./backend/app/
+RUN pip install --no-cache-dir -e ./backend
 
-RUN useradd --create-home --uid 1000 app
+COPY agents/ ./agents/
+RUN pip install --no-cache-dir -e ./agents
+
+# Shared storage roots so any handler that touches the filesystem behaves
+# the same way in Docker as in dev. Read-only mounts on the agents side
+# would still resolve these paths.
+RUN mkdir -p /storage/inputs/audio /storage/inputs/images /storage/inputs/text /storage/artifacts \
+    && useradd --create-home --uid 1000 app \
+    && chown -R app:app /app /storage
+
 USER app
 
-# TODO(phase-1+): replace with the real entrypoint for the chosen AGENT.
-CMD ["python", "-c", "import time, sys; print('agent stub — Phase 1+ lands here', flush=True); time.sleep(10**9)"]
+# Phase 4C light idle launcher — imports everything and sleeps. See
+# agents/orchestrator/light_idle.py for the rationale.
+CMD ["python", "-m", "agents.orchestrator.light_idle"]

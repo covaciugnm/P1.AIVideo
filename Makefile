@@ -8,7 +8,8 @@ COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.y
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
         check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test \
-        frontend-install frontend-lint frontend-build frontend-check
+        frontend-install frontend-lint frontend-build frontend-check \
+        docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -107,6 +108,74 @@ frontend-build: ## Run `next build` (production build)
 
 frontend-check: ## Run frontend lint + build (used by phase4b-test)
 	cd frontend && npm run lint && npm run build
+
+# ---------------------------------------------------------------------------
+# Docker light runtime (Phase 4C). Boots only the metadata-only stack —
+# backend, orchestrator (idle), frontend, postgres, redis. NO GPU services,
+# NO model containers, NO model weight downloads.
+# ---------------------------------------------------------------------------
+
+COMPOSE_LIGHT := docker compose -f docker/compose.dev.yml
+COMPOSE_PROD  := docker compose -f docker/compose.prod.yml
+COMPOSE_DEV_GPU := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
+DOCKER_LIGHT_SERVICES := backend orchestrator frontend postgres redis
+
+docker-config-check: ## Validate dev, prod, and dev+gpu compose configs (no containers started)
+	@echo ">> dev compose config"
+	$(COMPOSE_LIGHT) config >/dev/null
+	@echo ">> prod compose config"
+	$(COMPOSE_PROD) config >/dev/null
+	@echo ">> dev + gpu overlay config"
+	$(COMPOSE_DEV_GPU) config >/dev/null
+	@echo "OK: all compose configs valid."
+
+docker-light-build: ## Build only the light-runtime images (backend, orchestrator, frontend). No GPU images.
+	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
+	$(COMPOSE_LIGHT) build backend orchestrator frontend
+
+docker-light-up: ## Start the light stack (postgres, redis, backend, frontend, orchestrator) in the background
+	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
+	$(COMPOSE_LIGHT) up -d $(DOCKER_LIGHT_SERVICES)
+	@echo "Light stack starting. Tail logs with: make docker-light-logs"
+
+docker-light-down: ## Stop the light stack
+	$(COMPOSE_LIGHT) down
+
+docker-light-logs: ## Tail logs from the light stack
+	$(COMPOSE_LIGHT) logs -f --tail=200 $(DOCKER_LIGHT_SERVICES)
+
+docker-light-smoke: ## Smoke-test the light stack (backend + frontend HTTP endpoints)
+	@echo ">> /healthz"
+	@curl -fsS http://localhost:8000/healthz && echo ""
+	@echo ">> /api/v1/system/status"
+	@curl -fsS http://localhost:8000/api/v1/system/status && echo ""
+	@echo ">> /api/v1/jobs"
+	@curl -fsS http://localhost:8000/api/v1/jobs && echo ""
+	@echo ">> /api/v1/stages"
+	@curl -fsS http://localhost:8000/api/v1/stages && echo ""
+	@echo ">> frontend /"
+	@curl -fsS -o /dev/null -w "frontend HTTP %{http_code}\n" http://localhost:3000/
+
+docker-light-check: ## End-to-end light validation: config -> build -> up -> smoke -> down
+	$(MAKE) docker-config-check
+	$(MAKE) docker-light-build
+	$(MAKE) docker-light-up
+	@echo "Waiting up to 45s for backend healthcheck to pass..."
+	@for i in $$(seq 1 45); do \
+		if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then \
+			echo "backend ready after $${i}s"; break; \
+		fi; \
+		sleep 1; \
+	done
+	@echo "Waiting up to 60s for frontend to respond..."
+	@for i in $$(seq 1 60); do \
+		if curl -fsS -o /dev/null http://localhost:3000/ 2>/dev/null; then \
+			echo "frontend ready after $${i}s"; break; \
+		fi; \
+		sleep 1; \
+	done
+	$(MAKE) docker-light-smoke
+	$(MAKE) docker-light-down
 
 # ---------------------------------------------------------------------------
 # Lint / format. Both are non-destructive without --fix.

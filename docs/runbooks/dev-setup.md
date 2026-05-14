@@ -94,6 +94,24 @@ make frontend-check    # next lint --max-warnings 0 + next build
 To point the frontend at a non-default backend URL, copy `frontend/.env.example`
 to `frontend/.env.local` and edit `NEXT_PUBLIC_API_BASE_URL`.
 
+### Docker light runtime (Phase 4C)
+
+For the metadata-only stack in Docker (backend + frontend + orchestrator-idle
++ postgres + redis, with no GPU and no model containers):
+
+```bash
+cp .env.example .env             # first time only
+make docker-config-check         # validates compose.dev/prod/gpu configs
+make docker-light-build          # builds aivideo-backend / orchestrator / frontend
+make docker-light-up             # starts postgres + redis + backend + frontend + orchestrator
+make docker-light-smoke          # curls /healthz, /api/v1/*, frontend /
+make docker-light-down           # stops the stack
+```
+
+`make docker-light-check` chains all of the above into a single end-to-end
+verification. See [`docker-light-runtime.md`](docker-light-runtime.md) for
+the full reference, storage-volume layout, and troubleshooting.
+
 ## Full-stack prerequisites (needed from Phase 2 onward)
 
 - Ubuntu 22.04+ with Docker Engine ≥ 24 and `docker compose` (v2) installed.

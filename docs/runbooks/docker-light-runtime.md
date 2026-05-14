@@ -1,0 +1,99 @@
+# Docker light runtime (Phase 4C)
+
+The "light" runtime is the metadata-only stack: backend, orchestrator
+(idle), frontend, postgres, and redis. It deliberately leaves out every
+GPU container, every model service, and any dependency that would pull
+torch / diffusers / SadTalker / Whisper / SDXL / ffmpeg. Bringing the
+light stack up is the right way to exercise Phase 1–4B end-to-end (job
+metadata flow, upload intake, dashboard polling, system status) without
+touching CUDA.
+
+## Prerequisites
+
+- Docker Engine ≥ 24 with Docker Compose v2 (`docker compose version`).
+- A copy of `.env` at the repo root:
+
+  ```bash
+  cp .env.example .env
+  ```
+
+  Every service in `docker/compose.dev.yml` references `../.env`. Without it
+  the `make docker-light-*` targets refuse to run with a friendly error.
+
+- The light stack does **not** need NVIDIA drivers, the Container Toolkit,
+  or any model weights on disk.
+
+## Services
+
+| Service | Image | Role |
+|---|---|---|
+| `postgres` | `postgres:16-alpine` | Job + stage + artifact metadata. |
+| `redis` | `redis:7-alpine` | Streams (no real worker reads them yet in Phase 4C). |
+| `backend` | `aivideo-backend:latest` | FastAPI app. Serves `/healthz` + `/api/v1/*`. |
+| `frontend` | `aivideo-frontend:latest` | Next.js dashboard (built statically into the image). |
+| `orchestrator` | `aivideo-orchestrator:latest` | Phase 4C **idle** launcher — verifies every `agents.*` module imports, then sleeps. Real worker entrypoint lands later. |
+
+The GPU agents (`agent-voice`, `agent-face`, `agent-lipsync`) and the
+optional `model-llm` service live in `compose.dev.yml` too but are gated
+behind `profiles: ["gpu"]`. A default `docker compose up` skips them.
+
+## End-to-end check
+
+The fastest way to verify the light stack works:
+
+```bash
+make docker-light-check
+```
+
+Which is shorthand for:
+
+1. `make docker-config-check` — validates `compose.dev.yml`, `compose.prod.yml`, and `compose.dev.yml + compose.gpu.yml`.
+2. `make docker-light-build` — builds only `backend`, `orchestrator`, and `frontend`.
+3. `make docker-light-up` — starts `postgres`, `redis`, `backend`, `frontend`, `orchestrator`.
+4. Waits for backend healthcheck + frontend HTTP.
+5. `make docker-light-smoke` — curls `/healthz`, `/api/v1/system/status`, `/api/v1/jobs`, `/api/v1/stages`, `/` on the frontend.
+6. `make docker-light-down` — stops the stack.
+
+## Targeted commands
+
+| Command | What it does |
+|---|---|
+| `make docker-config-check` | Three `docker compose … config` calls. No containers started. |
+| `make docker-light-build` | Build images for `backend`, `orchestrator`, `frontend` only. Skips GPU. |
+| `make docker-light-up` | Bring the light services up in detached mode. |
+| `make docker-light-logs` | Tail logs from the five light services. |
+| `make docker-light-smoke` | Curl backend + frontend endpoints once the stack is up. |
+| `make docker-light-down` | `docker compose down`. |
+
+## Storage volumes
+
+Two named volumes back the upload + artifact roots:
+
+- `inputs_data` → mounted read-write at `/storage/inputs` on `backend`, and read-only at `/storage/inputs` on `orchestrator`.
+- `artifacts_data` → mounted read-write at `/storage/artifacts` on `backend`, read-only on `orchestrator`.
+
+The defaults in `.env.example` for `UPLOAD_*_ROOT`, `PROVIDED_AUDIO_ALLOWED_ROOTS`, and `PROVIDED_IMAGE_ALLOWED_ROOTS` resolve under `/storage/inputs/...`, so upload + from-inputs work out of the box. Wipe local state with `docker volume rm aivideo_inputs_data aivideo_artifacts_data` (after a `make docker-light-down`).
+
+## Networking
+
+All services share the user-defined `aivideo` bridge network. From inside a container:
+
+- `postgres` and `redis` are reachable on their service names + standard ports.
+- `backend` and `frontend` are NOT routable from a browser via service names — Compose only publishes them on host ports `${BACKEND_PORT:-8000}` and `${FRONTEND_PORT:-3000}`. The frontend's `NEXT_PUBLIC_API_BASE_URL` is baked at build time and points at the **host** URL because the bundle runs in the browser, not in the frontend container.
+
+## Intentionally NOT in the light runtime
+
+- **No GPU services**, no CUDA base image pulled.
+- **No SadTalker / MuseTalk / Wav2Lip / Whisper / SDXL** runtime.
+- **No real video / audio / face / lip-sync rendering.**
+- **No torch / diffusers / transformers / OpenCV / moviepy / ffmpeg** in any image.
+- **No C2PA signing, no external publishing.**
+- **No model weight downloads.** The `models/` directory is `.dockerignore`d.
+
+## Troubleshooting
+
+- **`env file …/.env not found`** — copy `.env.example` to `.env`.
+- **Backend healthcheck never goes green** — the image lacks `curl` or `/healthz` is not responding. Check `make docker-light-logs` and confirm `uvicorn` started. The Dockerfile pins `curl` into the runtime stage.
+- **Frontend 404s on `/jobs`** — `NEXT_PUBLIC_API_BASE_URL` was baked wrong at build time. Rebuild with `make docker-light-build` after editing `.env` (the compose file passes the value as a build arg).
+- **`compose build` tries to download `nvidia/cuda:…`** — you ran `docker compose build` without naming services. Use `make docker-light-build` (which names only the light services) or pass an explicit list. The CUDA agents are profile-gated for `up`, but `build` with no args still resolves every service defined in the file.
+- **`make docker-light-check` times out waiting for the frontend** — `next build` can take 30–60 s the first time and `next start` then needs another few seconds. Re-run smoke individually with `make docker-light-smoke` once `docker ps` shows everything `(healthy)`.

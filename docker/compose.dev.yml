@@ -27,13 +27,18 @@ x-env-defaults: &env-defaults
   restart: unless-stopped
 
 networks:
-  aivideo:
+  aivideo-net:
     driver: bridge
 
 volumes:
   postgres_data:
   minio_data:
   redis_data:
+  # Phase 4C: shared upload + artifact roots so the backend and the
+  # (read-only) agents can speak about the same files. Backed by a
+  # local-driver named volume — switch to bind mounts in prod.
+  inputs_data:
+  artifacts_data:
 
 services:
   # ---------------------------------------------------------------------------
@@ -47,9 +52,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-aivideo}
       POSTGRES_USER: ${POSTGRES_USER:-aivideo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks: [aivideo]
+    networks: [aivideo-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aivideo}"]
       interval: 10s
@@ -60,9 +67,11 @@ services:
     image: redis:7-alpine
     <<: *env-defaults
     command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
-    networks: [aivideo]
+    networks: [aivideo-net]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -81,7 +90,7 @@ services:
     ports:
       - "9000:9000"   # S3 API (dev convenience)
       - "9001:9001"   # MinIO console
-    networks: [aivideo]
+    networks: [aivideo-net]
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 15s
@@ -96,17 +105,40 @@ services:
     build:
       <<: *build-defaults
       dockerfile: docker/backend/Dockerfile
+    image: aivideo-backend:latest
     <<: *env-defaults
+    environment:
+      # Connection strings point at the compose service names — not localhost.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aivideo}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-aivideo}
+      REDIS_URL: redis://redis:6379/0
+      # In-container storage roots. The named volumes (inputs_data,
+      # artifacts_data) mount here. Setting these explicitly in the
+      # compose file (not just relying on .env) makes the container
+      # behavior independent of whatever the operator has in .env.
+      UPLOADS_LOCAL_ROOT: /storage/inputs
+      UPLOAD_AUDIO_ROOT: /storage/inputs/audio
+      UPLOAD_IMAGE_ROOT: /storage/inputs/images
+      UPLOAD_TEXT_ROOT: /storage/inputs/text
+      ARTIFACTS_LOCAL_ROOT: /storage/artifacts
+      # Hard-off: light runtime never auto-fetches model weights.
+      ALLOW_MODEL_AUTODOWNLOAD: "false"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-    networks: [aivideo]
+    volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 10
+    networks: [aivideo-net]
 
   frontend:
     build:
@@ -114,22 +146,50 @@ services:
       dockerfile: docker/frontend/Dockerfile
       args:
         NODE_VERSION: "20"
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    image: aivideo-frontend:latest
     <<: *env-defaults
+    environment:
+      # NEXT_PUBLIC_* is also baked at build time (see build.args above) —
+      # exposing it at runtime documents intent and lets a future SSR path
+      # read it from process.env without rebuilding.
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   orchestrator:
     build:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile
+    image: aivideo-orchestrator:latest
     <<: *env-defaults
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aivideo}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-aivideo}
+      REDIS_URL: redis://redis:6379/0
+      UPLOADS_LOCAL_ROOT: /storage/inputs
+      UPLOAD_AUDIO_ROOT: /storage/inputs/audio
+      UPLOAD_IMAGE_ROOT: /storage/inputs/images
+      UPLOAD_TEXT_ROOT: /storage/inputs/text
+      ARTIFACTS_LOCAL_ROOT: /storage/artifacts
+      ALLOW_MODEL_AUTODOWNLOAD: "false"
     depends_on:
-      - redis
-      - postgres
-    networks: [aivideo]
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      # Inputs are read-only — the orchestrator should never write into the
+      # upload root. Artifacts are r/w so future stage handlers can emit
+      # metadata files alongside the backend's own writes.
+      - inputs_data:/storage/inputs:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
 
   # --- Agents (CPU base) -----------------------------------------------------
   # GPU reservations live in compose.gpu.yml. Per-agent images can be split
@@ -141,7 +201,7 @@ services:
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
     depends_on: [redis]
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   agent-editor:
     build:
@@ -149,7 +209,7 @@ services:
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
     depends_on: [redis, minio]
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   agent-qc:
     build:
@@ -157,7 +217,7 @@ services:
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
     depends_on: [redis, minio]
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   agent-publisher:
     build:
@@ -165,7 +225,7 @@ services:
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
     depends_on: [redis, minio]
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   agent-compliance:
     build:
@@ -173,11 +233,15 @@ services:
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
     depends_on: [redis, postgres]
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   # --- GPU-capable agents (CUDA base; reservations added in compose.gpu.yml) -
+  # Phase 4C: gated behind ``profiles: ["gpu"]`` so a plain ``compose up``
+  # never pulls the CUDA base image or builds the GPU stub. Enable with
+  # ``--profile gpu`` once the real GPU stack is wired (Phase 5/6).
 
   agent-voice:
+    profiles: ["gpu"]
     build:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile.cuda
@@ -185,9 +249,10 @@ services:
     depends_on: [redis, minio]
     volumes:
       - ../models:/models:ro
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   agent-face:
+    profiles: ["gpu"]
     build:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile.cuda
@@ -195,9 +260,10 @@ services:
     depends_on: [redis, minio]
     volumes:
       - ../models:/models:ro
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   agent-lipsync:
+    profiles: ["gpu"]
     build:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile.cuda
@@ -205,7 +271,7 @@ services:
     depends_on: [redis, minio]
     volumes:
       - ../models:/models:ro
-    networks: [aivideo]
+    networks: [aivideo-net]
 
   # --- Optional: local LLM server (vLLM) -------------------------------------
   # Disabled by default in dev. Enable via the GPU overlay or by setting a
@@ -219,4 +285,4 @@ services:
     <<: *env-defaults
     volumes:
       - ../models/llm:/models/llm:ro
-    networks: [aivideo]
+    networks: [aivideo-net]

@@ -1,14 +1,20 @@
 # =============================================================================
-# P1.AIVideo backend (FastAPI) — Phase 0 stub
+# P1.AIVideo backend (FastAPI) — Phase 4C light runtime.
 #
-# Real dependencies and application code land in Phase 1. The stub command
-# keeps the container alive so docker compose works during scaffolding.
+# Build context is the repo root (see docker/compose.dev.yml: ``context: ..``).
+# Single-stage build: there is no compiled extension to gain from a multi-
+# stage layout, and BuildKit's provenance attestation has trouble with
+# ``COPY --from=builder /usr/local/lib/...`` of pip's site-packages tree.
+#
+# This image is metadata-only: NO torch, diffusers, transformers, SadTalker,
+# Whisper, SDXL, OpenCV, ffmpeg, moviepy, or other ML/media libraries. No
+# model weights are baked in.
 # =============================================================================
 # syntax=docker/dockerfile:1.7
 
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.12
 
-FROM python:${PYTHON_VERSION}-slim AS base
+FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -17,35 +23,38 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# TODO(phase-1): install minimal OS deps if needed (e.g. curl for healthchecks).
-# RUN apt-get update \
-#     && apt-get install -y --no-install-recommends curl \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# TODO(phase-1+): the `aivideo-common` package is a path dependency of
-# this image. Build context must include both `common/` and `backend/`,
-# and install order is `common` first, then `backend`:
-#
-#   COPY common/ ./common/
-#   RUN pip install -e ./common
-#
-#   COPY backend/pyproject.toml ./backend/pyproject.toml
-#   COPY backend/app/ ./backend/app/
-#   RUN pip install -e ./backend
+# Order matters: ``aivideo-common`` is a path dependency of
+# ``aivideo-backend``. Install it first so pip resolves the local source
+# rather than trying PyPI.
+COPY common/ ./common/
+RUN pip install --no-cache-dir -e ./common
 
-# TODO(phase-1): copy application source.
-# COPY backend/ ./
+COPY backend/pyproject.toml ./backend/pyproject.toml
+COPY backend/README.md ./backend/README.md
+COPY backend/app/ ./backend/app/
+# Editable install: ``aivideo-backend``'s pyproject only enumerates the top
+# level ``app`` package, which is fine for editable mode (subpackages
+# resolve from the source tree on sys.path) but would lose the subpackages
+# under a non-editable install. Same pattern as the dev venv setup.
+RUN pip install --no-cache-dir -e ./backend
 
-# Create a non-root user. The numeric uid is stable across rebuilds so bind
-# mounts and named volumes have predictable ownership.
-RUN useradd --create-home --uid 1000 app
+# Storage roots for upload + artifact directories used at runtime. These will
+# typically be mounted as named volumes (see compose.dev.yml).
+RUN mkdir -p /storage/inputs/audio /storage/inputs/images /storage/inputs/text /storage/artifacts \
+    && useradd --create-home --uid 1000 app \
+    && chown -R app:app /app /storage
+
 USER app
 
 EXPOSE 8000
 
-# TODO(phase-1): real healthcheck once /healthz exists.
-# HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-#   CMD curl -fsS http://localhost:8000/healthz || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
+    CMD curl -fsS http://localhost:8000/healthz || exit 1
 
-# TODO(phase-1): replace with `["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]`
-CMD ["python", "-c", "import time, sys; print('backend stub — Phase 1 lands here', flush=True); time.sleep(10**9)"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "backend"]
