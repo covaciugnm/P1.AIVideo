@@ -25,3 +25,31 @@
 .progressCol {
   min-width: 160px;
 }
+
+.qcPassed {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.qcFailed {
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.qcPending {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.exportReady {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.exportPending {
+  color: var(--text-muted);
+  font-size: 12px;
+}

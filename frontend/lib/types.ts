@@ -38,6 +38,11 @@ export interface JobSummary {
   readonly current_stage: string | null;
   readonly progress_percent: number;
   readonly artifact_count: number;
+  // Phase 4F-2 additions. Both are optional in the TS contract so older
+  // mock fixtures or servers that haven't yet shipped the backfill still
+  // type-check.
+  readonly qc_passed?: boolean | null;
+  readonly final_export_available?: boolean;
 }
 
 export interface JobResponse {
@@ -59,6 +64,40 @@ export interface JobResponse {
   readonly updated_at: string;
 }
 
+/**
+ * Phase 4F-2 aggregate detail response. Superset of {@link JobResponse}.
+ *
+ * Returned by `GET /api/v1/jobs/{id}`. The aggregate fields are computed
+ * server-side from the stage_runs / artifacts / compliance_events tables.
+ * The old {@link JobResponse} is still returned by `POST /api/v1/jobs`
+ * (the creation-time response) and is structurally assignable to
+ * {@link JobDetail} so old call sites keep working.
+ */
+export interface JobDetail extends JobResponse {
+  readonly current_stage: string | null;
+  readonly progress_percent: number;
+  readonly artifact_count: number;
+  readonly compliance_event_count: number;
+  readonly latest_qc_result: Record<string, unknown> | null;
+  readonly final_export_summary: Record<string, unknown> | null;
+}
+
+/**
+ * Phase 4F-2 combined payload. Returned by
+ * `GET /api/v1/jobs/{id}/summary`. Bundles the seven detail-page
+ * endpoints into one response so the frontend can open the detail view
+ * in a single round-trip.
+ */
+export interface JobFullSummary {
+  readonly job: JobDetail;
+  readonly progress: JobProgress;
+  readonly timeline: readonly StageTimelineEntry[];
+  readonly artifacts: readonly ArtifactResponse[];
+  readonly compliance_events: readonly ComplianceEventResponse[];
+  readonly qc_report: QCReportResponse | null;
+  readonly final_export: FinalExportResponse | null;
+}
+
 export interface StageProgress {
   readonly stage_name: string;
   readonly status: StageStatus | "pending";
@@ -75,6 +114,12 @@ export interface JobProgress {
   readonly current_stage: string | null;
   readonly progress_percent: number;
   readonly stages: readonly StageProgress[];
+  // Phase 4F-2 flat stage-name lists. Defaulted on the backend; here
+  // declared optional so an older payload still type-checks.
+  readonly pending_stages?: number;
+  readonly completed_stage_names?: readonly string[];
+  readonly failed_stage_names?: readonly string[];
+  readonly pending_stage_names?: readonly string[];
 }
 
 export interface StageTimelineEntry {

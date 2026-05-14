@@ -77,6 +77,8 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
             <th>Voice / Face</th>
             <th>Progress</th>
             <th>Current stage</th>
+            <th>QC</th>
+            <th>Final export</th>
             <th>Artifacts</th>
             <th>Updated</th>
           </tr>
@@ -105,6 +107,22 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
                 <ProgressBar percent={job.progress_percent} />
               </td>
               <td>{job.current_stage ? humanize(job.current_stage) : "—"}</td>
+              <td>
+                {job.qc_passed === undefined || job.qc_passed === null ? (
+                  <span className={styles.qcPending}>Pending</span>
+                ) : job.qc_passed ? (
+                  <span className={styles.qcPassed}>Passed</span>
+                ) : (
+                  <span className={styles.qcFailed}>Failed</span>
+                )}
+              </td>
+              <td>
+                {job.final_export_available ? (
+                  <span className={styles.exportReady}>Available</span>
+                ) : (
+                  <span className={styles.exportPending}>Not ready</span>
+                )}
+              </td>
               <td>{job.artifact_count}</td>
               <td>{formatRelative(job.updated_at)}</td>
             </tr>

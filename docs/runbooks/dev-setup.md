@@ -98,6 +98,15 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 4F-3: frontend consumes the Phase 4F-2 backfill
+
+Frontend-only. Run `make phase4f3-test` (frontend lint + build + Phase 4F-2
+backend tests). The Jobs list now shows QC and Final-export columns and a
+Status filter dropdown that wires straight into `?status=…`. The detail
+page now uses `/api/v1/jobs/:id/summary` as the primary loader with a
+transparent fallback to the legacy seven-fetch path; the chosen path is
+logged in the right-sidebar Logs panel.
+
 ### Phase 4F-2: extra job-view fields + status filter
 
 Additive only. `GET /api/v1/jobs` now accepts `?status=<JobStatus>` (returns

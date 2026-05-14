@@ -2,7 +2,42 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4F-2 — Phase 4A API completeness backfill.**
+> **Current status: Phase 4F-3 — Frontend consumes the Phase 4F-2 API backfill.**
+>
+> Frontend-only follow-up to Phase 4F-2. The UI now uses the new backend contract instead of reconstructing fields client-side. No new dependencies, no Docker change, no boundary shift. Backend stays at **256 passed / 1 skipped**; frontend `lint` + `build` clean across 8 routes.
+>
+> **Types** (`frontend/lib/types.ts`)
+> - `JobSummary` gains optional `qc_passed: boolean | null` and `final_export_available: boolean`.
+> - `JobProgress` gains optional `pending_stages`, `completed_stage_names`, `failed_stage_names`, `pending_stage_names`.
+> - New `JobDetail extends JobResponse` superset — adds `current_stage`, `progress_percent`, `artifact_count`, `compliance_event_count`, `latest_qc_result`, `final_export_summary`.
+> - New `JobFullSummary` for `/summary`: `{ job: JobDetail, progress, timeline, artifacts, compliance_events, qc_report, final_export }`.
+> - Old `JobResponse` kept (still returned by `POST /api/v1/jobs`); `JobDetail` is structurally assignable from `JobResponse` so existing call sites keep working.
+>
+> **API client** (`frontend/lib/api.ts`)
+> - `listJobs(params)` accepts optional `status: JobStatus` → sends `?status=…`.
+> - `getJob(jobId)` now returns `JobDetail` (backward compatible).
+> - New `getJobSummary(jobId)` → `JobFullSummary` (logs as `/api/v1/jobs/:id/summary`).
+>
+> **Jobs list page** (`/jobs`)
+> - New **Status** dropdown at the top: `All`, `Pending compliance`, `Accepted`, `Published`, `Rejected`, `Failed`. Changing it resets pagination implicitly (the loader callback's dependency includes the filter, so the polling restarts) and emits one log entry per filter change.
+> - New columns: **QC** (`Passed` / `Failed` / `Pending`) and **Final export** (`Available` / `Not ready`), color-coded.
+> - Empty-state message tailors to the active filter.
+> - Job count badge ("N jobs") to the right of the filter dropdown.
+>
+> **Dashboard** (`/`)
+> - Same QC + Final-export columns added alongside Status / Progress / Current stage. Surfaces `qc_passed` and `final_export_available` directly from the list payload — no extra round-trips.
+>
+> **Job detail** (`/jobs/[jobId]`)
+> - Primary loader is now a single `GET /api/v1/jobs/{id}/summary` round-trip.
+> - **Fallback path:** any non-AbortError / non-404 failure (5xx, CORS, network) silently falls back to the original seven-parallel-fetch loader so the page keeps working against an older backend or during transient flakes. The path used is logged once per path-change (`info` for `/summary`, `warning` for `fallback`) so the operator can see which one is active in the right-sidebar Logs panel.
+> - **404** from `/summary` passes straight through to the existing "missing job" error UI (the resource genuinely doesn't exist).
+> - Beneath the `ProgressBar`, a new `StageCountsStrip` shows `✓ N completed   ✗ M failed   … K pending   → current_stage`, fed by the Phase 4F-2 flat name lists with a graceful fallback to deriving from `stages[]` if the payload predates the backfill. The `failed` chip dims when `failed_stages == 0`. Hovering each chip shows the relevant stage names as the tooltip.
+>
+> **Verification**: `npm run lint` → zero warnings; `npm run build` → 8 routes (`/` 3.21 kB / `/jobs` 4.1 kB / `/jobs/[jobId]` 5.84 kB after the new strip — all within the same `87.4 kB shared` budget). Backend `make test` → **256 passed / 1 skipped**; strict `-W error` pytest → identical; `make phase4b-test`, `make phase4f-test`, `make phase4f2-test`, and the new `make phase4f3-test` all pass.
+>
+> **NOT in Phase 4F-3**: backend changes, Docker changes, dependency changes, new pages. Strictly a frontend consume-the-backfill pass.
+
+> **Previous milestone: Phase 4F-2 — Phase 4A API completeness backfill.**
 >
 > Purely additive backend work that closes the five spec gaps surfaced in the Phase 4A audit. No frontend change required; no Docker rebuild; no boundary shift. Backend test count goes from **242 → 256 passed / 1 skipped** under both default `pytest` and the strict `-W error` sweep.
 >

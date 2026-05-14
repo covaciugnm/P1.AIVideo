@@ -18,8 +18,11 @@ import type {
   CreateJobBody,
   CreateJobFromInputsBody,
   FinalExportResponse,
+  JobDetail,
+  JobFullSummary,
   JobProgress,
   JobResponse,
+  JobStatus,
   JobSummary,
   ProviderInfo,
   ProvidersResponse,
@@ -181,21 +184,41 @@ export function getUiOptions(signal?: AbortSignal): Promise<UIOptions> {
 // ---------------------------------------------------------------------------
 
 export function listJobs(
-  params: { limit?: number; offset?: number } = {},
+  params: { limit?: number; offset?: number; status?: JobStatus } = {},
   signal?: AbortSignal,
 ): Promise<JobSummary[]> {
   const search = new URLSearchParams();
   if (params.limit !== undefined) search.set("limit", String(params.limit));
   if (params.offset !== undefined) search.set("offset", String(params.offset));
+  if (params.status !== undefined) search.set("status", params.status);
   const qs = search.toString();
   const path = qs ? `/api/v1/jobs?${qs}` : "/api/v1/jobs";
   return request<JobSummary[]>(path, { signal, logLabel: "/api/v1/jobs" });
 }
 
-export function getJob(jobId: string, signal?: AbortSignal): Promise<JobResponse> {
-  return request<JobResponse>(`/api/v1/jobs/${jobId}`, {
+/**
+ * Phase 4F-2 aggregate detail. Backwards compatible with the legacy
+ * JobResponse shape — every legacy field is preserved on JobDetail, so
+ * existing callers that read brief/status/etc keep working unchanged.
+ */
+export function getJob(jobId: string, signal?: AbortSignal): Promise<JobDetail> {
+  return request<JobDetail>(`/api/v1/jobs/${jobId}`, {
     signal,
     logLabel: "/api/v1/jobs/:id",
+  });
+}
+
+/**
+ * Phase 4F-2 combined payload. Single round-trip alternative to fetching
+ * the seven detail-page endpoints in parallel.
+ */
+export function getJobSummary(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<JobFullSummary> {
+  return request<JobFullSummary>(`/api/v1/jobs/${jobId}/summary`, {
+    signal,
+    logLabel: "/api/v1/jobs/:id/summary",
   });
 }
 

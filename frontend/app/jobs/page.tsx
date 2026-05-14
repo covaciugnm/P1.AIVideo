@@ -11,17 +11,30 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ApiError, deleteJob, listJobs } from "@/lib/api";
 import { formatRelative, humanize, shortId } from "@/lib/format";
 import * as logBus from "@/lib/log-bus";
-import type { JobSummary } from "@/lib/types";
+import type { JobStatus, JobSummary } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
 import styles from "./page.module.css";
+
+// Canonical JobStatus values, in the order the dashboard lists them.
+const STATUS_OPTIONS: readonly { readonly value: JobStatus; readonly label: string }[] = [
+  { value: "pending_compliance", label: "Pending compliance" },
+  { value: "accepted", label: "Accepted" },
+  { value: "published", label: "Published" },
+  { value: "rejected", label: "Rejected" },
+  { value: "failed", label: "Failed" },
+];
+
+type StatusFilter = "all" | JobStatus;
 
 export default function JobsListPage() {
   const { settings, hydrated } = useSettings();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const announcedRef = useRef(false);
+  const lastFilterRef = useRef<StatusFilter>("all");
 
   useEffect(() => {
     if (!announcedRef.current) {
@@ -34,11 +47,29 @@ export default function JobsListPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (lastFilterRef.current === statusFilter) return;
+    lastFilterRef.current = statusFilter;
+    logBus.emit({
+      source: "frontend",
+      level: "info",
+      message: `jobs list status filter → ${statusFilter}`,
+      meta: { status: statusFilter },
+    });
+  }, [statusFilter]);
+
   const loader = useCallback(
-    (signal: AbortSignal) => listJobs({ limit: 100 }, signal),
+    (signal: AbortSignal) =>
+      listJobs(
+        {
+          limit: 100,
+          ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+        },
+        signal,
+      ),
     // reloadTick is included so a manual refresh after delete re-fetches.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [reloadTick],
+    [reloadTick, statusFilter],
   );
 
   const { data, error, loading } = usePolling<JobSummary[]>(loader, {
@@ -85,6 +116,30 @@ export default function JobsListPage() {
         </Link>
       </header>
 
+      <div className={styles.filterBar}>
+        <label htmlFor="status-filter" className={styles.filterLabel}>
+          Status
+        </label>
+        <select
+          id="status-filter"
+          className={styles.filterSelect}
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+        >
+          <option value="all">All</option>
+          {STATUS_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {data !== null && (
+          <span className={styles.filterCount}>
+            {data.length} {data.length === 1 ? "job" : "jobs"}
+          </span>
+        )}
+      </div>
+
       {actionError && <ErrorMessage message={actionError} />}
       {error && (
         <ErrorMessage
@@ -96,6 +151,7 @@ export default function JobsListPage() {
       {data !== null && (
         <JobsTable
           jobs={data}
+          statusFilter={statusFilter}
           confirmingId={confirmingId}
           onAskDelete={(id) => {
             setConfirmingId(id);
@@ -111,6 +167,7 @@ export default function JobsListPage() {
 
 interface JobsTableProps {
   readonly jobs: readonly JobSummary[];
+  readonly statusFilter: StatusFilter;
   readonly confirmingId: string | null;
   readonly onAskDelete: (jobId: string) => void;
   readonly onCancelDelete: () => void;
@@ -119,6 +176,7 @@ interface JobsTableProps {
 
 function JobsTable({
   jobs,
+  statusFilter,
   confirmingId,
   onAskDelete,
   onCancelDelete,
@@ -127,7 +185,11 @@ function JobsTable({
   if (jobs.length === 0) {
     return (
       <div className="card">
-        <p className="muted">No jobs yet. Create one to get started.</p>
+        <p className="muted">
+          {statusFilter === "all"
+            ? "No jobs yet. Create one to get started."
+            : `No jobs with status “${humanize(statusFilter)}”.`}
+        </p>
       </div>
     );
   }
@@ -142,7 +204,8 @@ function JobsTable({
               <th>Voice / Face</th>
               <th>Progress</th>
               <th>Current stage</th>
-              <th>Duration</th>
+              <th>QC</th>
+              <th>Final export</th>
               <th>Artifacts</th>
               <th>Updated</th>
               <th>Actions</th>
@@ -172,7 +235,12 @@ function JobsTable({
                   <ProgressBar percent={job.progress_percent} />
                 </td>
                 <td>{job.current_stage ? humanize(job.current_stage) : "—"}</td>
-                <td>{job.target_duration_seconds}s</td>
+                <td>
+                  <QcCell qcPassed={job.qc_passed} />
+                </td>
+                <td>
+                  <FinalExportCell available={job.final_export_available} />
+                </td>
                 <td>{job.artifact_count}</td>
                 <td>{formatRelative(job.updated_at)}</td>
                 <td>
@@ -224,5 +292,24 @@ function JobsTable({
         </table>
       </div>
     </div>
+  );
+}
+
+function QcCell({ qcPassed }: { readonly qcPassed: boolean | null | undefined }) {
+  if (qcPassed === undefined || qcPassed === null) {
+    return <span className={styles.qcPending}>Pending</span>;
+  }
+  return qcPassed ? (
+    <span className={styles.qcPassed}>Passed</span>
+  ) : (
+    <span className={styles.qcFailed}>Failed</span>
+  );
+}
+
+function FinalExportCell({ available }: { readonly available: boolean | undefined }) {
+  return available ? (
+    <span className={styles.exportReady}>Available</span>
+  ) : (
+    <span className={styles.exportPending}>Not ready</span>
   );
 }

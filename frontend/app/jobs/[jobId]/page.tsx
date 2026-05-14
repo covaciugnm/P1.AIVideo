@@ -14,22 +14,24 @@ import { useSettings } from "@/components/SettingsContext";
 import { StageTimeline } from "@/components/StageTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
+  ApiError,
   getJob,
   getJobArtifacts,
   getJobComplianceEvents,
   getJobFinalExportOptional,
   getJobProgress,
   getJobQcReportOptional,
+  getJobSummary,
   getJobTimeline,
 } from "@/lib/api";
-import { formatDate, isTerminalStatus, shortId } from "@/lib/format";
+import { formatDate, humanize, isTerminalStatus, shortId } from "@/lib/format";
 import * as logBus from "@/lib/log-bus";
 import type {
   ArtifactResponse,
   ComplianceEventResponse,
   FinalExportResponse,
+  JobDetail,
   JobProgress,
-  JobResponse,
   QCReportResponse,
   StageTimelineEntry,
 } from "@/lib/types";
@@ -38,7 +40,7 @@ import { usePolling } from "@/lib/usePolling";
 import styles from "./page.module.css";
 
 interface JobDetailBundle {
-  readonly job: JobResponse;
+  readonly job: JobDetail;
   readonly progress: JobProgress;
   readonly timeline: readonly StageTimelineEntry[];
   readonly artifacts: readonly ArtifactResponse[];
@@ -56,6 +58,7 @@ export default function JobDetailPage({
   const { settings, hydrated } = useSettings();
   const announcedRef = useRef(false);
   const lastStatusRef = useRef<string | null>(null);
+  const lastPathRef = useRef<"summary" | "fallback" | null>(null);
 
   useEffect(() => {
     if (!announcedRef.current) {
@@ -71,32 +74,75 @@ export default function JobDetailPage({
 
   const loader = useCallback(
     async (signal: AbortSignal): Promise<JobDetailBundle> => {
-      const [
-        job,
-        progress,
-        timeline,
-        artifacts,
-        complianceEvents,
-        qcReport,
-        finalExport,
-      ] = await Promise.all([
-        getJob(jobId, signal),
-        getJobProgress(jobId, signal),
-        getJobTimeline(jobId, signal),
-        getJobArtifacts(jobId, signal),
-        getJobComplianceEvents(jobId, signal),
-        getJobQcReportOptional(jobId, signal),
-        getJobFinalExportOptional(jobId, signal),
-      ]);
-      return {
-        job,
-        progress,
-        timeline,
-        artifacts,
-        complianceEvents,
-        qcReport,
-        finalExport,
-      };
+      // Phase 4F-3 primary path: a single /summary round-trip.
+      try {
+        const summary = await getJobSummary(jobId, signal);
+        if (lastPathRef.current !== "summary") {
+          logBus.emit({
+            source: "frontend",
+            level: "info",
+            message: `detail loader using /summary (${shortId(jobId)})`,
+            meta: { jobId, path: "summary" },
+          });
+          lastPathRef.current = "summary";
+        }
+        return {
+          job: summary.job,
+          progress: summary.progress,
+          timeline: summary.timeline,
+          artifacts: summary.artifacts,
+          complianceEvents: summary.compliance_events,
+          qcReport: summary.qc_report,
+          finalExport: summary.final_export,
+        };
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw err;
+        }
+        // 404 means the job genuinely doesn't exist; surface it directly.
+        if (err instanceof ApiError && err.status === 404) {
+          throw err;
+        }
+        // Network or 5xx from /summary — fall back to the seven-fetch
+        // path so the UI stays resilient (e.g. older backend without the
+        // Phase 4F-2 endpoint, or transient flake on one shard).
+        if (lastPathRef.current !== "fallback") {
+          const msg = err instanceof Error ? err.message : String(err);
+          logBus.emit({
+            source: "frontend",
+            level: "warning",
+            message: `detail loader falling back to multi-fetch (${shortId(jobId)}): ${msg}`,
+            meta: { jobId, path: "fallback", reason: msg },
+          });
+          lastPathRef.current = "fallback";
+        }
+        const [
+          job,
+          progress,
+          timeline,
+          artifacts,
+          complianceEvents,
+          qcReport,
+          finalExport,
+        ] = await Promise.all([
+          getJob(jobId, signal),
+          getJobProgress(jobId, signal),
+          getJobTimeline(jobId, signal),
+          getJobArtifacts(jobId, signal),
+          getJobComplianceEvents(jobId, signal),
+          getJobQcReportOptional(jobId, signal),
+          getJobFinalExportOptional(jobId, signal),
+        ]);
+        return {
+          job,
+          progress,
+          timeline,
+          artifacts,
+          complianceEvents,
+          qcReport,
+          finalExport,
+        };
+      }
     },
     [jobId],
   );
@@ -204,6 +250,7 @@ function JobDetail({ bundle }: { readonly bundle: JobDetailBundle }) {
             totalStages={progress.total_stages}
             failedStages={progress.failed_stages}
           />
+          <StageCountsStrip progress={progress} />
         </div>
         {terminal && (
           <p className="muted">Job is in a terminal state. Polling stopped.</p>
@@ -244,5 +291,47 @@ function JobDetail({ bundle }: { readonly bundle: JobDetailBundle }) {
         </section>
       )}
     </>
+  );
+}
+
+function StageCountsStrip({ progress }: { readonly progress: JobProgress }) {
+  // Phase 4F-2 added the flat name lists. They're optional in the TS
+  // contract (older payloads may not include them), so fall back to the
+  // count fields + derive the lists from ``stages`` when needed.
+  const completedCount = progress.completed_stages;
+  const failedCount = progress.failed_stages;
+  const pendingCount =
+    progress.pending_stages ??
+    Math.max(0, progress.total_stages - completedCount - failedCount);
+  const pendingNames =
+    progress.pending_stage_names ??
+    progress.stages.filter((s) => s.status === "pending").map((s) => s.stage_name);
+  const failedNames =
+    progress.failed_stage_names ??
+    progress.stages
+      .filter((s) => s.status === "failed" || s.status === "rejected")
+      .map((s) => s.stage_name);
+  return (
+    <div className={styles.stageCounts}>
+      <span className={styles.stageCountCompleted} title="Completed stages">
+        ✓ {completedCount} completed
+      </span>
+      <span
+        className={
+          failedCount > 0 ? styles.stageCountFailed : styles.stageCountFailedMuted
+        }
+        title={failedNames.length > 0 ? failedNames.map(humanize).join(", ") : "No failed stages"}
+      >
+        ✗ {failedCount} failed
+      </span>
+      <span className={styles.stageCountPending} title={pendingNames.map(humanize).join(", ")}>
+        … {pendingCount} pending
+      </span>
+      {progress.current_stage && (
+        <span className={styles.stageCurrent} title="Current stage">
+          → {humanize(progress.current_stage)}
+        </span>
+      )}
+    </div>
   );
 }

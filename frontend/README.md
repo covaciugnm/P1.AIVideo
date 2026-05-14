@@ -72,6 +72,13 @@ make frontend-check     # runs lint + build (also invoked by phase4b-test)
 | `/jobs/new` | Create-job form. Loads `GET /api/v1/config/ui-options` once; supports `tts` (inline script_text) and `provided_audio` (upload + reference) flows; optional `provided_image` face mode. Submits via `POST /api/v1/jobs/from-inputs`. |
 | `/jobs/[jobId]` | Live job detail. Polls 7 endpoints in parallel every 3 s and renders progress, stage timeline, artifacts, compliance events, QC report, and final export. |
 
+## Phase 4F-3 additions
+
+- **Jobs list** (`/jobs`) has a **Status** dropdown — `All` / `Pending compliance` / `Accepted` / `Published` / `Rejected` / `Failed`. The selection is passed to `GET /api/v1/jobs?status=…` and logged once per change.
+- **Jobs list** and **Dashboard** both gain two columns from Phase 4F-2: **QC** (`Passed` / `Failed` / `Pending`) and **Final export** (`Available` / `Not ready`) — derived from `qc_passed` and `final_export_available` on the new `JobSummary`.
+- **Job detail** (`/jobs/[jobId]`) uses `GET /api/v1/jobs/:id/summary` as the primary loader (one round-trip), with a transparent fallback to the original seven-parallel-fetch loader if `/summary` 5xx's or the network fails. The path actually used is emitted once per change to the right-sidebar Logs panel.
+- A new compact stage-counts strip lives beneath the progress bar showing `✓ completed  ✗ failed  … pending  → current`, fed by Phase 4F-2's flat name lists with a soft fallback for older payloads.
+
 ## Phase 4F additions
 
 - **Settings → Providers** section: live catalog from `GET /api/v1/providers`, per-category default selector, **Test** button on TTS rows that calls `/api/v1/tts/generate` and surfaces the 503 inline.
