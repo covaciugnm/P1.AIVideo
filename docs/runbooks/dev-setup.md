@@ -26,6 +26,7 @@ make phase3e-test
 make phase3f-test
 make phase3g-test
 make phase3h-test
+make phase3i-test
 # or together:
 make test
 ```

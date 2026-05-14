@@ -2,15 +2,15 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3H — Editor timing contract + edit_plan artifact.**
+> **Current status: Phase 3I — QC contract + structured report artifact.**
 >
-> - **`ArtifactType.edit_plan`** added to the canonical enum (now 7 values).
-> - **`EditPlan` / `EditSegment` schemas** in `common.schemas` — structured timing metadata with validators that enforce per-segment `start + duration == end` (in ms, float-safe) and that segments tile exactly from 0 to `target_duration_seconds` without gaps or overlaps.
-> - **Editor handler** reads the structured script from the Phase 3G scriptwriter output, splits the target duration **20% / 65% / 15%** across hook / body / cta (computed in milliseconds for exact summing), and emits an `ArtifactType.edit_plan` artifact carrying the plan + a SHA-256 of the serialized plan + a reference to the source script. The existing `reel_draft.mp4` stub stays in the output so the QC stage keeps working.
-> - **No video compositing.** No `ffmpeg`, no `moviepy`, no `cv2`, no `imageio`. The plan's URI is still an `s3://` stub; a subprocess audit confirms no media library is pulled in by importing the editor handler.
-> - **14 Phase 3H tests** cover the schema validators, the handler's happy path + rejection paths, determinism, non-integer target durations (e.g. 33s) tiling exactly, and an end-to-end DAG run promoting the `edit_plan` row into the `artifacts` table.
+> - **`QCReport` / `QCCheck` / `QCDecisionType`** added to `common.schemas`. The report carries `passed: bool`, a list of named checks, the upstream artifact URIs + checksums (script / edit_plan / reel_draft), `target_duration_seconds`, `segment_count`, and `expected_segments`.
+> - **QC handler rewritten** to consume the editor's `edit_plan` + `reel_draft` plus the scriptwriter's `script` artifact, and run four structural checks: `script_artifact_present`, `segments_present`, `total_duration_matches_target`, `reel_draft_is_stub`. Missing required artifacts raise `StageRejection`; content-level problems produce a `QCReport` with `passed=False`.
+> - The QC report is registered as **`ArtifactType.metadata`** (mime `application/json`, content SHA-256) so downstream stages — and future audit tooling — can pull it from the `artifacts` table by job id.
+> - **No real media inspected.** No `ffmpeg`, `ffprobe`, `mediainfo`, `moviepy`, `OpenCV`, `imageio`, `numpy`, `PIL`, `torch`, etc. A subprocess audit asserts the QC module imports none of them.
+> - **11 Phase 3I tests** cover the happy path, three structural rejections, three content-level failure modes (incomplete segments, total mismatch, reel_draft with local_path), determinism, end-to-end DAG promoting the report into the artifacts table, and the no-heavy-imports invariant.
 >
-> **No real video editing. No ffmpeg. No moviepy / OpenCV / imageio / numpy. No model weights downloaded. No SadTalker / Whisper / SDXL / real lip-sync / face generation implemented.**
+> **No real video / audio QC. No ffmpeg / ffprobe / mediainfo / moviepy / OpenCV / imageio / numpy / PIL / torch added. No model weights downloaded. No SadTalker / Whisper / SDXL / lip-sync / face generation implemented.**
 
 > **Previous milestone: Phase 3E — image input validation + face artifact contract.**
 > Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
@@ -69,7 +69,37 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3H scope — current
+## Phase 3I scope — current
+
+Implemented on top of Phase 3H:
+
+- **`QCDecisionType`**, **`QCCheck`**, and **`QCReport`** added to `common.schemas`.
+- **`agents/qc/handler.py`** rewritten:
+  - Pulls `edit_plan` + `reel_draft` from the editor stage's output and `script` from the scriptwriter stage's output.
+  - Missing required artifacts → `StageRejection` (wiring failure).
+  - Runs four named checks:
+    - `script_artifact_present` — script ref carries a content checksum.
+    - `segments_present` — edit_plan has the three expected types in order: hook, body, cta.
+    - `total_duration_matches_target` — segment durations sum (in ms, 1 ms tolerance) to `target_duration_seconds`.
+    - `reel_draft_is_stub` — reel_draft is still a Phase 3H stub (s3:// URI, no local_path); a local file triggers a `warn`.
+  - Aggregate `passed = True` iff every check is `pass`.
+  - Emits a `QCReport` artifact (`ArtifactType.metadata`, mime `application/json`, content SHA-256) with `extra["qc_report"]` carrying the structured report and `extra["qc_passed"]` for cheap downstream filtering.
+- **11 Phase 3I tests** in `tests/integration/test_phase3i_qc_report.py`:
+  - 2 happy-path tests (artifact shape + checksum + determinism).
+  - 3 structural rejection tests (missing edit_plan / reel_draft / script).
+  - 4 content-level failure tests (incomplete segments → `segments_present` fails; total mismatch → `total_duration_matches_target` fails; reel_draft with `local_path` → `reel_draft_is_stub` warns; stub reel_draft passes).
+  - 1 end-to-end DAG test verifying the metadata artifact lands in the `artifacts` table with the right shape.
+  - 1 subprocess-isolated import audit confirming no `ffmpeg` / `ffprobe` / `mediainfo` / `moviepy` / `cv2` / `imageio` / `numpy` / `PIL` / `torch` / `diffusers` / `transformers` / `soundfile` / `librosa` is pulled in.
+
+Explicitly **not** in Phase 3I:
+
+- **No real video / audio QC.** Every check operates on artifact metadata; no file is opened.
+- **No `ffmpeg` / `ffprobe` / `mediainfo` / `moviepy` / `OpenCV` / `imageio` / `numpy` / `PIL` added.**
+- **No SadTalker / Whisper / SDXL / real lip-sync / face generation.**
+- **No model weights downloaded.**
+- **No Docker builds run.**
+
+## Phase 3H scope (still active)
 
 Implemented on top of Phase 3G:
 

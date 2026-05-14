@@ -308,6 +308,50 @@ class EditPlan(BaseModel):
         return self
 
 
+QCDecisionType = Literal["pass", "fail", "warn"]
+
+
+class QCCheck(BaseModel):
+    """One structural QC check result.
+
+    Phase 3I QC is metadata-only — every check is a string-name +
+    decision + human-readable detail. Future real-media QC will produce
+    the same shape, just with more checks (face stability, sync, OCR,
+    etc.).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    decision: QCDecisionType
+    detail: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class QCReport(BaseModel):
+    """Structured QC report produced by the QC stage.
+
+    A single ``passed`` boolean summarizes the run; the ``checks`` list
+    carries per-check decisions so future stages (publisher, audit UI)
+    can present granular results. Carries back-references to the source
+    artifacts (script, edit_plan, reel_draft) for traceability.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    passed: bool
+    checks: list[QCCheck]
+    script_artifact_uri: str
+    script_artifact_checksum: str | None = None
+    edit_plan_artifact_uri: str
+    edit_plan_artifact_checksum: str | None = None
+    reel_draft_artifact_uri: str
+    target_duration_seconds: float
+    segment_count: int
+    expected_segments: list[str] = Field(default_factory=lambda: ["hook", "body", "cta"])
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ComplianceTokenClaims(BaseModel):
     """Claims carried inside a `compliance_token`. See pre_lipsync_auth."""
 
