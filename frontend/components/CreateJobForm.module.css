@@ -102,3 +102,46 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+.fitStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 10px;
+  margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  font-family: var(--mono-stack);
+}
+
+.fitOk {
+  border-left-color: var(--success);
+  color: var(--text);
+}
+
+.fitWarn {
+  border-left-color: var(--warn);
+  color: var(--text);
+}
+
+.fitMuted {
+  border-left-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+.fitLabel {
+  color: var(--text);
+}
+
+.fitMeta {
+  color: var(--text-muted);
+}
+
+.fitRec {
+  color: var(--warn);
+  margin-left: auto;
+}

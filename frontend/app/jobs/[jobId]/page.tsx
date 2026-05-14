@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ArtifactTable } from "@/components/ArtifactTable";
 import { ComplianceEvents } from "@/components/ComplianceEvents";
@@ -15,6 +15,7 @@ import { StageTimeline } from "@/components/StageTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   ApiError,
+  audioFitCheck,
   getJob,
   getJobArtifacts,
   getJobComplianceEvents,
@@ -28,6 +29,7 @@ import { formatDate, humanize, isTerminalStatus, shortId } from "@/lib/format";
 import * as logBus from "@/lib/log-bus";
 import type {
   ArtifactResponse,
+  AudioFitCheckResponse,
   ComplianceEventResponse,
   FinalExportResponse,
   JobDetail,
@@ -175,6 +177,45 @@ export default function JobDetailPage({
     }
   }, [data, jobId]);
 
+  // Phase 5C — opportunistic audio fit-check whenever the job has at
+  // least one audio artifact. We re-run when the artifact count changes
+  // (e.g. uploaded audio + later TTS-generated audio), not every poll
+  // tick, to avoid log spam.
+  const [audioFit, setAudioFit] = useState<AudioFitCheckResponse | null>(null);
+  const lastFitArtifactCountRef = useRef<number>(-1);
+
+  useEffect(() => {
+    if (!data) return;
+    const audioCount = data.artifacts.filter((a) => a.artifact_type === "audio").length;
+    if (audioCount === 0) {
+      if (audioFit !== null) setAudioFit(null);
+      lastFitArtifactCountRef.current = 0;
+      return;
+    }
+    if (audioCount === lastFitArtifactCountRef.current) return;
+    lastFitArtifactCountRef.current = audioCount;
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const fit = await audioFitCheck({ job_id: jobId }, controller.signal);
+        setAudioFit(fit);
+        logBus.emit({
+          source: "frontend",
+          level: fit.fit_status === "ok" ? "info" : "warning",
+          message: `audio fit ${fit.fit_status} (Δ${fit.delta_seconds}s)`,
+          meta: {
+            jobId,
+            fit_status: fit.fit_status,
+            recommendation: fit.recommendation,
+          },
+        });
+      } catch {
+        // opportunistic — silent on transient failure.
+      }
+    })();
+    return () => controller.abort();
+  }, [data, jobId, audioFit]);
+
   return (
     <div>
       <header className={styles.header}>
@@ -188,12 +229,18 @@ export default function JobDetailPage({
 
       {error && <ErrorMessage message={error.message} title="Failed to load job" />}
       {loading && data === null && !error && <LoadingState label="Loading job…" />}
-      {data && <JobDetail bundle={data} />}
+      {data && <JobDetail bundle={data} fit={audioFit} />}
     </div>
   );
 }
 
-function JobDetail({ bundle }: { readonly bundle: JobDetailBundle }) {
+function JobDetail({
+  bundle,
+  fit,
+}: {
+  readonly bundle: JobDetailBundle;
+  readonly fit: AudioFitCheckResponse | null;
+}) {
   const {
     job,
     progress,
@@ -251,6 +298,7 @@ function JobDetail({ bundle }: { readonly bundle: JobDetailBundle }) {
             failedStages={progress.failed_stages}
           />
           <StageCountsStrip progress={progress} />
+          {fit && <FitBanner fit={fit} />}
         </div>
         {terminal && (
           <p className="muted">Job is in a terminal state. Polling stopped.</p>
@@ -291,6 +339,38 @@ function JobDetail({ bundle }: { readonly bundle: JobDetailBundle }) {
         </section>
       )}
     </>
+  );
+}
+
+function FitBanner({ fit }: { readonly fit: AudioFitCheckResponse }) {
+  const cls =
+    fit.fit_status === "ok"
+      ? styles.fitOk
+      : fit.fit_status === "missing_audio"
+        ? styles.fitMuted
+        : styles.fitWarn;
+  const deltaLabel =
+    fit.delta_seconds === null
+      ? "—"
+      : `${fit.delta_seconds > 0 ? "+" : ""}${fit.delta_seconds.toFixed(2)}s`;
+  return (
+    <div className={`${styles.fitBanner} ${cls}`}>
+      <span>
+        Audio fit: <strong>{humanize(fit.fit_status)}</strong>
+      </span>
+      <span className={styles.fitMeta}>
+        target {fit.target_duration_seconds}s · audio{" "}
+        {fit.audio_duration_seconds !== null
+          ? `${fit.audio_duration_seconds.toFixed(2)}s`
+          : "—"}{" "}
+        · Δ {deltaLabel}
+      </span>
+      {fit.fit_status !== "ok" && (
+        <span className={styles.fitRec}>
+          → {humanize(fit.recommendation)}
+        </span>
+      )}
+    </div>
   );
 }
 

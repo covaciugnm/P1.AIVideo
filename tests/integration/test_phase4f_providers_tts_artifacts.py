@@ -116,7 +116,16 @@ async def test_providers_response_carries_no_secret_keys(app_under_test, monkeyp
 # ---------------------------------------------------------------------------
 
 
-async def test_tts_generate_returns_503_provider_not_configured(app_under_test):
+async def test_tts_generate_returns_503_when_piper_not_ready(app_under_test):
+    """Phase 5A categorises the 503 by what's actually missing.
+
+    With piper-tts not installed we get ``tts_runtime_missing``; with the
+    runtime installed but no voice files we get ``tts_assets_missing``;
+    with neither, ``tts_provider_not_configured``. Any of these is a
+    valid "Piper not ready" signal — the test pins the union.
+    """
+    import importlib.util
+
     client, *_ = app_under_test
     r = await client.post(
         "/api/v1/tts/generate",
@@ -125,8 +134,14 @@ async def test_tts_generate_returns_503_provider_not_configured(app_under_test):
     assert r.status_code == 503
     detail = r.json()["detail"]
     assert isinstance(detail, dict)
-    assert detail["code"] == "tts_provider_not_configured"
+    assert detail["code"] in {
+        "tts_runtime_missing",
+        "tts_assets_missing",
+        "tts_provider_not_configured",
+    }
     assert detail["provider_id"] == "piper"
+    if importlib.util.find_spec("piper") is None:
+        assert detail["code"] == "tts_runtime_missing"
 
 
 async def test_tts_generate_rejects_empty_script(app_under_test):

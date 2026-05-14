@@ -372,9 +372,78 @@ export interface TTSGenerateError {
   readonly code:
     | "tts_provider_not_configured"
     | "tts_provider_disabled"
-    | "tts_provider_not_implemented";
+    | "tts_provider_not_implemented"
+    // Phase 5A categorised codes.
+    | "tts_runtime_missing"
+    | "tts_assets_missing"
+    | "tts_generation_failed";
   readonly message: string;
   readonly provider_id: string;
+}
+
+// Phase 5B — script generation.
+
+export interface ScriptGenerateRequest {
+  readonly brief: string;
+  readonly target_duration_seconds: number;
+  readonly script_text?: string | null;
+  readonly tone?: string | null;
+  readonly language?: string;
+  readonly provider_id?: string;
+  readonly model?: string | null;
+}
+
+export interface ScriptGenerateResponse {
+  readonly status: "generated";
+  readonly provider_id: string;
+  readonly model: string;
+  readonly hook: string;
+  readonly body: string;
+  readonly cta: string;
+  readonly full_script: string;
+  readonly estimated_duration_seconds: number;
+  readonly language: string;
+  readonly artifact_id: string | null;
+  readonly message: string;
+}
+
+export interface ScriptGenerateError {
+  readonly code:
+    | "script_provider_not_configured"
+    | "script_provider_disabled"
+    | "script_provider_unreachable"
+    | "script_provider_not_implemented"
+    | "script_generation_failed";
+  readonly message: string;
+  readonly provider_id: string;
+}
+
+// Phase 5C — audio fit-check.
+
+export type FitStatus = "ok" | "too_short" | "too_long" | "missing_audio";
+export type FitRecommendation =
+  | "accept"
+  | "regenerate_script_shorter"
+  | "regenerate_script_longer"
+  | "adjust_target_duration"
+  | "upload_better_audio";
+
+export interface AudioFitCheckRequest {
+  readonly job_id?: string | null;
+  readonly script_text?: string | null;
+  readonly audio_artifact_id?: string | null;
+  readonly target_duration_seconds?: number | null;
+}
+
+export interface AudioFitCheckResponse {
+  readonly target_duration_seconds: number;
+  readonly audio_duration_seconds: number | null;
+  readonly delta_seconds: number | null;
+  readonly fit_status: FitStatus;
+  readonly recommendation: FitRecommendation;
+  readonly audio_artifact_id: string | null;
+  readonly job_id: string | null;
+  readonly metadata: Record<string, unknown>;
 }
 
 export interface CreateJobBody {

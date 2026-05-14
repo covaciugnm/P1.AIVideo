@@ -40,6 +40,32 @@ def _allocate_timings_ms(target_seconds: float) -> tuple[int, int, int]:
     return hook_ms, body_ms, cta_ms
 
 
+# Phase 5C fit-classification windows. Kept in sync with
+# ``backend/app/api/audio_fit.py`` so the operator sees the same
+# verdict whether they hit the live fit-check endpoint or read the
+# embedded fit metadata on the edit_plan artifact.
+_FIT_OK_WINDOW_SECONDS = 1.0
+_FIT_SOFT_WINDOW_SECONDS = 3.0
+
+
+def _classify_fit(
+    target_seconds: float, audio_duration_seconds: float | None
+) -> tuple[str, str, float | None]:
+    if audio_duration_seconds is None:
+        return "missing_audio", "upload_better_audio", None
+    delta = round(audio_duration_seconds - target_seconds, 3)
+    abs_delta = abs(delta)
+    if abs_delta <= _FIT_OK_WINDOW_SECONDS:
+        return "ok", "accept", delta
+    if delta < 0:
+        if abs_delta <= _FIT_SOFT_WINDOW_SECONDS:
+            return "too_short", "regenerate_script_longer", delta
+        return "too_short", "adjust_target_duration", delta
+    if abs_delta <= _FIT_SOFT_WINDOW_SECONDS:
+        return "too_long", "regenerate_script_shorter", delta
+    return "too_long", "adjust_target_duration", delta
+
+
 def _build_edit_plan(
     *,
     target_seconds: float,
@@ -48,6 +74,7 @@ def _build_edit_plan(
     cta_text: str,
     source_uri: str,
     source_checksum: str | None,
+    audio_duration_seconds: float | None = None,
 ) -> EditPlan:
     h_ms, b_ms, c_ms = _allocate_timings_ms(target_seconds)
     # Convert ms → seconds for the schema fields. Division by 1000 keeps
@@ -76,15 +103,26 @@ def _build_edit_plan(
             text=cta_text,
         ),
     ]
+    fit_status, recommendation, delta_seconds = _classify_fit(
+        target_seconds, audio_duration_seconds
+    )
+    metadata: dict = {
+        "allocation": {"hook_pct": 0.20, "body_pct": 0.65, "cta_pct": 0.15},
+        "phase": "phase3h",
+        # Phase 5C: embed the audio-fit verdict so downstream stages
+        # (qc, publisher) and the UI can read it without hitting the
+        # live /api/v1/audio/fit-check endpoint.
+        "audio_duration_seconds": audio_duration_seconds,
+        "duration_delta_seconds": delta_seconds,
+        "fit_status": fit_status,
+        "recommendation": recommendation,
+    }
     return EditPlan(
         target_duration_seconds=float(round(target_seconds, 3)),
         source_script_uri=source_uri,
         source_script_checksum=source_checksum,
         segments=segments,
-        metadata={
-            "allocation": {"hook_pct": 0.20, "body_pct": 0.65, "cta_pct": 0.15},
-            "phase": "phase3h",
-        },
+        metadata=metadata,
     )
 
 
@@ -119,6 +157,18 @@ async def run(state: DagState) -> StageOutput:
             f"invalid target_duration_seconds: {target}",
         )
 
+    # Phase 5C: pull audio duration from the voice stage if present so the
+    # edit_plan records a fit verdict. Voice handler populates
+    # ``ArtifactRef.duration_seconds`` from the WAV inspector (real path)
+    # or from the operator-supplied AudioRef (provided_audio).
+    audio_duration_seconds: float | None = None
+    voice_output = state.stage_outputs.get(StageName.voice.value)
+    if voice_output is not None:
+        for ref in voice_output.artifacts.values():
+            if ref.artifact_type == ArtifactType.audio.value and ref.duration_seconds:
+                audio_duration_seconds = float(ref.duration_seconds)
+                break
+
     try:
         plan = _build_edit_plan(
             target_seconds=target,
@@ -127,6 +177,7 @@ async def run(state: DagState) -> StageOutput:
             cta_text=str(structured.get("cta", "")),
             source_uri=script_ref.uri,
             source_checksum=script_ref.checksum_sha256,
+            audio_duration_seconds=audio_duration_seconds,
         )
     except ValueError as exc:
         raise StageRejection(StageName.editor.value, f"failed to build edit_plan: {exc}") from exc

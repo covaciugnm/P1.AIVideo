@@ -124,23 +124,54 @@ def _llm_providers() -> list[ProviderInfo]:
 
 
 def _tts_providers() -> list[ProviderInfo]:
-    # Phase 3B narrow: only piper is real. Even then, the runtime stays
-    # off until piper-tts is installed and a voice is on disk.
-    piper_root = os.environ.get("PIPER_MODELS_ROOT", "").strip()
-    voice = os.environ.get("TTS_DEFAULT_VOICE", "en_US-amy-medium").strip()
-    try:
-        import importlib
+    """Phase 5A: report runtime + asset readiness for Piper distinctly.
 
-        importlib.util.find_spec  # noqa: B018
+    Status semantics mirror /api/v1/tts/generate's error codes:
+
+    - ``not_configured``  — piper-tts runtime missing OR PIPER_MODELS_ROOT unset.
+    - ``configured``      — runtime + root set, but voice files not on disk yet.
+    - ``available``       — runtime + root + voice files all present.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    piper_root = (
+        os.environ.get("PIPER_MODELS_ROOT", "").strip()
+        or os.environ.get("TTS_MODELS_ROOT", "").strip()
+    )
+    voice = os.environ.get("TTS_DEFAULT_VOICE", "en_US-amy-medium").strip()
+
+    try:
         piper_installed = importlib.util.find_spec("piper") is not None
     except Exception:
         piper_installed = False
-    if piper_installed and piper_root:
-        piper_status = "configured"
-    elif piper_installed:
-        piper_status = "not_configured"
+
+    if not piper_installed:
+        status: str = "not_configured"
+        notes = (
+            "piper-tts runtime not installed. Run `pip install piper-tts` and "
+            "rebuild the backend image."
+        )
+    elif not piper_root:
+        status = "not_configured"
+        notes = (
+            "Set PIPER_MODELS_ROOT (or TTS_MODELS_ROOT) and place voice "
+            ".onnx + .onnx.json under it."
+        )
     else:
-        piper_status = "not_configured"
+        root = Path(piper_root)
+        onnx = root / f"{voice}.onnx"
+        cfg = root / f"{voice}.onnx.json"
+        if onnx.is_file() and cfg.is_file():
+            status = "available"
+            notes = f"Ready. Voice {voice!r} found under {piper_root}."
+        else:
+            status = "configured"
+            notes = (
+                f"Voice files for {voice!r} not found under {piper_root}. "
+                "Place .onnx + .onnx.json manually — no auto-download."
+            )
+
     return [
         ProviderInfo(
             category="tts",
@@ -149,14 +180,8 @@ def _tts_providers() -> list[ProviderInfo]:
             backend_type="piper",
             default_model=voice or None,
             is_local=True,
-            status=piper_status,
-            notes=(
-                "piper-tts runtime not installed."
-                if not piper_installed
-                else "Set PIPER_MODELS_ROOT and place voice .onnx + .onnx.json."
-                if not piper_root
-                else "Place voice .onnx + .onnx.json under PIPER_MODELS_ROOT."
-            ),
+            status=status,  # type: ignore[arg-type]
+            notes=notes,
         ),
     ]
 

@@ -55,6 +55,42 @@
   margin-left: auto;
 }
 
+.fitBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 12px;
+  font-family: var(--mono-stack);
+}
+
+.fitOk {
+  border-left-color: var(--success);
+}
+
+.fitWarn {
+  border-left-color: var(--warn);
+}
+
+.fitMuted {
+  border-left-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+.fitMeta {
+  color: var(--text-muted);
+}
+
+.fitRec {
+  color: var(--warn);
+  margin-left: auto;
+}
+
 .script {
   white-space: pre-wrap;
   word-break: break-word;

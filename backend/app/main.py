@@ -11,7 +11,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import artifacts, healthz, jobs, providers, system, tts, uploads
+from app.api import (
+    artifacts,
+    audio_fit,
+    healthz,
+    jobs,
+    providers,
+    script,
+    system,
+    tts,
+    uploads,
+    video,
+)
 from app.core.config import settings
 from app.core.db import init_db
 
@@ -53,6 +64,12 @@ def create_app() -> FastAPI:
     app.include_router(providers.router)
     app.include_router(tts.router)
     app.include_router(artifacts.router)
+    # Phase 5B: /api/v1/script/generate preview hook.
+    app.include_router(script.router)
+    # Phase 5C: /api/v1/audio/fit-check.
+    app.include_router(audio_fit.router)
+    # Phase 6A: /api/v1/video/generate contract endpoint (metadata-only).
+    app.include_router(video.router)
     return app
 
 

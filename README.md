@@ -2,7 +2,11 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4F-3 — Frontend consumes the Phase 4F-2 API backfill.**
+> **Current status: Phase 5A — Real Piper TTS gating.**
+>
+> Lights up `/api/v1/tts/generate`: when `piper-tts` is installed AND the configured voice (`.onnx` + `.onnx.json`) is on disk under `PIPER_MODELS_ROOT`, the endpoint generates a PCM WAV, validates via the Phase 3D inspector, registers an `ArtifactType.audio` row, and returns metadata. Otherwise it returns a **categorised** 503 — `tts_runtime_missing` / `tts_assets_missing` / `tts_provider_not_configured` / `tts_provider_not_implemented` — so the frontend surfaces an actionable hint. `/api/v1/providers/tts` mirrors the gating with `not_configured` / `configured` / `available`. Reuses Phase 3B PiperProvider; no new dependencies, no model auto-download, no voice cloning. **263 passed / 4 skipped** (Phase 5A real-asset tests cleanly skip without piper-tts).
+
+> **Previous milestone: Phase 4F-3 — Frontend consumes the Phase 4F-2 API backfill.**
 >
 > Frontend-only follow-up to Phase 4F-2. The UI now uses the new backend contract instead of reconstructing fields client-side. No new dependencies, no Docker change, no boundary shift. Backend stays at **256 passed / 1 skipped**; frontend `lint` + `build` clean across 8 routes.
 >

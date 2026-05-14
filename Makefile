@@ -7,7 +7,7 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test \
         frontend-install frontend-lint frontend-build frontend-check \
         docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
 
@@ -108,6 +108,18 @@ phase4f3-test: ## Phase 4F-3 — frontend consumes Phase 4F-2 backfill (lint + b
 	$(MAKE) frontend-check
 	pytest -v tests/integration/test_phase4f2_job_api_backfill.py
 
+phase5a-test: ## Phase 5A — real Piper TTS gating (runtime/assets categorisation). Real synthesis tests auto-skip without piper-tts.
+	pytest -v tests/integration/test_phase5a_tts_runtime.py
+
+phase5b-test: ## Phase 5B — /api/v1/script/generate (Ollama gated; template always works)
+	pytest -v tests/integration/test_phase5b_script_generate.py
+
+phase5c-test: ## Phase 5C — /api/v1/audio/fit-check classification
+	pytest -v tests/integration/test_phase5c_audio_fit.py
+
+phase6a-test: ## Phase 6A — /api/v1/video/generate metadata-only contract
+	pytest -v tests/integration/test_phase6a_video_contract.py
+
 test-integration: ## Alias for `pytest tests/integration`
 	pytest -v tests/integration
 
@@ -159,6 +171,10 @@ docker-light-up: ## Start the light stack (postgres, redis, backend, frontend, o
 
 docker-light-down: ## Stop the light stack
 	$(COMPOSE_LIGHT) down
+
+docker-light-reset: ## Stop the light stack AND drop all named volumes (postgres/redis/inputs/artifacts). Use when a schema change adds a column the existing DB doesn't have.
+	@echo ">> WARNING: this drops local postgres + redis + inputs + artifacts volumes."
+	$(COMPOSE_LIGHT) down -v
 
 docker-light-logs: ## Tail logs from the light stack
 	$(COMPOSE_LIGHT) logs -f --tail=200 $(DOCKER_LIGHT_SERVICES)

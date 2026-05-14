@@ -14,6 +14,8 @@ import * as logBus from "./log-bus";
 import { getActiveApiBaseUrl } from "./settings";
 import type {
   ArtifactResponse,
+  AudioFitCheckRequest,
+  AudioFitCheckResponse,
   ComplianceEventResponse,
   CreateJobBody,
   CreateJobFromInputsBody,
@@ -27,6 +29,9 @@ import type {
   ProviderInfo,
   ProvidersResponse,
   QCReportResponse,
+  ScriptGenerateError,
+  ScriptGenerateRequest,
+  ScriptGenerateResponse,
   StageTimelineEntry,
   SystemStatus,
   TTSGenerateError,
@@ -470,4 +475,63 @@ export async function generateTts(
 
 export function artifactContentUrl(artifactId: string): string {
   return `${getActiveApiBaseUrl()}/api/v1/artifacts/${artifactId}/content`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5B — script generation preview.
+// ---------------------------------------------------------------------------
+
+export type ScriptGenerateResult =
+  | { readonly ok: true; readonly value: ScriptGenerateResponse }
+  | { readonly ok: false; readonly error: ScriptGenerateError; readonly httpStatus: number };
+
+export async function generateScript(
+  body: ScriptGenerateRequest,
+  signal?: AbortSignal,
+): Promise<ScriptGenerateResult> {
+  try {
+    const value = await request<ScriptGenerateResponse>("/api/v1/script/generate", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify(body),
+      signal,
+    });
+    return { ok: true, value };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      let parsed: ScriptGenerateError | null = null;
+      try {
+        parsed = JSON.parse(err.detail) as ScriptGenerateError;
+      } catch {
+        parsed = null;
+      }
+      return {
+        ok: false,
+        httpStatus: err.status,
+        error:
+          parsed ?? {
+            code: "script_generation_failed",
+            message: err.detail,
+            provider_id: body.provider_id ?? "template",
+          },
+      };
+    }
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5C — audio fit-check.
+// ---------------------------------------------------------------------------
+
+export function audioFitCheck(
+  body: AudioFitCheckRequest,
+  signal?: AbortSignal,
+): Promise<AudioFitCheckResponse> {
+  return request<AudioFitCheckResponse>("/api/v1/audio/fit-check", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
 }

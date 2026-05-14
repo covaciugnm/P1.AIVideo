@@ -53,6 +53,17 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsStatus, setTtsStatus] = useState<string | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
+  // Phase 5B — script generation preview.
+  const [scriptBusy, setScriptBusy] = useState(false);
+  const [scriptStatus, setScriptStatus] = useState<string | null>(null);
+  const scriptAbortRef = useRef<AbortController | null>(null);
+  // Phase 5C — fit-check result for uploaded audio.
+  const [audioFit, setAudioFit] = useState<{
+    fit_status: string;
+    delta_seconds: number | null;
+    recommendation: string;
+    audio_duration_seconds: number | null;
+  } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -66,6 +77,83 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     })();
     return () => controller.abort();
   }, []);
+
+  const handleScriptGenerate = async () => {
+    if (!brief.trim()) {
+      setScriptStatus("Fill in the brief first.");
+      return;
+    }
+    scriptAbortRef.current?.abort();
+    const controller = new AbortController();
+    scriptAbortRef.current = controller;
+    setScriptBusy(true);
+    setScriptStatus("Generating script…");
+    logBus.emit({
+      source: "frontend",
+      level: "info",
+      message: `script-generate start (provider=${llmProvider ?? "template"})`,
+      meta: { provider_id: llmProvider ?? "template" },
+    });
+    const res = await api.generateScript(
+      {
+        brief: brief.trim(),
+        target_duration_seconds: duration,
+        script_text: scriptText.trim() || null,
+        provider_id: llmProvider ?? "template",
+      },
+      controller.signal,
+    );
+    setScriptBusy(false);
+    if (!res.ok) {
+      setScriptStatus(
+        `${res.error.code.replace(/_/g, " ")}: ${res.error.message}`,
+      );
+      logBus.emit({
+        source: "frontend",
+        level: res.httpStatus === 503 ? "warning" : "error",
+        message: `script-generate ${res.error.code}`,
+        meta: { code: res.error.code, status: res.httpStatus },
+      });
+      return;
+    }
+    setScriptText(res.value.full_script);
+    setScriptStatus(
+      `Generated (${res.value.provider_id}/${res.value.model}; ~${res.value.estimated_duration_seconds.toFixed(1)}s).`,
+    );
+    logBus.emit({
+      source: "frontend",
+      level: "success",
+      message: `script-generate succeeded (provider=${res.value.provider_id})`,
+      meta: { provider_id: res.value.provider_id, model: res.value.model },
+    });
+  };
+
+  const runFitCheck = async (artifactId: string) => {
+    try {
+      const fit = await api.audioFitCheck({
+        audio_artifact_id: artifactId,
+        target_duration_seconds: duration,
+      });
+      setAudioFit({
+        fit_status: fit.fit_status,
+        delta_seconds: fit.delta_seconds,
+        recommendation: fit.recommendation,
+        audio_duration_seconds: fit.audio_duration_seconds,
+      });
+      logBus.emit({
+        source: "frontend",
+        level: fit.fit_status === "ok" ? "info" : "warning",
+        message: `audio fit ${fit.fit_status} (Δ${fit.delta_seconds}s)`,
+        meta: {
+          fit_status: fit.fit_status,
+          recommendation: fit.recommendation,
+        },
+      });
+    } catch {
+      // Fit-check is opportunistic — silent failure is acceptable.
+      setAudioFit(null);
+    }
+  };
 
   const handleTtsGenerate = async () => {
     if (!scriptText.trim()) return;
@@ -288,11 +376,27 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               <button
                 type="button"
                 className="btn"
+                onClick={handleScriptGenerate}
+                disabled={scriptBusy || brief.trim().length === 0}
+                title={
+                  brief.trim().length === 0
+                    ? "Fill in the brief first."
+                    : "Calls /api/v1/script/generate with the selected LLM provider."
+                }
+              >
+                {scriptBusy ? "Generating script…" : "Generate script"}
+              </button>
+              <button
+                type="button"
+                className="btn"
                 onClick={handleTtsGenerate}
                 disabled={ttsBusy || scriptText.trim().length === 0}
               >
-                {ttsBusy ? "Generating…" : "Generate audio"}
+                {ttsBusy ? "Generating audio…" : "Generate audio"}
               </button>
+              {scriptStatus && (
+                <span className={styles.ttsStatus}>{scriptStatus}</span>
+              )}
               {ttsStatus && (
                 <span className={styles.ttsStatus}>{ttsStatus}</span>
               )}
@@ -306,13 +410,26 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               help={`Accepted: ${audioExts.join(", ")}. Non-WAV is transcoded to PCM WAV on the server (requires ffmpeg). Minimum 1 s; 22050 Hz+ recommended; mono or stereo; synthetic or owned.`}
               acceptExtensions={audioExts}
               maxBytes={audioMax}
-              onUploaded={(r) => setAudioArtifact(r as UploadAudioResponse)}
+              onUploaded={(r) => {
+                const audio = r as UploadAudioResponse;
+                setAudioArtifact(audio);
+                void runFitCheck(audio.artifact_id);
+              }}
               currentArtifactId={audioArtifact?.artifact_id ?? null}
             />
             {audioArtifact && (
               <AudioPreview
                 src={{ kind: "artifact", artifactId: audioArtifact.artifact_id }}
                 label="Uploaded audio preview"
+              />
+            )}
+            {audioFit && (
+              <AudioFitStrip
+                fitStatus={audioFit.fit_status}
+                deltaSeconds={audioFit.delta_seconds}
+                recommendation={audioFit.recommendation}
+                audioDurationSeconds={audioFit.audio_duration_seconds}
+                target={duration}
               />
             )}
             <div className={styles.consentBlock}>
@@ -512,6 +629,52 @@ interface ImagePreviewProps {
   readonly width: number;
   readonly height: number;
   readonly mimeType: string;
+}
+
+interface AudioFitStripProps {
+  readonly fitStatus: string;
+  readonly deltaSeconds: number | null;
+  readonly recommendation: string;
+  readonly audioDurationSeconds: number | null;
+  readonly target: number;
+}
+
+function AudioFitStrip({
+  fitStatus,
+  deltaSeconds,
+  recommendation,
+  audioDurationSeconds,
+  target,
+}: AudioFitStripProps) {
+  const tone =
+    fitStatus === "ok"
+      ? styles.fitOk
+      : fitStatus === "missing_audio"
+        ? styles.fitMuted
+        : styles.fitWarn;
+  const deltaLabel =
+    deltaSeconds === null
+      ? "—"
+      : `${deltaSeconds > 0 ? "+" : ""}${deltaSeconds.toFixed(2)}s`;
+  return (
+    <div className={`${styles.fitStrip} ${tone}`}>
+      <span className={styles.fitLabel}>
+        Audio fit: <strong>{fitStatus.replace(/_/g, " ")}</strong>
+      </span>
+      <span className={styles.fitMeta}>
+        target {target}s · audio{" "}
+        {audioDurationSeconds !== null
+          ? `${audioDurationSeconds.toFixed(2)}s`
+          : "—"}{" "}
+        · Δ {deltaLabel}
+      </span>
+      {fitStatus !== "ok" && (
+        <span className={styles.fitRec}>
+          → {recommendation.replace(/_/g, " ")}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function ImagePreview({ artifactId, width, height, mimeType }: ImagePreviewProps) {
