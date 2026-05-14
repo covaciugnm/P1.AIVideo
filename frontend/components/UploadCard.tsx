@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
+import * as logBus from "@/lib/log-bus";
 import type { UploadAudioResponse, UploadImageResponse } from "@/lib/types";
 
 import { ErrorMessage } from "./ErrorMessage";
@@ -65,17 +66,39 @@ export function UploadCard({
     if (!pending) return;
     setBusy(true);
     setError(null);
+    // Don't log file content; just the safe metadata (kind, size, ext).
+    const filename = pending.name;
+    const safeFilename = filename.length > 80 ? filename.slice(0, 77) + "…" : filename;
+    const ext = "." + filename.split(".").pop()?.toLowerCase();
+    logBus.emit({
+      source: "frontend",
+      level: "info",
+      message: `upload started: ${kind} (${formatBytes(pending.size)})`,
+      meta: { kind, ext, size_bytes: pending.size, filename: safeFilename },
+    });
     try {
       const result =
         kind === "audio"
           ? await api.uploadAudio(pending)
           : await api.uploadImage(pending);
+      logBus.emit({
+        source: "frontend",
+        level: "success",
+        message: `upload succeeded: ${kind} → ${result.artifact_id}`,
+        meta: { kind, artifact_id: result.artifact_id },
+      });
       onUploaded(result);
       setPending(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : String(err);
       setError(msg);
+      logBus.emit({
+        source: "frontend",
+        level: "error",
+        message: `upload failed: ${kind}`,
+        meta: { kind, error: msg },
+      });
     } finally {
       setBusy(false);
     }

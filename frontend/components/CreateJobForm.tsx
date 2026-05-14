@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
+import * as logBus from "@/lib/log-bus";
 import type {
   CreateJobFromInputsBody,
   FaceMode,
@@ -99,12 +100,35 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       image_synthetic_person_confirmed: useFace ? imageSynthetic : false,
     };
 
+    logBus.emit({
+      source: "frontend",
+      level: "info",
+      message: "create-job submitted",
+      meta: {
+        voice_mode: body.voice_mode,
+        face_mode: body.face_mode ?? null,
+        target_duration_seconds: body.target_duration_seconds,
+      },
+    });
+
     try {
       const job = await api.createJobFromInputs(body);
+      logBus.emit({
+        source: "frontend",
+        level: "success",
+        message: `create-job succeeded → ${job.id}`,
+        meta: { jobId: job.id, status: job.status },
+      });
       router.push(`/jobs/${job.id}`);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : String(err);
       setError(msg);
+      logBus.emit({
+        source: "frontend",
+        level: "error",
+        message: "create-job failed",
+        meta: { error: msg },
+      });
       setSubmitting(false);
     }
   };

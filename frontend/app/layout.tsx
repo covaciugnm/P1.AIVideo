@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { HeaderStatus } from "@/components/HeaderStatus";
+import { BackendStatusBadge } from "@/components/BackendStatusBadge";
+import { Providers } from "@/components/Providers";
+import { RightSidebar } from "@/components/RightSidebar";
 
 import "./globals.css";
 
@@ -20,25 +22,32 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="app-shell">
-          <header className="app-header">
-            <div className="app-header-left">
-              <Link href="/" className="brand">
-                P1.AIVideo
-              </Link>
-              <nav className="nav-links">
-                <Link href="/">Dashboard</Link>
-                <Link href="/jobs/new">New job</Link>
-              </nav>
+        <Providers>
+          <div className="app-shell">
+            <header className="app-header">
+              <div className="app-header-left">
+                <Link href="/" className="brand">
+                  P1.AIVideo
+                </Link>
+                <nav className="nav-links">
+                  <Link href="/">Dashboard</Link>
+                  <Link href="/jobs/new">New job</Link>
+                </nav>
+              </div>
+              <BackendStatusBadge />
+            </header>
+            <div className="app-body">
+              <main className="app-main">
+                <div className="content-wrapper">{children}</div>
+              </main>
+              <RightSidebar />
             </div>
-            <HeaderStatus />
-          </header>
-          <main className="app-main">{children}</main>
-          <footer className="app-footer">
-            Synthetic-only pipeline. Every generated reel includes a mandatory
-            AI-content disclosure. No real-person likeness or voice cloning.
-          </footer>
-        </div>
+            <footer className="app-footer">
+              Synthetic-only pipeline. Every generated reel includes a mandatory
+              AI-content disclosure. No real-person likeness or voice cloning.
+            </footer>
+          </div>
+        </Providers>
       </body>
     </html>
   );

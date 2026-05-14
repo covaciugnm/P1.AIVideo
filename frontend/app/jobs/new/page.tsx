@@ -1,18 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CreateJobForm } from "@/components/CreateJobForm";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { LoadingState } from "@/components/LoadingState";
 import { getUiOptions } from "@/lib/api";
+import * as logBus from "@/lib/log-bus";
 import type { UIOptions } from "@/lib/types";
 
 export default function NewJobPage() {
   const [uiOptions, setUiOptions] = useState<UIOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const announcedRef = useRef(false);
 
   useEffect(() => {
+    if (!announcedRef.current) {
+      announcedRef.current = true;
+      logBus.emit({
+        source: "frontend",
+        level: "info",
+        message: "create-job page opened",
+      });
+    }
     const controller = new AbortController();
     void (async () => {
       try {
@@ -20,7 +30,14 @@ export default function NewJobPage() {
         setUiOptions(opts);
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
-          setError(err instanceof Error ? err.message : String(err));
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(msg);
+          logBus.emit({
+            source: "frontend",
+            level: "error",
+            message: "failed to load UI options",
+            meta: { error: msg },
+          });
         }
       }
     })();

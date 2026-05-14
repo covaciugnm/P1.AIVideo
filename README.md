@@ -2,7 +2,52 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4C — Docker light runtime.**
+> **Current status: Phase 4D — Right sidebar (Logs + Settings tabs) and runtime API base URL override.**
+>
+> Adds a persistent right-side activity sidebar across every page (Dashboard, Job detail, Create job) and a Settings tab that lets the operator override `NEXT_PUBLIC_API_BASE_URL` at runtime — the fix for the "Failed to load jobs → 404" issue when Docker publishes the backend on a non-default port (e.g. `BACKEND_PORT=8001`).
+>
+> **The 404 root cause + fix**
+> - `NEXT_PUBLIC_*` env vars are baked into the JS bundle at `next build`. Phase 4C's frontend image bakes `http://localhost:8000` as the default, so a stack running on `BACKEND_PORT=8001` hits the wrong host port (often a different process entirely).
+> - Phase 4D adds a `getActiveApiBaseUrl()` resolver in `frontend/lib/settings.ts` that's called by `lib/api.ts` on every request. It reads `aivideo:settings:v1` from `localStorage` and falls back to the build-time `NEXT_PUBLIC_API_BASE_URL`. Operators flip the Backend API Base URL in **Settings → Backend API Base URL** without rebuilding the image; the next API call uses the new URL.
+> - A **Test backend connection** button in Settings calls `GET /api/v1/system/status` and surfaces success/failure inline + on the logs panel.
+>
+> **Right sidebar** (`frontend/components/RightSidebar.tsx`)
+> - Docked to the right edge of `.app-body`; flex-sized so it never overlays main content on desktop. Expanded width 320 px / 260 px on narrow screens, collapsed rail 44 px. Collapsed + active-tab state persisted in `localStorage` (`aivideo:sidebar:v1`).
+> - Two tabs (`SidebarTabs`): **Logs** and **Settings**. Collapsed rail still exposes both as clickable vertical labels.
+> - Visible on Dashboard, Job detail, and Create job (mounted in `app/layout.tsx`, so every page-level route inherits it).
+>
+> **Logs tab** (`LogsPanel`)
+> - Source-typed entries: `frontend`, `backend`, `api`, `system` × levels `info` / `success` / `warning` / `error`, each colour-coded.
+> - Filter by level. Click `+` on an entry to expand structured `meta` (status, duration_ms, error detail, …).
+> - Settings drives source toggles + `maxLogEntries` (50 … 5000, default 500). "Clear" button empties the in-memory buffer.
+> - **No binary content, no secrets, no raw tokens, no large payloads** — uploads log only `{ kind, ext, size_bytes, filename, artifact_id }`.
+>
+> **Settings tab** (`SettingsPanel`)
+> - Backend API Base URL (with "Test backend connection" button), Frontend URL, Polling interval (1–600 s), Enable/disable auto polling, Show/hide frontend/backend/api/system log sources, Max log entries, Reset to defaults.
+> - Persisted to `localStorage` (`aivideo:settings:v1`) under `mergeSettings()` validation so a malformed override falls back to defaults instead of crashing the app.
+>
+> **Status indicator** (`BackendStatusBadge` — replaces `HeaderStatus`)
+> - Lives in the top-right of the header. Polls `/api/v1/system/status` every 15 s. Shows a coloured dot + the active URL + "API reachable / unreachable / Checking…" + last-OK time as a tooltip.
+> - When unreachable, surfaces a clear hint: "Open Settings to change the URL". Emits a single `backend unreachable` log when state flips, and a `backend reachable again` on recovery — no flooding.
+>
+> **API client** (`frontend/lib/api.ts`)
+> - Reads `getActiveApiBaseUrl()` on every request — no module-level state that could miss a localStorage update.
+> - Emits one structured log per call (`{ method, path, status, duration_ms }`), error level on non-2xx or network failure. Polling endpoints have a `logLabel` so identical entries for `/jobs/:id/progress` etc. don't bloat the log with full UUIDs.
+>
+> **Job polling** uses `usePolling` with `intervalMs = settings.pollingIntervalSeconds * 1000` and `enabled = hydrated && settings.autoPollingEnabled`. Job detail emits **one** log per status change (not per poll tick) and stops polling once the job is in a terminal status.
+>
+> **State layer**
+> - `SettingsContext` + `LogsContext` + `Providers` wrapper, mounted at the top of `app/layout.tsx`. No Redux/Zustand/SWR — just React context.
+> - `lib/log-bus.ts` is a tiny module-level pub/sub so the non-React API client can emit log entries that the LogsContext provider subscribes to.
+>
+> **Verification**
+> - `npm run lint` (zero-warnings via `--max-warnings 0`) and `npm run build` both clean. Bundle sizes: dashboard 1.24 kB → 102 kB first-load; job detail 3.56 kB → 105 kB; new-job 6.85 kB → 94.2 kB (essentially unchanged from Phase 4B).
+> - Backend `make test` + strict-warnings `pytest -W error` both stay at **216 passed, 1 skipped**.
+> - Docker light smoke (`BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose up`): all five services healthy; frontend `/` returns 200; backend `/healthz` + `/api/v1/jobs` return 200 on 8001; the `aivideo:settings:v1` localStorage key is present in the built bundle, confirming the runtime override path is wired.
+>
+> **NOT in Phase 4D**: WebSocket/SSE streaming, Tailwind, UI/charting libraries, backend log shipping, persisting logs across reloads, server-side backend status checks. Logs remain a per-tab in-memory operator diagnostic.
+
+> **Previous milestone: Phase 4C — Docker light runtime.**
 >
 > First real container layer for the project. Until Phase 4C, all three application Dockerfiles were Phase 0 sleep-loop stubs (no source copied, no deps installed). Phase 4C replaces them with actual multi-stage builds and wires the dev compose file for a light, metadata-only run loop. **No GPU, no model weights, no torch / diffusers / transformers / SadTalker / Whisper / SDXL / ffmpeg / OpenCV / moviepy.**
 >

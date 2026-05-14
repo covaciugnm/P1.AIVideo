@@ -92,7 +92,11 @@ make frontend-check    # next lint --max-warnings 0 + next build
 ```
 
 To point the frontend at a non-default backend URL, copy `frontend/.env.example`
-to `frontend/.env.local` and edit `NEXT_PUBLIC_API_BASE_URL`.
+to `frontend/.env.local` and edit `NEXT_PUBLIC_API_BASE_URL`. `.env.local` is
+the **build-time** default — the right sidebar's **Settings → Backend API
+Base URL** is the **runtime** override stored in localStorage and applied
+on every API call (use this when Docker publishes the backend on a
+non-default port without a rebuild).
 
 ### Docker light runtime (Phase 4C)
 

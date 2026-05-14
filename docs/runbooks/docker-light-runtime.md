@@ -92,6 +92,7 @@ All services share the user-defined `aivideo` bridge network. From inside a cont
 
 ## Troubleshooting
 
+- **Frontend shows "Failed to load jobs — HTTP 404"** — `NEXT_PUBLIC_API_BASE_URL` is baked into the JS bundle at `next build`, so a stack started with `BACKEND_PORT=8001` will still call `http://localhost:8000` from the browser (which on most workstations is some other process). Fix: open the right sidebar → **Settings → Backend API Base URL** → set to `http://localhost:8001` → click **Test backend connection**. The override is persisted to `localStorage` and used on every subsequent API call without a rebuild.
 - **`env file …/.env not found`** — copy `.env.example` to `.env`.
 - **Backend healthcheck never goes green** — the image lacks `curl` or `/healthz` is not responding. Check `make docker-light-logs` and confirm `uvicorn` started. The Dockerfile pins `curl` into the runtime stage.
 - **Frontend 404s on `/jobs`** — `NEXT_PUBLIC_API_BASE_URL` was baked wrong at build time. Rebuild with `make docker-light-build` after editing `.env` (the compose file passes the value as a build arg).

@@ -1,7 +1,14 @@
 # frontend/
 
-Phase 4B operator dashboard. Next.js 14 App Router + TypeScript + vanilla
+Phase 4D operator dashboard. Next.js 14 App Router + TypeScript + vanilla
 CSS modules. No Tailwind, no component libraries, no charting libs.
+
+> **Settings → Backend API Base URL** is the runtime override that fixes
+> "Failed to load jobs (HTTP 404)" when Docker publishes the backend on a
+> non-default port (e.g. `BACKEND_PORT=8001`). Open the right sidebar →
+> Settings → change the URL → click **Test backend connection**. The new
+> value is persisted to `localStorage` (`aivideo:settings:v1`) and every
+> subsequent API call uses it without a rebuild.
 
 The UI is **metadata-only** — every screen reads from the FastAPI
 backend's `/api/v1/*` JSON endpoints. Nothing in this folder embeds
@@ -65,7 +72,19 @@ make frontend-check     # runs lint + build (also invoked by phase4b-test)
 | `/jobs/new` | Create-job form. Loads `GET /api/v1/config/ui-options` once; supports `tts` (inline script_text) and `provided_audio` (upload + reference) flows; optional `provided_image` face mode. Submits via `POST /api/v1/jobs/from-inputs`. |
 | `/jobs/[jobId]` | Live job detail. Polls 7 endpoints in parallel every 3 s and renders progress, stage timeline, artifacts, compliance events, QC report, and final export. |
 
-## Hard rules (Phase 4B)
+## Right sidebar (Phase 4D)
+
+Persistent right-side panel on every page. Two tabs:
+
+| Tab | What it does |
+|---|---|
+| **Logs** | Live frontend/backend/api/system events (filterable by level, source-mute via Settings, capped at `maxLogEntries`). Logs are local + in-memory — they disappear when you close the tab. |
+| **Settings** | Backend API Base URL (+ Test connection), Frontend URL, polling interval, enable/disable auto polling, source toggles, max log entries, Reset to defaults. |
+
+Collapsed (44 px rail) / expanded (320 px) state is persisted in
+`localStorage` (`aivideo:sidebar:v1`).
+
+## Hard rules (Phase 4B+4D)
 
 - No real media preview / playback. Audio + image uploads show filename
   + size only — no `<audio>` / `<img>` element preview.

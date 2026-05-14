@@ -1,22 +1,42 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { LoadingState } from "@/components/LoadingState";
 import { ProgressBar } from "@/components/ProgressBar";
+import { useSettings } from "@/components/SettingsContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { listJobs } from "@/lib/api";
 import { formatRelative, humanize, shortId } from "@/lib/format";
+import * as logBus from "@/lib/log-bus";
 import type { JobSummary } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
 
 import styles from "./page.module.css";
 
 export default function DashboardPage() {
+  const { settings, hydrated } = useSettings();
+  const announcedRef = useRef(false);
+
+  useEffect(() => {
+    if (!announcedRef.current) {
+      announcedRef.current = true;
+      logBus.emit({
+        source: "frontend",
+        level: "info",
+        message: "dashboard opened",
+      });
+    }
+  }, []);
+
   const { data, error, loading } = usePolling<JobSummary[]>(
     (signal) => listJobs({ limit: 50 }, signal),
-    { intervalMs: 5_000 },
+    {
+      intervalMs: Math.max(1, settings.pollingIntervalSeconds) * 1000,
+      enabled: hydrated && settings.autoPollingEnabled,
+    },
   );
 
   return (
@@ -29,11 +49,11 @@ export default function DashboardPage() {
       </header>
       {error && (
         <ErrorMessage
-          message={error.message}
+          message={`${error.message}\nCheck Settings → Backend API Base URL.`}
           title="Failed to load jobs"
         />
       )}
-      {loading && data === null && <LoadingState label="Loading jobs…" />}
+      {loading && data === null && !error && <LoadingState label="Loading jobs…" />}
       {data !== null && <JobsTable jobs={data} />}
     </div>
   );

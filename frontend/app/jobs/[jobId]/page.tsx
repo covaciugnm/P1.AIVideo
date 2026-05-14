@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { ArtifactTable } from "@/components/ArtifactTable";
 import { ComplianceEvents } from "@/components/ComplianceEvents";
@@ -10,6 +10,7 @@ import { FinalExportCard } from "@/components/FinalExportCard";
 import { LoadingState } from "@/components/LoadingState";
 import { ProgressBar } from "@/components/ProgressBar";
 import { QcReportCard } from "@/components/QcReportCard";
+import { useSettings } from "@/components/SettingsContext";
 import { StageTimeline } from "@/components/StageTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
@@ -22,6 +23,7 @@ import {
   getJobTimeline,
 } from "@/lib/api";
 import { formatDate, isTerminalStatus, shortId } from "@/lib/format";
+import * as logBus from "@/lib/log-bus";
 import type {
   ArtifactResponse,
   ComplianceEventResponse,
@@ -51,6 +53,21 @@ export default function JobDetailPage({
   readonly params: { readonly jobId: string };
 }) {
   const { jobId } = params;
+  const { settings, hydrated } = useSettings();
+  const announcedRef = useRef(false);
+  const lastStatusRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!announcedRef.current) {
+      announcedRef.current = true;
+      logBus.emit({
+        source: "frontend",
+        level: "info",
+        message: `job detail opened: ${shortId(jobId)}`,
+        meta: { jobId },
+      });
+    }
+  }, [jobId]);
 
   const loader = useCallback(
     async (signal: AbortSignal): Promise<JobDetailBundle> => {
@@ -84,15 +101,33 @@ export default function JobDetailPage({
     [jobId],
   );
 
-  const terminal = false; // will be re-computed once data arrives
+  // Polling stays enabled while the job is non-terminal AND auto polling is
+  // on. The terminal check uses the latest fetched job.status (see effect
+  // below) — usePolling will tear down the timer when ``enabled`` flips.
+  const stopPolling = useRef(false);
+
   const { data, error, loading } = usePolling<JobDetailBundle>(loader, {
-    intervalMs: 3_000,
-    enabled: !terminal,
+    intervalMs: Math.max(1, settings.pollingIntervalSeconds) * 1000,
+    enabled: hydrated && settings.autoPollingEnabled && !stopPolling.current,
   });
 
-  // Slow polling once terminal: stop the timer entirely by remounting? We
-  // keep the simple model — polling is cheap (read-only JSON) — but show a
-  // muted note once the job is in a terminal state.
+  useEffect(() => {
+    if (!data) return;
+    const status = data.job.status;
+    if (status !== lastStatusRef.current) {
+      const prev = lastStatusRef.current;
+      lastStatusRef.current = status;
+      logBus.emit({
+        source: "frontend",
+        level: isTerminalStatus(status) ? "success" : "info",
+        message: `job ${shortId(jobId)} status: ${prev ?? "(initial)"} → ${status}`,
+        meta: { jobId, status },
+      });
+      if (isTerminalStatus(status)) {
+        stopPolling.current = true;
+      }
+    }
+  }, [data, jobId]);
 
   return (
     <div>
@@ -106,7 +141,7 @@ export default function JobDetailPage({
       </header>
 
       {error && <ErrorMessage message={error.message} title="Failed to load job" />}
-      {loading && data === null && <LoadingState label="Loading job…" />}
+      {loading && data === null && !error && <LoadingState label="Loading job…" />}
       {data && <JobDetail bundle={data} />}
     </div>
   );
@@ -171,7 +206,7 @@ function JobDetail({ bundle }: { readonly bundle: JobDetailBundle }) {
           />
         </div>
         {terminal && (
-          <p className="muted">Job is in a terminal state.</p>
+          <p className="muted">Job is in a terminal state. Polling stopped.</p>
         )}
       </section>
 

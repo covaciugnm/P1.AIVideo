@@ -3,7 +3,15 @@
 // One function per endpoint. Every backend route the UI consumes is
 // declared here so that pages/components don't sprinkle raw `fetch`
 // calls across the codebase.
+//
+// Phase 4D: the base URL is resolved on every request via
+// ``getActiveApiBaseUrl()`` so the operator can override
+// NEXT_PUBLIC_API_BASE_URL at runtime from the Settings tab without a
+// rebuild. Every call also emits a structured log entry on the log-bus
+// so the right sidebar can render an operator-visible activity stream.
 
+import * as logBus from "./log-bus";
+import { getActiveApiBaseUrl } from "./settings";
 import type {
   ArtifactResponse,
   ComplianceEventResponse,
@@ -22,8 +30,7 @@ import type {
   UploadTextResponse,
 } from "./types";
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+export { getActiveApiBaseUrl };
 
 export class ApiError extends Error {
   public readonly status: number;
@@ -42,12 +49,20 @@ interface RequestOptions {
   readonly body?: BodyInit | null;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
+  readonly logLabel?: string;
+}
+
+function now(): number {
+  if (typeof performance !== "undefined") return performance.now();
+  return Date.now();
 }
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
-  const url = `${API_BASE_URL}${path}`;
+  const method = opts.method ?? "GET";
+  const baseUrl = getActiveApiBaseUrl();
+  const url = `${baseUrl}${path}`;
   const init: RequestInit = {
-    method: opts.method ?? "GET",
+    method,
     headers: opts.headers,
     signal: opts.signal,
     cache: "no-store",
@@ -55,25 +70,55 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   if (opts.body !== undefined && opts.body !== null) {
     init.body = opts.body;
   }
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    let detail = response.statusText;
-    try {
-      const payload = (await response.json()) as { detail?: unknown };
-      if (typeof payload.detail === "string") {
-        detail = payload.detail;
-      } else if (payload.detail !== undefined) {
-        detail = JSON.stringify(payload.detail);
+  const started = now();
+  const logPath = opts.logLabel ?? path;
+  try {
+    const response = await fetch(url, init);
+    const durationMs = Math.round(now() - started);
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const payload = (await response.json()) as { detail?: unknown };
+        if (typeof payload.detail === "string") {
+          detail = payload.detail;
+        } else if (payload.detail !== undefined) {
+          detail = JSON.stringify(payload.detail);
+        }
+      } catch {
+        // body wasn't JSON; keep statusText
       }
-    } catch {
-      // body wasn't JSON; keep statusText
+      logBus.emit({
+        source: "api",
+        level: "error",
+        message: `${method} ${logPath} → ${response.status}`,
+        meta: { status: response.status, duration_ms: durationMs, detail },
+      });
+      throw new ApiError(response.status, detail);
     }
-    throw new ApiError(response.status, detail);
+    logBus.emit({
+      source: "api",
+      level: response.status >= 400 ? "warning" : "info",
+      message: `${method} ${logPath} → ${response.status}`,
+      meta: { status: response.status, duration_ms: durationMs },
+    });
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    return (await response.json()) as T;
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw err;
+    }
+    const durationMs = Math.round(now() - started);
+    logBus.emit({
+      source: "api",
+      level: "error",
+      message: `${method} ${logPath} → network error`,
+      meta: { duration_ms: durationMs, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return (await response.json()) as T;
 }
 
 function jsonHeaders(): Record<string, string> {
@@ -105,18 +150,24 @@ export function listJobs(
   if (params.offset !== undefined) search.set("offset", String(params.offset));
   const qs = search.toString();
   const path = qs ? `/api/v1/jobs?${qs}` : "/api/v1/jobs";
-  return request<JobSummary[]>(path, { signal });
+  return request<JobSummary[]>(path, { signal, logLabel: "/api/v1/jobs" });
 }
 
 export function getJob(jobId: string, signal?: AbortSignal): Promise<JobResponse> {
-  return request<JobResponse>(`/api/v1/jobs/${jobId}`, { signal });
+  return request<JobResponse>(`/api/v1/jobs/${jobId}`, {
+    signal,
+    logLabel: "/api/v1/jobs/:id",
+  });
 }
 
 export function getJobProgress(
   jobId: string,
   signal?: AbortSignal,
 ): Promise<JobProgress> {
-  return request<JobProgress>(`/api/v1/jobs/${jobId}/progress`, { signal });
+  return request<JobProgress>(`/api/v1/jobs/${jobId}/progress`, {
+    signal,
+    logLabel: "/api/v1/jobs/:id/progress",
+  });
 }
 
 export function getJobTimeline(
@@ -125,6 +176,7 @@ export function getJobTimeline(
 ): Promise<StageTimelineEntry[]> {
   return request<StageTimelineEntry[]>(`/api/v1/jobs/${jobId}/timeline`, {
     signal,
+    logLabel: "/api/v1/jobs/:id/timeline",
   });
 }
 
@@ -134,6 +186,7 @@ export function getJobArtifacts(
 ): Promise<ArtifactResponse[]> {
   return request<ArtifactResponse[]>(`/api/v1/jobs/${jobId}/artifacts`, {
     signal,
+    logLabel: "/api/v1/jobs/:id/artifacts",
   });
 }
 
@@ -143,7 +196,7 @@ export function getJobComplianceEvents(
 ): Promise<ComplianceEventResponse[]> {
   return request<ComplianceEventResponse[]>(
     `/api/v1/jobs/${jobId}/compliance-events`,
-    { signal },
+    { signal, logLabel: "/api/v1/jobs/:id/compliance-events" },
   );
 }
 
@@ -154,6 +207,7 @@ export async function getJobQcReportOptional(
   try {
     return await request<QCReportResponse>(`/api/v1/jobs/${jobId}/qc-report`, {
       signal,
+      logLabel: "/api/v1/jobs/:id/qc-report",
     });
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
@@ -168,7 +222,7 @@ export async function getJobFinalExportOptional(
   try {
     return await request<FinalExportResponse>(
       `/api/v1/jobs/${jobId}/final-export`,
-      { signal },
+      { signal, logLabel: "/api/v1/jobs/:id/final-export" },
     );
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
