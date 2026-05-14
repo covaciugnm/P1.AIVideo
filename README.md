@@ -2,15 +2,14 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 3I — QC contract + structured report artifact.**
+> **Current status: Phase 3J — Publisher contract + final_export artifact.**
 >
-> - **`QCReport` / `QCCheck` / `QCDecisionType`** added to `common.schemas`. The report carries `passed: bool`, a list of named checks, the upstream artifact URIs + checksums (script / edit_plan / reel_draft), `target_duration_seconds`, `segment_count`, and `expected_segments`.
-> - **QC handler rewritten** to consume the editor's `edit_plan` + `reel_draft` plus the scriptwriter's `script` artifact, and run four structural checks: `script_artifact_present`, `segments_present`, `total_duration_matches_target`, `reel_draft_is_stub`. Missing required artifacts raise `StageRejection`; content-level problems produce a `QCReport` with `passed=False`.
-> - The QC report is registered as **`ArtifactType.metadata`** (mime `application/json`, content SHA-256) so downstream stages — and future audit tooling — can pull it from the `artifacts` table by job id.
-> - **No real media inspected.** No `ffmpeg`, `ffprobe`, `mediainfo`, `moviepy`, `OpenCV`, `imageio`, `numpy`, `PIL`, `torch`, etc. A subprocess audit asserts the QC module imports none of them.
-> - **11 Phase 3I tests** cover the happy path, three structural rejections, three content-level failure modes (incomplete segments, total mismatch, reel_draft with local_path), determinism, end-to-end DAG promoting the report into the artifacts table, and the no-heavy-imports invariant.
+> - **`FinalExport` / `FinalExportStatusType` / `DisclosureStatusType`** added to `common.schemas`. Carries `passed_qc`, `status` (`published` / `blocked` / `skipped`), `job_id`, back-references to `reel_draft` + `qc_report` (URI + checksum), `export_uri`/`export_type`/`mime_type` describing the future real export, `target_duration_seconds`, `watermark_required`, `c2pa_required`, `disclosure_status` (defaults to `"pending"` while C2PA signing is unimplemented), and free-form `metadata`.
+> - **Publisher handler rewritten** to gate the final export on QC. It refuses (with `StageRejection`) when: `qc_report` artifact is missing, `qc_passed` is False, `reel_draft` artifact is missing, the `export_disclosure_validation` compliance gate didn't run, or `watermark_required` / `c2pa_required` is False. On a clean pass it emits an `ArtifactType.final_export` artifact (mime `application/json`, content SHA-256) carrying the structured `FinalExport` manifest, while keeping the legacy `reel_final.mp4` + `sidecar.json` stub artifact names so a future real-export phase can drop into them.
+> - **No real video encoding.** No `ffmpeg` / `moviepy` / `OpenCV` / `imageio` / `numpy` / `PIL`. No C2PA signing (the manifest records `disclosure_status: "pending"`). No external uploads — a subprocess audit asserts the publisher module imports none of `requests` / `httpx` / `aiohttp` / `urllib3` / `boto3` / `botocore` / `aiobotocore` / `minio` / `google.cloud` / `c2pa`.
+> - **11 Phase 3J tests** cover the happy path (with stub cross-references), three QC-related rejections, two existing-rule rejections (disclosure gate, watermark flag), determinism, an end-to-end DAG promoting the `final_export` row into the `artifacts` table, a tmp-dir scan confirming no files written, and the no-HTTP/-media import audit.
 >
-> **No real video / audio QC. No ffmpeg / ffprobe / mediainfo / moviepy / OpenCV / imageio / numpy / PIL / torch added. No model weights downloaded. No SadTalker / Whisper / SDXL / lip-sync / face generation implemented.**
+> **No real video export. No C2PA signing. No social publishing. No external uploads. No model weights downloaded. No SadTalker / Whisper / SDXL / lip-sync / face generation implemented.**
 
 > **Previous milestone: Phase 3E — image input validation + face artifact contract.**
 > Phase 3D (audio validation + artifact registry) plus a symmetric path for face images:
@@ -69,7 +68,35 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 3I scope — current
+## Phase 3J scope — current
+
+Implemented on top of Phase 3I:
+
+- **`FinalExport`** + `FinalExportStatusType` + `DisclosureStatusType` added to `common.schemas`. The manifest records the would-be publish state, the back-references to source artifacts, and the planned export's mime type — without ever producing a real video file.
+- **`agents/publisher/handler.py`** rewritten as the QC gate:
+  - Existing rules preserved (`watermark_required` + `c2pa_required` must be true; `export_disclosure_validation` must have run).
+  - New: pulls `qc_report` from the QC stage; refuses if missing OR if `extra["qc_passed"]` is False.
+  - New: pulls `reel_draft` from the editor stage; refuses if missing.
+  - On all checks pass: builds a `FinalExport` manifest, serializes it to JSON, computes a content SHA-256, and emits an `ArtifactType.final_export` artifact (mime `application/json`).
+  - Legacy `reel_final.mp4` + `sidecar.json` stubs remain in the output (cross-referencing the manifest by URI + checksum) so a future real-export phase has stable artifact names to drop into.
+- **11 Phase 3J tests** in `tests/integration/test_phase3j_publisher_export.py`:
+  - 3 happy-path tests (artifact shape, legacy stub preservation, determinism).
+  - 5 rejection tests (missing qc_report, missing reel_draft, qc_passed=False, no disclosure gate, watermark_required=False).
+  - 1 tmp_path scan confirming no files written to disk.
+  - 1 end-to-end DAG test promoting the `final_export` row into the `artifacts` table with the right shape.
+  - 1 subprocess-isolated import audit confirming the publisher module pulls in none of `requests`, `httpx`, `aiohttp`, `urllib3`, `boto3`, `botocore`, `aiobotocore`, `minio`, `google.cloud`, `ffmpeg`, `moviepy`, `cv2`, `imageio`, `numpy`, `PIL`, `torch`, `diffusers`, `transformers`, `c2pa`.
+
+Explicitly **not** in Phase 3J:
+
+- **No real video encoding.** Manifest's `export_uri` is still an `s3://` stub.
+- **No C2PA signing.** `disclosure_status` is hardcoded to `"pending"` until a future phase wires up `c2patool` (or equivalent).
+- **No external uploads.** No social-network APIs, no S3/MinIO client invocation. The publisher's URIs are metadata only.
+- **No new dependencies** (no `requests` / `httpx` / `boto3` / `c2pa` / `ffmpeg`).
+- **No SadTalker / Whisper / SDXL / real lip-sync / face generation.**
+- **No model weights downloaded.**
+- **No Docker builds run.**
+
+## Phase 3I scope (still active)
 
 Implemented on top of Phase 3H:
 

@@ -352,6 +352,41 @@ class QCReport(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+FinalExportStatusType = Literal["published", "blocked", "skipped"]
+DisclosureStatusType = Literal["pending", "embedded", "missing"]
+
+
+class FinalExport(BaseModel):
+    """Phase 3J final-export manifest.
+
+    Metadata-only. Carries the operator-visible publish decision plus
+    references to the source artifacts (reel_draft, qc_report) so audit
+    can fully reconstruct what was (or wasn't) emitted.
+
+    The ``export_uri`` / ``export_type`` / ``mime_type`` fields describe
+    what a future real publisher will eventually produce — Phase 3J does
+    not write a real video file or upload anything anywhere.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    passed_qc: bool
+    status: FinalExportStatusType
+    job_id: str
+    source_reel_draft_uri: str
+    source_reel_draft_checksum: str | None = None
+    qc_report_uri: str
+    qc_report_checksum: str | None = None
+    export_uri: str
+    export_type: str = "video/mp4"
+    mime_type: str = "video/mp4"
+    target_duration_seconds: float
+    watermark_required: bool
+    c2pa_required: bool
+    disclosure_status: DisclosureStatusType = "pending"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ComplianceTokenClaims(BaseModel):
     """Claims carried inside a `compliance_token`. See pre_lipsync_auth."""
 
