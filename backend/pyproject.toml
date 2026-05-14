@@ -22,6 +22,10 @@ dependencies = [
   "sqlalchemy[asyncio]>=2.0.30",
   "asyncpg>=0.29",
   "aiosqlite>=0.20",
+  # Phase 6B: schema migrations. Alembic ships with no native deps and
+  # runs against the existing async drivers via run_sync(); no
+  # ``psycopg2``/``psycopg3`` is pulled in.
+  "alembic>=1.13",
   "redis>=5.0",
   "pyyaml>=6.0",
   "structlog>=24.1",

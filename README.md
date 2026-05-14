@@ -2,7 +2,11 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 5A — Real Piper TTS gating.**
+> **Current status: Phase 6B — Alembic migrations.**
+>
+> Schema changes flow through Alembic now. The FastAPI app does **not** auto-run migrations on startup; operators invoke `make db-upgrade` (or `docker exec aivideo-backend-1 alembic upgrade head` for the Docker light path). `Base.metadata.create_all()` stays in `init_db()` for tests (SQLite in-memory, fresh per fixture); production / dev Postgres deploys go through Alembic instead. +1 dep (`alembic>=1.13`); reuses the existing async drivers via `run_sync()` — no `psycopg2` / `psycopg3` added. Six new Phase 6B smoke tests including a drift guard that fails fast if a model gains a column without a matching migration. New runbook: `docs/runbooks/db-migrations.md`. Backend stays at **306 passed / 4 skipped** under default and `-W error`.
+
+> **Previous milestone: Phase 5A — Real Piper TTS gating.**
 >
 > Lights up `/api/v1/tts/generate`: when `piper-tts` is installed AND the configured voice (`.onnx` + `.onnx.json`) is on disk under `PIPER_MODELS_ROOT`, the endpoint generates a PCM WAV, validates via the Phase 3D inspector, registers an `ArtifactType.audio` row, and returns metadata. Otherwise it returns a **categorised** 503 — `tts_runtime_missing` / `tts_assets_missing` / `tts_provider_not_configured` / `tts_provider_not_implemented` — so the frontend surfaces an actionable hint. `/api/v1/providers/tts` mirrors the gating with `not_configured` / `configured` / `available`. Reuses Phase 3B PiperProvider; no new dependencies, no model auto-download, no voice cloning. **263 passed / 4 skipped** (Phase 5A real-asset tests cleanly skip without piper-tts).
 

@@ -7,7 +7,8 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test \
+        db-migrate db-upgrade db-downgrade db-current db-history \
         frontend-install frontend-lint frontend-build frontend-check \
         docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
 
@@ -119,6 +120,37 @@ phase5c-test: ## Phase 5C — /api/v1/audio/fit-check classification
 
 phase6a-test: ## Phase 6A — /api/v1/video/generate metadata-only contract
 	pytest -v tests/integration/test_phase6a_video_contract.py
+
+phase6b-test: ## Phase 6B — Alembic migration smoke + initial-migration drift guard
+	pytest -v tests/integration/test_phase6b_migrations.py
+
+# ---------------------------------------------------------------------------
+# Phase 6B database migration workflow.
+#
+# Migrations are NOT auto-run by the FastAPI app on startup. The operator
+# invokes them explicitly per deploy. ``DATABASE_URL`` is honoured by
+# alembic/env.py through app.core.config.settings.
+# ---------------------------------------------------------------------------
+
+ALEMBIC := cd backend && alembic
+
+db-migrate: ## Create a new auto-generated migration. Usage: make db-migrate MSG="add ..."
+	@if [ -z "$(MSG)" ]; then \
+		echo "ERROR: pass MSG=\"…\" describing the change."; exit 1; \
+	fi
+	$(ALEMBIC) revision --autogenerate -m "$(MSG)"
+
+db-upgrade: ## Apply migrations up to head. Use DATABASE_URL or .env to point at the target.
+	$(ALEMBIC) upgrade head
+
+db-downgrade: ## Revert one migration. Pass STEP=-N to revert further (e.g. STEP=-2).
+	$(ALEMBIC) downgrade $(or $(STEP),-1)
+
+db-current: ## Show the database's current revision
+	$(ALEMBIC) current
+
+db-history: ## Show migration history
+	$(ALEMBIC) history --verbose
 
 test-integration: ## Alias for `pytest tests/integration`
 	pytest -v tests/integration
