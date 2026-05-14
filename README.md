@@ -2,7 +2,29 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4A-2 — Upload intake API (text / audio / image) + jobs from-inputs.**
+> **Current status: Phase 4B — Frontend dashboard + system / config endpoints.**
+>
+> First-class operator UI in `frontend/` (Next.js 14 App Router, TypeScript, vanilla CSS modules — **no Tailwind, no component libraries, no charting libs**). The UI is **metadata-only**: every screen reads from the FastAPI backend's `/api/v1/*` JSON; no real media plays back, nothing is uploaded externally.
+>
+> Three pages:
+> - **`/`** — Dashboard. Polls `GET /api/v1/jobs` every 5 s and renders one row per job (status, voice/face mode, progress bar, current stage, artifact count, relative-time updated).
+> - **`/jobs/new`** — Create-job form. Loads `GET /api/v1/config/ui-options` once for voice/face mode labels, duration bounds, and upload limits. Supports both `tts` (inline `script_text`) and `provided_audio` (upload + reference) flows, with an optional `provided_image` face mode. Submits via `POST /api/v1/jobs/from-inputs`.
+> - **`/jobs/[jobId]`** — Live detail. Polls 7 endpoints in parallel every 3 s and renders the job overview, stage timeline, artifact table, compliance events, QC report card, and final-export card.
+>
+> Backend additions:
+> - **`GET /api/v1/stages`** — canonical 11-stage DAG list with human-readable labels and declared order.
+> - **`GET /api/v1/artifact-types`** — all 7 `ArtifactType` enum values with labels.
+> - **`GET /api/v1/config/ui-options`** — single payload the create-job form consumes: voice modes (with requires_script_text / requires_audio_artifact flags), face modes, TTS backends, duration bounds, upload limits (audio/image max bytes + script max chars + accepted mime types + accepted extensions), and the lists of `JobStatus` / `StageStatus` / `ProviderHealthStatus` / `ArtifactType` values.
+> - **`GET /api/v1/system/status`** — small health snapshot (app name + version + phase + scope + server_time + a DB connectivity probe).
+> - **`/api/v1/jobs` alias** — the existing `/jobs/*` router is now ALSO mounted at `/api/v1` so the frontend speaks a single `/api/v1/*` prefix. The legacy `/jobs/*` routes stay for backward compatibility with the existing Phase 1–4A tests.
+>
+> **8 new Phase 4B backend tests** verify the four metadata endpoints' shape (canonical stage ordering, ArtifactType coverage, voice/face/duration/upload limits, system status payload), the `/api/v1/jobs` alias resolves to the same handlers as `/jobs/*` (create + list + detail + progress + timeline + artifacts + compliance-events), the alias 404s on unknown job ids, and a top-level JSON-serializability sweep across all four meta endpoints.
+>
+> **Frontend zero-warning policy**: `npm run lint` runs `next lint --max-warnings 0`; `npm run build` runs `next build` and must succeed end-to-end. `make phase4b-test` chains the new backend tests with `frontend-check` (lint + build).
+>
+> **All 216 backend tests + 1 skipped (piper) + frontend lint + build** pass. **No real video / audio / face / lip-sync generation. No Tailwind / component libraries / charting libs added. No SadTalker / Whisper / SDXL / C2PA signing / publishing. No model weights downloaded. No external uploads. No media preview/playback beyond metadata + selected filenames.**
+
+> **Previous milestone: Phase 4A-2 — Upload intake API (text / audio / image) + jobs from-inputs.**
 >
 > Four new write endpoints under `/api/v1`, all metadata-only in response bodies:
 > - `POST /api/v1/uploads/text` — accepts JSON with `script_text` + `title` + `language` + `tone` + `target_duration_seconds`; enforces `SCRIPT_TEXT_MAX_CHARS`; saves a small JSON record under `$UPLOAD_TEXT_ROOT`; registers an orphan `ArtifactType.script` row and returns the `artifact_id` so the future UI can reference it.

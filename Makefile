@@ -7,7 +7,8 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test \
+        frontend-install frontend-lint frontend-build frontend-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -83,8 +84,29 @@ phase4a-test: ## Run the Phase 4A job-view API tests
 phase4a2-test: ## Run the Phase 4A-2 upload intake + from-inputs API tests
 	pytest -v tests/integration/test_phase4a2_upload_intake_api.py
 
+phase4b-test: ## Run the Phase 4B backend meta endpoints + frontend lint+build
+	pytest -v tests/integration/test_phase4b_meta_endpoints.py
+	$(MAKE) frontend-check
+
 test-integration: ## Alias for `pytest tests/integration`
 	pytest -v tests/integration
+
+# ---------------------------------------------------------------------------
+# Frontend (Phase 4B). Assumes Node >= 18 + npm. The first run downloads
+# Next.js + React; everything after is offline.
+# ---------------------------------------------------------------------------
+
+frontend-install: ## Install frontend dependencies (npm ci if lockfile exists, else npm install)
+	cd frontend && (test -f package-lock.json && npm ci --no-audit --no-fund || npm install --no-audit --no-fund)
+
+frontend-lint: ## Run `next lint --max-warnings 0`
+	cd frontend && npm run lint
+
+frontend-build: ## Run `next build` (production build)
+	cd frontend && npm run build
+
+frontend-check: ## Run frontend lint + build (used by phase4b-test)
+	cd frontend && npm run lint && npm run build
 
 # ---------------------------------------------------------------------------
 # Lint / format. Both are non-destructive without --fix.

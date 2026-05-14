@@ -30,6 +30,7 @@ make phase3i-test
 make phase3j-test
 make phase4a-test
 make phase4a2-test
+make phase4b-test       # backend meta endpoints + frontend lint+build
 # or together:
 make test
 ```
@@ -72,6 +73,26 @@ curl -X POST http://localhost:8000/jobs \
 ```
 
 Note: when running the API directly (not via `pytest`) you'll want a real Postgres + Redis. The simplest way to get those is `make up` (see below).
+
+### Frontend (Phase 4B)
+
+Next.js 14 App Router + TypeScript + vanilla CSS modules. No Tailwind, no
+component libraries.
+
+```bash
+# Install dependencies (first time only — ~330 packages).
+make frontend-install
+
+# Run the dev server on http://localhost:3000 (talks to the backend at
+# http://localhost:8000 via /api/v1/* by default).
+cd frontend && npm run dev
+
+# Or run the same checks CI does:
+make frontend-check    # next lint --max-warnings 0 + next build
+```
+
+To point the frontend at a non-default backend URL, copy `frontend/.env.example`
+to `frontend/.env.local` and edit `NEXT_PUBLIC_API_BASE_URL`.
 
 ## Full-stack prerequisites (needed from Phase 2 onward)
 

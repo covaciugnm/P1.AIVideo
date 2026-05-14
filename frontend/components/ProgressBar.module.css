@@ -1,0 +1,38 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.track {
+  position: relative;
+  height: 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.bar {
+  height: 100%;
+  background: var(--accent-strong);
+  transition: width 0.25s ease;
+}
+
+.barDanger {
+  height: 100%;
+  background: var(--danger);
+  transition: width 0.25s ease;
+}
+
+.label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.muted {
+  color: var(--text-muted);
+}

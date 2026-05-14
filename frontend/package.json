@@ -1,18 +1,29 @@
 {
   "name": "aivideo-frontend",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
-  "description": "P1.AIVideo frontend (Next.js). Phase 0 scaffold; real app lands in Phase 4.",
+  "description": "P1.AIVideo Phase 4B frontend (Next.js 14 App Router; vanilla CSS).",
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "scripts": {
-    "dev": "echo \"Phase 4 will replace this with: next dev\" && exit 0",
-    "build": "echo \"Phase 4 will replace this with: next build\" && exit 0",
-    "start": "echo \"Phase 4 will replace this with: next start\" && exit 0",
-    "lint": "echo \"Phase 4 will add an eslint config\" && exit 0",
-    "typecheck": "echo \"Phase 4 will add tsconfig + typecheck\" && exit 0"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint --max-warnings 0",
+    "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.35",
+    "typescript": "5.5.4"
+  }
 }
