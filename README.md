@@ -2,7 +2,21 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4A — Job view API endpoints for the future web UI.**
+> **Current status: Phase 4A-2 — Upload intake API (text / audio / image) + jobs from-inputs.**
+>
+> Four new write endpoints under `/api/v1`, all metadata-only in response bodies:
+> - `POST /api/v1/uploads/text` — accepts JSON with `script_text` + `title` + `language` + `tone` + `target_duration_seconds`; enforces `SCRIPT_TEXT_MAX_CHARS`; saves a small JSON record under `$UPLOAD_TEXT_ROOT`; registers an orphan `ArtifactType.script` row and returns the `artifact_id` so the future UI can reference it.
+> - `POST /api/v1/uploads/audio` — accepts `multipart/form-data` with a `.wav` file; streams to `$UPLOAD_AUDIO_ROOT` with a uuid-derived filename (never echoes the operator's original); enforces `AUDIO_MAX_FILE_SIZE_BYTES`; validates the WAV header via the existing Phase 3D validator; registers an `ArtifactType.audio` row with sample_rate / channels / duration / checksum.
+> - `POST /api/v1/uploads/image` — accepts `.png` / `.jpg` / `.jpeg` / `.webp`; streams to `$UPLOAD_IMAGE_ROOT`; enforces `IMAGE_MAX_FILE_SIZE_BYTES`; validates the header via the Phase 3E validator; registers an `ArtifactType.image` row with width / height / checksum.
+> - `POST /api/v1/jobs/from-inputs` — dereferences uploaded `*_artifact_id` values back into the `JobCreateRequest` shape (constructing `AudioRef` / `ImageRef` from the artifact's `local_path` + checksum + operator-provided consent flags), then funnels through `job_service.create_job` so every existing compliance / path-safety validator re-runs.
+>
+> - **`python-multipart`** added to backend deps (FastAPI's required multipart parser; pure-Python, no native deps).
+> - **`Artifact.job_id`** is now nullable so upload endpoints can register orphan artifacts before a job exists; subsequent `from-inputs` calls link them via the job's `audio_ref` / `image_ref`. Phase 1 tests still pass — existing rows are always created with a non-null `job_id`.
+> - **22 Phase 4A-2 tests** cover: text valid / empty / oversize / unique filenames; audio valid / bad extension / bad header / oversize; image accepted across PNG / JPEG / WebP / rejected extensions / rejected headers; no binary leaks; from-inputs in tts and provided_audio modes (with image), wrong artifact-type rejected, unknown artifact-id rejected, audio_consent_confirmed=False rejected; and a path-traversal-filename test that confirms malicious filenames never escape the upload root.
+>
+> **No frontend yet. No real video / audio / face / lip-sync generation. No new heavy deps — only python-multipart. No model weights downloaded. No external uploads.**
+
+> **Previous milestone: Phase 4A — Job view API endpoints for the future web UI.**
 >
 > - Eight read-only FastAPI endpoints under `/jobs`:
 >   - `GET /jobs` — paginated list of metadata-only `JobSummary` rows (status, brief, voice/face mode, current_stage, progress_percent, artifact_count).
@@ -75,7 +89,35 @@ configs/     Prompt templates, voice profiles, personas, policy rules
 5. Read [`docs/runbooks/gpu-docker.md`](docs/runbooks/gpu-docker.md) — host setup for NVIDIA + Docker (only needed once Phase 3 ships).
 6. Copy `.env.example` to `.env` and adjust paths.
 
-## Phase 4A scope — current
+## Phase 4A-2 scope — current
+
+Implemented on top of Phase 4A:
+
+- **`python-multipart`** added to `backend/pyproject.toml` (pure-Python; FastAPI uses it for `multipart/form-data` parsing).
+- **`Artifact.job_id`** made nullable. Upload endpoints register orphan artifacts; `from-inputs` resolves them by id when creating the job (the job's own `audio_ref` / `image_ref` carries the linkage). Phase 1–4A tests unaffected — they all create artifacts with a non-null `job_id`.
+- **`backend/app/services/upload_service.py`** — `get_upload_root` (env-driven, resolves+mkdirs), `safe_unique_filename` (uuid4-derived; refuses anything outside `[a-z0-9.]` for the extension), `save_streaming_upload` (chunked write with hard size cap; cleans up partial files on rejection), `compute_sha256`.
+- **`backend/app/schemas/uploads.py`** — `UploadTextRequest`/`Response`, `UploadAudioResponse`, `UploadImageResponse`, `JobFromInputsRequest` (with a model-level validator enforcing the voice / face requirement combinations).
+- **`backend/app/api/uploads.py`** — two routers:
+  - `uploads_router` (prefix `/api/v1/uploads`): `POST /text`, `POST /audio`, `POST /image`.
+  - `jobs_v1_router` (prefix `/api/v1/jobs`): `POST /from-inputs`.
+- **Config (`.env.example` + `Settings`)** — `UPLOADS_LOCAL_ROOT`, `UPLOAD_AUDIO_ROOT`, `UPLOAD_IMAGE_ROOT`, `UPLOAD_TEXT_ROOT`, `SCRIPT_TEXT_MAX_CHARS=8000`. Default roots sit under `storage/inputs/...` and must overlap with `PROVIDED_AUDIO_ALLOWED_ROOTS` / `PROVIDED_IMAGE_ALLOWED_ROOTS` so `from-inputs` re-validates cleanly.
+- **22 Phase 4A-2 tests** in `tests/integration/test_phase4a2_upload_intake_api.py` covering: text valid / empty / oversize / unique filenames; audio valid / non-.wav extension / bad header / oversize; PNG/JPEG/WebP accepted, GIF/non-image rejected, invalid header rejected; no binary in responses; `from-inputs` tts + tts-with-image + provided_audio-with-image happy paths; missing audio in provided_audio rejected; consent=false rejected; wrong artifact_type rejected; unknown artifact_id rejected; malicious filename never escapes the upload root.
+
+Storage safety:
+
+- Filenames are always `uuid4().hex + extension`. The operator's original filename is **not used** for anything — verified by a test that posts `"../../../etc/passwd.wav"` and confirms the saved path stays under the configured root.
+- The streaming-save helper closes + unlinks the partial file when the size cap is exceeded, so a malicious large upload never lingers on disk.
+- Bad WAV / image bodies are detected after streaming completes — the saved file is scrubbed before the 400 response.
+
+Explicitly **not** in Phase 4A-2:
+
+- **No frontend.**
+- **No real video / audio / face generation.** Uploads register metadata only; the existing DAG continues to be metadata-only as well.
+- **No external uploads.** Files stay on the local disk under the configured roots.
+- **No model weights downloaded.**
+- **No auth / RBAC.** Endpoints are open in dev; future phase wires this up.
+
+## Phase 4A scope (still active)
 
 Implemented on top of Phase 3J:
 

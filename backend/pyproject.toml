@@ -25,6 +25,10 @@ dependencies = [
   "redis>=5.0",
   "pyyaml>=6.0",
   "structlog>=24.1",
+  # python-multipart is FastAPI's required parser for multipart/form-data;
+  # added in Phase 4A-2 for the audio + image upload endpoints. Pure-Python,
+  # no native deps.
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

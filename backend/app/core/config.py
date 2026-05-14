@@ -68,6 +68,17 @@ class Settings(BaseSettings):
     image_min_width: str = ""   # empty = no minimum
     image_min_height: str = ""
 
+    # --- Upload intake (Phase 4A-2) ---
+    # Where uploaded files land. Each subroot must be under a directory
+    # that's also listed in PROVIDED_AUDIO_ALLOWED_ROOTS /
+    # PROVIDED_IMAGE_ALLOWED_ROOTS so the existing path-safety validator
+    # accepts the file when a job_from_inputs request later references it.
+    uploads_local_root: str = "storage/inputs"
+    upload_audio_root: str = "storage/inputs/audio"
+    upload_image_root: str = "storage/inputs/images"
+    upload_text_root: str = "storage/inputs/text"
+    script_text_max_chars: int = 8000
+
     # --- Scriptwriter (Phase 3G) ---
     # Provider registry + contract config. NO real LLM calls happen until
     # both ``scriptwriter_enable_network_calls`` is True AND a real

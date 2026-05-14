@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import healthz, jobs
+from app.api import healthz, jobs, uploads
 from app.core.config import settings
 from app.core.db import init_db
 
@@ -38,6 +38,9 @@ def create_app() -> FastAPI:
     )
     app.include_router(healthz.router)
     app.include_router(jobs.router)
+    # Phase 4A-2: /api/v1/uploads/{text,audio,image} + /api/v1/jobs/from-inputs
+    app.include_router(uploads.uploads_router)
+    app.include_router(uploads.jobs_v1_router)
     return app
 
 

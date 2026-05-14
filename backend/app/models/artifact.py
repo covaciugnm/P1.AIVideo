@@ -42,8 +42,13 @@ class Artifact(Base):
     __tablename__ = "artifacts"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    job_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True
+    # Nullable so Phase 4A-2 upload endpoints can register an "orphan"
+    # artifact before a job exists. A subsequent
+    # ``POST /api/v1/jobs/from-inputs`` references this artifact by id; the
+    # original row stays as the intake record (``job_id`` stays NULL — the
+    # job's own ``audio_ref`` / ``image_ref`` captures the linkage instead).
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True, index=True
     )
     stage_run_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,

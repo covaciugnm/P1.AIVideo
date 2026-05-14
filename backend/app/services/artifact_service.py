@@ -19,7 +19,7 @@ from app.models.artifact import Artifact
 async def register_artifact(
     session: AsyncSession,
     *,
-    job_id: uuid.UUID,
+    job_id: uuid.UUID | None = None,
     stage_run_id: uuid.UUID | None = None,
     artifact_type: str,
     uri: str,
@@ -60,7 +60,7 @@ async def register_artifact_ref(
     session: AsyncSession,
     *,
     ref: ArtifactRef,
-    job_id: uuid.UUID,
+    job_id: uuid.UUID | None = None,
     stage_run_id: uuid.UUID | None = None,
     name: str | None = None,
 ) -> Artifact:
