@@ -138,3 +138,58 @@ class JobStatusResponse(BaseModel):
     id: uuid.UUID
     status: JobStatus
     rejection_reason: str | None = None
+
+
+class JobUpdateRequest(BaseModel):
+    """Phase 4E: metadata-only patch.
+
+    Every field is optional; only the fields included in the request body are
+    applied. The handler refuses to mutate **immutable** fields (voice_mode,
+    face_mode, script_text, audio_ref/image_ref, the four compliance
+    booleans) once the job has progressed past ``pending_compliance``, since
+    later stages may have already consumed them. ``brief`` and
+    ``target_duration_seconds`` stay editable until the job reaches a
+    terminal state (``published`` / ``rejected`` / ``failed``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    brief: str | None = Field(default=None, min_length=1, max_length=2000)
+    target_duration_seconds: int | None = None
+    script_text: str | None = Field(default=None, max_length=8000)
+    voice_mode: VoiceMode | None = None
+    face_mode: FaceMode | None = None
+    tts_backend: str | None = Field(default=None, max_length=32)
+    watermark_required: bool | None = None
+    c2pa_required: bool | None = None
+
+    @field_validator("target_duration_seconds")
+    @classmethod
+    def _duration_bounds(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        lo, hi = settings.min_reel_duration_seconds, settings.max_reel_duration_seconds
+        if not (lo <= v <= hi):
+            raise ValueError(f"target_duration_seconds must be between {lo} and {hi}")
+        return v
+
+    @field_validator("watermark_required")
+    @classmethod
+    def _watermark_required(cls, v: bool | None) -> bool | None:
+        if v is None:
+            return v
+        if v is not True:
+            raise ValueError("watermark_required must be true")
+        return v
+
+    @field_validator("c2pa_required")
+    @classmethod
+    def _c2pa_required(cls, v: bool | None) -> bool | None:
+        if v is None:
+            return v
+        if v is not True:
+            raise ValueError("c2pa_required must be true")
+        return v
+
+    def has_any_field(self) -> bool:
+        return any(v is not None for v in self.model_dump().values())

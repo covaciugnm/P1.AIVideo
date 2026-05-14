@@ -139,3 +139,72 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
+
+.portRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.portRow:last-child {
+  border-bottom: none;
+}
+
+.portLabel {
+  font-weight: 600;
+  min-width: 70px;
+}
+
+.portMap {
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.portInput {
+  width: 64px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+  font-size: 12px;
+  font-family: var(--mono-stack);
+  color: var(--text);
+}
+
+.portUrl {
+  font-family: var(--mono-stack);
+  font-size: 11px;
+}
+
+.btnSmall {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 1px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.btnSmall:disabled {
+  opacity: 0.6;
+}
+
+.cmdBox {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  color: var(--text);
+}

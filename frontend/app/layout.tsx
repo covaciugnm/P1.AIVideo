@@ -31,7 +31,10 @@ export default function RootLayout({
                 </Link>
                 <nav className="nav-links">
                   <Link href="/">Dashboard</Link>
+                  <Link href="/jobs">Jobs</Link>
                   <Link href="/jobs/new">New job</Link>
+                  <Link href="/uploads">Uploads</Link>
+                  <Link href="/settings">Settings</Link>
                 </nav>
               </div>
               <BackendStatusBadge />

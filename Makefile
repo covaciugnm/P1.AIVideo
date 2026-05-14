@@ -7,7 +7,7 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test \
         frontend-install frontend-lint frontend-build frontend-check \
         docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
 
@@ -92,6 +92,10 @@ phase4b-test: ## Run the Phase 4B backend meta endpoints + frontend lint+build
 phase4d-test: ## Phase 4D — frontend lint + build (sidebar + settings + logs); backend regression
 	$(MAKE) frontend-check
 	pytest -v tests/integration/test_phase4b_meta_endpoints.py
+
+phase4e-test: ## Phase 4E — frontend lint + build + Phase 4E PATCH/DELETE tests + Phase 4B meta tests
+	$(MAKE) frontend-check
+	pytest -v tests/integration/test_phase4b_meta_endpoints.py tests/integration/test_phase4e_job_patch_delete.py
 
 test-integration: ## Alias for `pytest tests/integration`
 	pytest -v tests/integration

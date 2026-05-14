@@ -16,6 +16,7 @@ Tests dispose the cached engine via one of two helpers:
 """
 from __future__ import annotations
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
@@ -38,6 +39,21 @@ def get_engine() -> AsyncEngine:
             kwargs["poolclass"] = StaticPool
             kwargs["connect_args"] = {"check_same_thread": False}
         _engine = create_async_engine(url, **kwargs)
+        if url.startswith("sqlite"):
+            # SQLite defaults to FK enforcement OFF. Phase 4E's DELETE
+            # /jobs/{id} relies on the ON DELETE CASCADE constraints on
+            # stage_runs / compliance_events / artifacts — without this
+            # PRAGMA the cascade is a no-op and child rows are orphaned.
+            sync_engine = _engine.sync_engine
+
+            @event.listens_for(sync_engine, "connect")
+            def _enable_sqlite_fk(dbapi_connection, _connection_record):  # noqa: ANN001
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                finally:
+                    cursor.close()
+
         _sessionmaker = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _engine
 

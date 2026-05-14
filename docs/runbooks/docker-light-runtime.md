@@ -92,7 +92,9 @@ All services share the user-defined `aivideo` bridge network. From inside a cont
 
 ## Troubleshooting
 
-- **Frontend shows "Failed to load jobs — HTTP 404"** — `NEXT_PUBLIC_API_BASE_URL` is baked into the JS bundle at `next build`, so a stack started with `BACKEND_PORT=8001` will still call `http://localhost:8000` from the browser (which on most workstations is some other process). Fix: open the right sidebar → **Settings → Backend API Base URL** → set to `http://localhost:8001` → click **Test backend connection**. The override is persisted to `localStorage` and used on every subsequent API call without a rebuild.
+- **Frontend shows "Failed to load jobs — HTTP 404" or "Failed to fetch"** — two distinct causes:
+  - **HTTP 404**: `NEXT_PUBLIC_API_BASE_URL` baked at build time still points at `:8000` while the stack runs on `:8001`. Fix: right sidebar → **Settings → Backend API Base URL** → set to `http://localhost:8001` → click **Test backend connection**. The override is persisted to `localStorage` and used on every subsequent API call without a rebuild.
+  - **"Failed to fetch"** (Phase 4E fix): CORS preflight is being rejected because the backend doesn't allow your frontend's origin. The Phase 4E default `BACKEND_CORS_ORIGINS` covers `http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001`. If you have an older `.env`, regenerate: `cp .env.example .env` then restart the stack. To allow another origin, comma-extend `BACKEND_CORS_ORIGINS` in `.env`.
 - **`env file …/.env not found`** — copy `.env.example` to `.env`.
 - **Backend healthcheck never goes green** — the image lacks `curl` or `/healthz` is not responding. Check `make docker-light-logs` and confirm `uvicorn` started. The Dockerfile pins `curl` into the runtime stage.
 - **Frontend 404s on `/jobs`** — `NEXT_PUBLIC_API_BASE_URL` was baked wrong at build time. Rebuild with `make docker-light-build` after editing `.env` (the compose file passes the value as a build arg).

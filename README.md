@@ -2,7 +2,55 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4D — Right sidebar (Logs + Settings tabs) and runtime API base URL override.**
+> **Current status: Phase 4E — Full operator UI + browser CORS fix.**
+>
+> Closes the loop on the Phase 4D regression where the browser still showed `Failed to fetch` even with Settings → Backend API Base URL set. Adds full operator routes (Jobs list with edit/delete, dedicated Uploads page, dedicated Settings page) and exposes the Docker light-runtime ports as editable operator settings with a copy-ready compose-up command.
+>
+> **Root cause of "Failed to fetch"** — the backend's default `BACKEND_CORS_ORIGINS=http://localhost:3000` only allowed the standard frontend port. Browser preflight from `http://localhost:3001` returned `400 Disallowed CORS origin` with no `access-control-allow-origin` header, so every API call from the browser failed at the protocol level even though curl on the host worked fine.
+>
+> **Fix.**
+> - `backend/app/core/config.py` default `backend_cors_origins` is now `http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001`. `.env.example` mirrors the new default so a fresh `cp .env.example .env` carries it forward.
+> - Verified end-to-end with the dockerized stack on alt ports: preflight OPTIONS from `Origin: http://localhost:3001` now returns `200` with `access-control-allow-origin: http://localhost:3001`; GET / PATCH / DELETE all return 2xx with the credentialed allow-origin header.
+>
+> **Backend** — Two new endpoints + 12 new tests under `tests/integration/test_phase4e_job_patch_delete.py`:
+> - `PATCH /api/v1/jobs/{id}` with `JobUpdateRequest` (every field optional, `extra="forbid"`). Refuses terminal-state edits with `409`. Refuses immutable-field edits (`voice_mode`, `face_mode`, `script_text`, `watermark_required`, `c2pa_required`, `tts_backend`) once the job has progressed past `pending_compliance`. `brief` + `target_duration_seconds` stay editable until terminal.
+> - `DELETE /api/v1/jobs/{id}` → 204 / 404. Cascades `stage_runs`, `compliance_events`, `artifacts` via `ON DELETE CASCADE` (SQLite needs `PRAGMA foreign_keys=ON` per connection — added in `app.core.db`).
+> - Both endpoints resolve under the legacy `/jobs/*` prefix and the new `/api/v1/jobs/*` alias.
+>
+> **Frontend** — full operator UX:
+> - `/jobs` — full jobs list with paginated polling, status / voice / face / progress / duration / artifact count, and per-row **View / Edit / Delete** actions. Delete uses an inline confirmation row (`Delete? Yes / No`) — no modal library.
+> - `/jobs/[jobId]/edit` — editable form scoped to safe fields (brief, duration, script when still pending compliance). Read-only voice / face / tts_backend / watermark / c2pa shown alongside. Submitting calls `PATCH`; inline 4xx detail on validation reject.
+> - `/uploads` — three-card grid (text, audio, image) using the same `UploadCard` component as the create-job flow, plus a tab-local "Recent uploads" panel with copy-to-clipboard for each artifact id.
+> - `/settings` — full-page version of the right-sidebar Settings panel for operators who want a wider canvas.
+> - Top-nav adds `Dashboard / Jobs / New job / Uploads / Settings` (replaces the Phase 4D minimal nav).
+>
+> **Docker port settings** — `SettingsPanel` now renders a port table for every service in `compose.dev.yml`:
+> | Service | Container port | Host port (editable) | Test |
+> |---|---|---|---|
+> | Backend | 8000 | `backendHostPort` (default 8000) | `GET /healthz` |
+> | Frontend | 3000 | `frontendHostPort` | `GET /` |
+> | Postgres | 5432 | `postgresHostPort` | via backend `/api/v1/system/status` |
+> | Redis | 6379 | `redisHostPort` | via backend (no browser TCP test) |
+> | MinIO | 9000 | `minioHostPort` | `GET /minio/health/live` |
+>
+> Plus dedicated `Test /api/v1/jobs` and `Test /api/v1/stages` buttons.
+>
+> **Auto-link logic** — editing `backendHostPort` automatically derives `apiBaseUrl = http://localhost:{port}` **unless** the operator has typed into the API URL field (`apiBaseUrlIsCustom=true`). Editing `frontendHostPort` updates the displayed Frontend URL the same way. A single change emits one structured log entry on the bus (`port-edit` vs `url-edit` recorded in meta).
+>
+> **Compose-up command preview** — Settings shows the exact one-liner derived from the current ports + API URL, with a one-click copy button:
+> ```
+> BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 docker compose -f docker/compose.dev.yml up -d postgres redis backend frontend orchestrator
+> ```
+>
+> **API client diagnostics** — every fetch now logs `url`, `url_source` (`user-override` vs `build-time`), error name, and a hint for the classic "Failed to fetch" CORS case. `getActiveApiBaseUrl()` still reads localStorage on every call.
+>
+> **Frontend defaults** in Settings — default target duration, default voice mode (TTS or provided_audio), default face-mode-enabled toggle. The create-job form reads them on mount.
+>
+> **Verification**: `npm run lint` (zero-warnings) ✓, `npm run build` produces 8 routes ✓, `make test` **228 passed / 1 skipped** (was 216 — +12 Phase 4E tests), strict `-W error` pytest sweep also 228/1, dockerized stack on alt ports + new CORS allow-list shows preflight 200 + GET/PATCH/DELETE 2xx end-to-end.
+>
+> **NOT in Phase 4E**: WebSocket/SSE streaming, persistent backend log shipping, server-side artifact listing endpoint, edit-only-state preflight endpoint, browser-driven Docker control. Logs remain per-tab in-memory operator diagnostics; editing Docker ports in the UI is operator guidance only — restart the stack with the generated env vars to apply.
+
+> **Previous milestone: Phase 4D — Right sidebar (Logs + Settings tabs) and runtime API base URL override.**
 >
 > Adds a persistent right-side activity sidebar across every page (Dashboard, Job detail, Create job) and a Settings tab that lets the operator override `NEXT_PUBLIC_API_BASE_URL` at runtime — the fix for the "Failed to load jobs → 404" issue when Docker publishes the backend on a non-default port (e.g. `BACKEND_PORT=8001`).
 >

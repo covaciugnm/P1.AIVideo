@@ -72,6 +72,18 @@ make frontend-check     # runs lint + build (also invoked by phase4b-test)
 | `/jobs/new` | Create-job form. Loads `GET /api/v1/config/ui-options` once; supports `tts` (inline script_text) and `provided_audio` (upload + reference) flows; optional `provided_image` face mode. Submits via `POST /api/v1/jobs/from-inputs`. |
 | `/jobs/[jobId]` | Live job detail. Polls 7 endpoints in parallel every 3 s and renders progress, stage timeline, artifacts, compliance events, QC report, and final export. |
 
+## Routes (Phase 4E)
+
+| Path | Purpose |
+|---|---|
+| `/` | Dashboard — recent jobs polled on a configurable interval. |
+| `/jobs` | Full jobs list with per-row View / Edit / Delete actions (inline confirm). |
+| `/jobs/[jobId]` | Live job detail (progress, timeline, artifacts, compliance events, QC report, final export). |
+| `/jobs/[jobId]/edit` | Metadata-only edit form (terminal jobs are read-only). |
+| `/jobs/new` | Create-job wizard (brief, voice, optional face, compliance attestations). |
+| `/uploads` | Standalone text / audio / image upload cards + session-scoped "Recent uploads". |
+| `/settings` | Full-page mirror of the right-sidebar Settings panel. |
+
 ## Right sidebar (Phase 4D)
 
 Persistent right-side panel on every page. Two tabs:

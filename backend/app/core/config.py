@@ -23,7 +23,16 @@ class Settings(BaseSettings):
     # --- Backend ---
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
-    backend_cors_origins: str = "http://localhost:3000"
+    # Default CORS allow-list covers the common dev + Phase 4C Docker port
+    # combinations: the frontend may run on :3000 (default) or :3001 (the
+    # Docker host port override used when 3000 is taken). 127.0.0.1 variants
+    # are included because some browsers send the host header for that
+    # alias when entered explicitly. Override via BACKEND_CORS_ORIGINS as a
+    # comma-separated list for any extra origins.
+    backend_cors_origins: str = (
+        "http://localhost:3000,http://localhost:3001,"
+        "http://127.0.0.1:3000,http://127.0.0.1:3001"
+    )
 
     # --- Postgres ---
     postgres_host: str = "postgres"

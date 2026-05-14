@@ -1,0 +1,30 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.title {
+  margin: 0;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}

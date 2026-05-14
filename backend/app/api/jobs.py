@@ -23,7 +23,7 @@ from app.models.artifact import Artifact
 from app.models.compliance import ComplianceEvent
 from app.models.job import Job
 from app.models.stage_run import StageRun
-from app.schemas.job import JobCreateRequest, JobResponse
+from app.schemas.job import JobCreateRequest, JobResponse, JobUpdateRequest
 from app.schemas.job_views import (
     ArtifactResponse,
     ComplianceEventApiResponse,
@@ -214,6 +214,48 @@ async def get_job(
 ) -> JobResponse:
     job = await _load_job_or_404(session, job_id)
     return JobResponse.model_validate(job)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /jobs/{id}   (Phase 4E)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{job_id}", response_model=JobResponse)
+async def update_job(
+    job_id: uuid.UUID,
+    payload: JobUpdateRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> JobResponse:
+    if not payload.has_any_field():
+        raise HTTPException(
+            status_code=400, detail="no editable fields provided"
+        )
+    await _load_job_or_404(session, job_id)
+    try:
+        updated = await job_service.update_job(
+            session, job_id, payload.model_dump(exclude_none=True)
+        )
+    except job_service.JobEditError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return JobResponse.model_validate(updated)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /jobs/{id}  (Phase 4E)
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{job_id}", status_code=204)
+async def delete_job(
+    job_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    deleted = await job_service.delete_job(session, job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="job not found")
 
 
 # ---------------------------------------------------------------------------

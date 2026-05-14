@@ -45,11 +45,22 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  readonly method?: "GET" | "POST";
+  readonly method?: "GET" | "POST" | "PATCH" | "DELETE";
   readonly body?: BodyInit | null;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
   readonly logLabel?: string;
+}
+
+function buildTimeApiBaseUrl(): string {
+  return (
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE_URL) ||
+    "http://localhost:8000"
+  );
+}
+
+function urlSourceLabel(activeUrl: string): "user-override" | "build-time" {
+  return activeUrl === buildTimeApiBaseUrl() ? "build-time" : "user-override";
 }
 
 function now(): number {
@@ -91,7 +102,13 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
         source: "api",
         level: "error",
         message: `${method} ${logPath} → ${response.status}`,
-        meta: { status: response.status, duration_ms: durationMs, detail },
+        meta: {
+          url,
+          status: response.status,
+          duration_ms: durationMs,
+          detail,
+          url_source: urlSourceLabel(baseUrl),
+        },
       });
       throw new ApiError(response.status, detail);
     }
@@ -99,7 +116,12 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       source: "api",
       level: response.status >= 400 ? "warning" : "info",
       message: `${method} ${logPath} → ${response.status}`,
-      meta: { status: response.status, duration_ms: durationMs },
+      meta: {
+        url,
+        status: response.status,
+        duration_ms: durationMs,
+        url_source: urlSourceLabel(baseUrl),
+      },
     });
     if (response.status === 204) {
       return undefined as T;
@@ -111,11 +133,24 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       throw err;
     }
     const durationMs = Math.round(now() - started);
+    const errName = err instanceof Error ? err.name : "Error";
+    const errMessage = err instanceof Error ? err.message : String(err);
+    const hint =
+      errMessage === "Failed to fetch"
+        ? "network or CORS — check Settings → Backend API Base URL and backend CORS allow-list"
+        : undefined;
     logBus.emit({
       source: "api",
       level: "error",
-      message: `${method} ${logPath} → network error`,
-      meta: { duration_ms: durationMs, error: err instanceof Error ? err.message : String(err) },
+      message: `${method} ${logPath} → ${errName}: ${errMessage}`,
+      meta: {
+        url,
+        duration_ms: durationMs,
+        error_name: errName,
+        error_message: errMessage,
+        url_source: urlSourceLabel(baseUrl),
+        ...(hint ? { hint } : {}),
+      },
     });
     throw err;
   }
@@ -251,6 +286,37 @@ export function createJobFromInputs(
     headers: jsonHeaders(),
     body: JSON.stringify(body),
     signal,
+  });
+}
+
+export function updateJob(
+  jobId: string,
+  patch: Partial<{
+    brief: string;
+    target_duration_seconds: number;
+    script_text: string;
+    voice_mode: "tts" | "provided_audio";
+    face_mode: "provided_image" | null;
+    tts_backend: string;
+    watermark_required: boolean;
+    c2pa_required: boolean;
+  }>,
+  signal?: AbortSignal,
+): Promise<JobResponse> {
+  return request<JobResponse>(`/api/v1/jobs/${jobId}`, {
+    method: "PATCH",
+    headers: jsonHeaders(),
+    body: JSON.stringify(patch),
+    signal,
+    logLabel: "/api/v1/jobs/:id",
+  });
+}
+
+export function deleteJob(jobId: string, signal?: AbortSignal): Promise<void> {
+  return request<void>(`/api/v1/jobs/${jobId}`, {
+    method: "DELETE",
+    signal,
+    logLabel: "/api/v1/jobs/:id",
   });
 }
 

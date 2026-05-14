@@ -98,6 +98,15 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 4E note: CORS allow-list
+
+If the browser shows "Failed to fetch" even with the correct Backend API Base
+URL, the cause is almost always CORS. Phase 4E ships a default allow-list
+covering `http://localhost:3000`, `http://localhost:3001`, and the
+`127.0.0.1` aliases. Older `.env` files from Phase 4C-D may still have the
+single-origin default — regenerate with `cp .env.example .env` and restart
+the backend (or `make docker-light-down && make docker-light-up`).
+
 ### Docker light runtime (Phase 4C)
 
 For the metadata-only stack in Docker (backend + frontend + orchestrator-idle

@@ -6,6 +6,7 @@
 
 export interface Settings {
   readonly apiBaseUrl: string;
+  readonly apiBaseUrlIsCustom: boolean;
   readonly frontendUrl: string;
   readonly pollingIntervalSeconds: number;
   readonly autoPollingEnabled: boolean;
@@ -14,6 +15,18 @@ export interface Settings {
   readonly showApiLogs: boolean;
   readonly showSystemLogs: boolean;
   readonly maxLogEntries: number;
+  // Docker Compose light-runtime host ports. Editing them in the UI does
+  // not restart Docker; the values guide the API base URL and the copy-
+  // ready compose-up command shown in Settings.
+  readonly backendHostPort: number;
+  readonly frontendHostPort: number;
+  readonly postgresHostPort: number;
+  readonly redisHostPort: number;
+  readonly minioHostPort: number;
+  // Operator-side defaults applied to the create-job form.
+  readonly defaultTargetDurationSeconds: number;
+  readonly defaultVoiceMode: "tts" | "provided_audio";
+  readonly defaultFaceModeEnabled: boolean;
 }
 
 const DEFAULT_API_BASE_URL =
@@ -25,6 +38,7 @@ const DEFAULT_FRONTEND_URL =
 
 export const DEFAULT_SETTINGS: Settings = {
   apiBaseUrl: DEFAULT_API_BASE_URL,
+  apiBaseUrlIsCustom: false,
   frontendUrl: DEFAULT_FRONTEND_URL,
   pollingIntervalSeconds: 3,
   autoPollingEnabled: true,
@@ -33,7 +47,21 @@ export const DEFAULT_SETTINGS: Settings = {
   showApiLogs: true,
   showSystemLogs: true,
   maxLogEntries: 500,
+  backendHostPort: 8000,
+  frontendHostPort: 3000,
+  postgresHostPort: 5432,
+  redisHostPort: 6379,
+  minioHostPort: 9000,
+  defaultTargetDurationSeconds: 30,
+  defaultVoiceMode: "tts",
+  defaultFaceModeEnabled: false,
 };
+
+function clampPort(n: unknown, fallback: number): number {
+  const v = Number(n);
+  if (Number.isFinite(v) && v >= 1 && v <= 65535) return Math.floor(v);
+  return fallback;
+}
 
 export const SETTINGS_STORAGE_KEY = "aivideo:settings:v1";
 export const SIDEBAR_STORAGE_KEY = "aivideo:sidebar:v1";
@@ -97,11 +125,17 @@ export function saveSidebarState(state: SidebarState): void {
 }
 
 function mergeSettings(partial: Partial<Settings>): Settings {
+  const voiceMode: Settings["defaultVoiceMode"] =
+    partial.defaultVoiceMode === "provided_audio" ? "provided_audio" : "tts";
   return {
     apiBaseUrl:
       typeof partial.apiBaseUrl === "string" && partial.apiBaseUrl
         ? partial.apiBaseUrl
         : DEFAULT_SETTINGS.apiBaseUrl,
+    apiBaseUrlIsCustom:
+      typeof partial.apiBaseUrlIsCustom === "boolean"
+        ? partial.apiBaseUrlIsCustom
+        : DEFAULT_SETTINGS.apiBaseUrlIsCustom,
     frontendUrl:
       typeof partial.frontendUrl === "string" && partial.frontendUrl
         ? partial.frontendUrl
@@ -138,6 +172,22 @@ function mergeSettings(partial: Partial<Settings>): Settings {
       partial.maxLogEntries <= 5000
         ? Math.floor(partial.maxLogEntries)
         : DEFAULT_SETTINGS.maxLogEntries,
+    backendHostPort: clampPort(partial.backendHostPort, DEFAULT_SETTINGS.backendHostPort),
+    frontendHostPort: clampPort(partial.frontendHostPort, DEFAULT_SETTINGS.frontendHostPort),
+    postgresHostPort: clampPort(partial.postgresHostPort, DEFAULT_SETTINGS.postgresHostPort),
+    redisHostPort: clampPort(partial.redisHostPort, DEFAULT_SETTINGS.redisHostPort),
+    minioHostPort: clampPort(partial.minioHostPort, DEFAULT_SETTINGS.minioHostPort),
+    defaultTargetDurationSeconds:
+      typeof partial.defaultTargetDurationSeconds === "number" &&
+      partial.defaultTargetDurationSeconds >= 1 &&
+      partial.defaultTargetDurationSeconds <= 600
+        ? Math.floor(partial.defaultTargetDurationSeconds)
+        : DEFAULT_SETTINGS.defaultTargetDurationSeconds,
+    defaultVoiceMode: voiceMode,
+    defaultFaceModeEnabled:
+      typeof partial.defaultFaceModeEnabled === "boolean"
+        ? partial.defaultFaceModeEnabled
+        : DEFAULT_SETTINGS.defaultFaceModeEnabled,
   };
 }
 
