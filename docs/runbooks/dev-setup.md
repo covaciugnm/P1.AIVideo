@@ -98,6 +98,19 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 4F-2: extra job-view fields + status filter
+
+Additive only. `GET /api/v1/jobs` now accepts `?status=<JobStatus>` (returns
+422 on invalid values). `GET /api/v1/jobs/{id}` now returns a superset
+`JobDetail` shape (legacy fields preserved + `current_stage`,
+`progress_percent`, `artifact_count`, `compliance_event_count`,
+`latest_qc_result`, `final_export_summary`). `GET /api/v1/jobs/{id}/summary`
+bundles all seven detail-page endpoints into one response. The list payload
+now carries `qc_passed` and `final_export_available` per row, and the
+progress payload now carries `pending_stages` + the three flat
+`{completed,failed,pending}_stage_names` lists. Run `make phase4f2-test` for
+the 14 new tests.
+
 ### Phase 4F: ffmpeg for audio conversion
 
 Audio uploads now accept WAV / MP3 / M4A / AAC / FLAC / OGG. Non-WAV input

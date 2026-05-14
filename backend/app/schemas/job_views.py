@@ -19,7 +19,12 @@ from common.enums import ComplianceDecisionType, JobStatus
 
 
 class JobSummary(BaseModel):
-    """One row in the GET /jobs list response."""
+    """One row in the GET /jobs list response.
+
+    Phase 4F-2 added ``qc_passed`` and ``final_export_available`` so the
+    dashboard can render those columns without an extra round-trip per
+    row.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -34,6 +39,11 @@ class JobSummary(BaseModel):
     current_stage: str | None = None
     progress_percent: float
     artifact_count: int
+    # Phase 4F-2 additions. ``qc_passed`` stays ``None`` until the QC
+    # stage has run; ``final_export_available`` flips True once the
+    # publisher's final_export artifact lands.
+    qc_passed: bool | None = None
+    final_export_available: bool = False
 
 
 class StageProgress(BaseModel):
@@ -48,7 +58,11 @@ class StageProgress(BaseModel):
 
 
 class JobProgress(BaseModel):
-    """GET /jobs/{id}/progress — aggregate view across the canonical DAG."""
+    """GET /jobs/{id}/progress — aggregate view across the canonical DAG.
+
+    Phase 4F-2 added ``pending_stages`` + three flat stage-name lists so
+    a UI can render quick summaries without re-iterating ``stages``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -60,6 +74,11 @@ class JobProgress(BaseModel):
     current_stage: str | None = None
     progress_percent: float
     stages: list[StageProgress]
+    # Phase 4F-2 additions (defaulted for backward compat).
+    pending_stages: int = 0
+    completed_stage_names: list[str] = []
+    failed_stage_names: list[str] = []
+    pending_stage_names: list[str] = []
 
 
 class StageTimelineEntry(BaseModel):
@@ -148,3 +167,67 @@ class FinalExportResponse(BaseModel):
     checksum_sha256: str | None = None
     final_export: dict[str, Any]
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Phase 4F-2: aggregate response shapes for the detail + summary endpoints.
+# ---------------------------------------------------------------------------
+
+
+class JobDetail(BaseModel):
+    """GET /jobs/{id} — superset of the creation-time JobResponse.
+
+    Includes every field the old ``JobResponse`` returned (so old
+    clients keep working) plus computed pipeline + summary fields
+    (current_stage, progress_percent, artifact_count,
+    compliance_event_count, latest_qc_result, final_export_summary).
+    Field order is preserved to minimise visual diffs in API consumers
+    that pretty-print the response.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # JobResponse-equivalent fields.
+    id: uuid.UUID
+    status: JobStatus
+    brief: str
+    target_duration_seconds: int
+    watermark_required: bool
+    c2pa_required: bool
+    voice_mode: str
+    script_text: str | None = None
+    tts_backend: str
+    audio_ref: dict[str, Any] | None = None
+    face_mode: str | None = None
+    image_ref: dict[str, Any] | None = None
+    provider_selection: dict[str, Any] | None = None
+    rejection_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    # Phase 4F-2 aggregate computed fields.
+    current_stage: str | None = None
+    progress_percent: float = 0.0
+    artifact_count: int = 0
+    compliance_event_count: int = 0
+    latest_qc_result: dict[str, Any] | None = None
+    final_export_summary: dict[str, Any] | None = None
+
+
+class JobFullSummary(BaseModel):
+    """GET /jobs/{id}/summary — combined UI-friendly payload.
+
+    Bundles the seven detail-page endpoints into one response so the
+    frontend can fetch a single payload when it opens the detail view.
+    Individual endpoints stay available for incremental polling.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    job: JobDetail
+    progress: JobProgress
+    timeline: list[StageTimelineEntry]
+    artifacts: list[ArtifactResponse]
+    compliance_events: list[ComplianceEventApiResponse]
+    qc_report: QCReportResponse | None = None
+    final_export: FinalExportResponse | None = None

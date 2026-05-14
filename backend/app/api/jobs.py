@@ -28,6 +28,8 @@ from app.schemas.job_views import (
     ArtifactResponse,
     ComplianceEventApiResponse,
     FinalExportResponse,
+    JobDetail,
+    JobFullSummary,
     JobProgress,
     JobSummary,
     QCReportResponse,
@@ -90,11 +92,81 @@ async def _artifact_count_for_job(session: AsyncSession, job_id: uuid.UUID) -> i
     return int(result.scalar_one())
 
 
+async def _compliance_event_count(session: AsyncSession, job_id: uuid.UUID) -> int:
+    result = await session.execute(
+        select(func.count(ComplianceEvent.id)).where(ComplianceEvent.job_id == job_id)
+    )
+    return int(result.scalar_one())
+
+
+# ---------------------------------------------------------------------------
+# Phase 4F-2 summary helpers
+# ---------------------------------------------------------------------------
+
+
+async def _latest_qc_report_dict(
+    session: AsyncSession, job_id: uuid.UUID
+) -> tuple[dict[str, Any] | None, Artifact | None]:
+    """Return ``(qc_report_dict, artifact)`` for the most recent QC
+    artifact belonging to ``job_id``, or ``(None, None)`` if no QC
+    artifact exists yet.
+
+    QC stage stores ``metadata_json['qc_report']`` on a metadata-type
+    artifact (see ``agents.qc.handler``). We pull the latest one.
+    """
+    result = await session.execute(
+        select(Artifact)
+        .where(
+            Artifact.job_id == job_id,
+            Artifact.artifact_type == "metadata",
+        )
+        .order_by(Artifact.created_at.desc())
+    )
+    for art in result.scalars():
+        qc = (art.metadata_json or {}).get("qc_report")
+        if isinstance(qc, dict):
+            return qc, art
+    return None, None
+
+
+async def _latest_final_export(
+    session: AsyncSession, job_id: uuid.UUID
+) -> Artifact | None:
+    result = await session.execute(
+        select(Artifact)
+        .where(
+            Artifact.job_id == job_id,
+            Artifact.artifact_type == "final_export",
+        )
+        .order_by(Artifact.created_at.desc())
+    )
+    art = result.scalars().first()
+    if art is None:
+        return None
+    manifest = (art.metadata_json or {}).get("final_export")
+    if not isinstance(manifest, dict):
+        return None
+    return art
+
+
 async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
     runs = await _stage_runs_for_job(session, job.id)
     completed, failed, total, current = _compute_progress_stats(runs)
     artifact_count = await _artifact_count_for_job(session, job.id)
     pct = (completed / total * 100.0) if total > 0 else 0.0
+
+    # Phase 4F-2 booleans: derive from the existing artifact rows.
+    qc_dict, _ = await _latest_qc_report_dict(session, job.id)
+    qc_passed: bool | None
+    if qc_dict is None:
+        qc_passed = None
+    else:
+        passed = qc_dict.get("passed")
+        qc_passed = bool(passed) if isinstance(passed, bool) else None
+
+    final_export_art = await _latest_final_export(session, job.id)
+    final_export_available = final_export_art is not None
+
     return JobSummary(
         id=job.id,
         status=job.status,
@@ -107,6 +179,8 @@ async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
         current_stage=current,
         progress_percent=pct,
         artifact_count=artifact_count,
+        qc_passed=qc_passed,
+        final_export_available=final_export_available,
     )
 
 
@@ -194,10 +268,16 @@ async def list_jobs(
     session: AsyncSession = Depends(get_db_session),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    status: JobStatus | None = Query(
+        default=None,
+        description="Filter by job status. Invalid values yield a 422.",
+    ),
 ) -> list[JobSummary]:
-    result = await session.execute(
-        select(Job).order_by(Job.created_at.desc()).offset(offset).limit(limit)
-    )
+    stmt = select(Job)
+    if status is not None:
+        stmt = stmt.where(Job.status == status)
+    stmt = stmt.order_by(Job.created_at.desc()).offset(offset).limit(limit)
+    result = await session.execute(stmt)
     jobs = list(result.scalars().all())
     return [await _job_to_summary(session, j) for j in jobs]
 
@@ -207,13 +287,53 @@ async def list_jobs(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@router.get("/{job_id}", response_model=JobDetail)
 async def get_job(
     job_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session),
-) -> JobResponse:
+) -> JobDetail:
+    """Aggregate job detail (Phase 4F-2).
+
+    The response is a superset of the original ``JobResponse`` shape:
+    every legacy field is still present, plus computed pipeline +
+    summary fields (``current_stage``, ``progress_percent``,
+    ``artifact_count``, ``compliance_event_count``, ``latest_qc_result``,
+    ``final_export_summary``). Existing clients that only read the
+    legacy fields continue to work unchanged.
+    """
     job = await _load_job_or_404(session, job_id)
-    return JobResponse.model_validate(job)
+    base = JobResponse.model_validate(job).model_dump()
+
+    runs = await _stage_runs_for_job(session, job_id)
+    completed, failed, total, current = _compute_progress_stats(runs)
+    pct = (completed / total * 100.0) if total > 0 else 0.0
+    artifact_count = await _artifact_count_for_job(session, job_id)
+    event_count = await _compliance_event_count(session, job_id)
+    qc_dict, _ = await _latest_qc_report_dict(session, job_id)
+    fe_art = await _latest_final_export(session, job_id)
+    fe_summary: dict[str, Any] | None = None
+    if fe_art is not None:
+        manifest = (fe_art.metadata_json or {}).get("final_export")
+        if isinstance(manifest, dict):
+            # Surface the operator-relevant headline fields; the full
+            # manifest is still reachable via /final-export.
+            fe_summary = {
+                "passed_qc": manifest.get("passed_qc"),
+                "status": manifest.get("status"),
+                "disclosure_status": manifest.get("disclosure_status"),
+                "watermark_required": manifest.get("watermark_required"),
+                "c2pa_required": manifest.get("c2pa_required"),
+                "export_uri": manifest.get("export_uri"),
+            }
+    return JobDetail(
+        **base,
+        current_stage=current,
+        progress_percent=pct,
+        artifact_count=artifact_count,
+        compliance_event_count=event_count,
+        latest_qc_result=qc_dict,
+        final_export_summary=fe_summary,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +411,13 @@ async def get_job_progress(
                 )
             )
     pct = (completed / total * 100.0) if total > 0 else 0.0
+    # Phase 4F-2: pre-compute the flat stage-name lists so UIs don't
+    # have to re-iterate the ``stages`` array client-side.
+    completed_names = [s.stage_name for s in stages if s.status == "succeeded"]
+    failed_names = [
+        s.stage_name for s in stages if s.status in ("failed", "rejected")
+    ]
+    pending_names = [s.stage_name for s in stages if s.status == "pending"]
     return JobProgress(
         job_id=job.id,
         status=job.status,
@@ -300,6 +427,10 @@ async def get_job_progress(
         current_stage=current,
         progress_percent=pct,
         stages=stages,
+        pending_stages=len(pending_names),
+        completed_stage_names=completed_names,
+        failed_stage_names=failed_names,
+        pending_stage_names=pending_names,
     )
 
 
@@ -432,4 +563,99 @@ async def get_job_final_export(
         checksum_sha256=art.checksum_sha256,
         final_export=manifest,
         created_at=art.created_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /jobs/{id}/summary  (Phase 4F-2)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{job_id}/summary", response_model=JobFullSummary)
+async def get_job_full_summary(
+    job_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db_session),
+) -> JobFullSummary:
+    """Combined UI payload for a job's detail page.
+
+    Bundles the seven individual detail endpoints into one response so
+    the frontend can avoid the seven-parallel-fetch pattern when opening
+    the page. The individual endpoints remain available for incremental
+    polling of specific sections.
+
+    404 if the job is unknown. ``qc_report`` and ``final_export`` stay
+    ``None`` until the corresponding stage has produced its artifact.
+    """
+    # Detail (which 404s on its own if the job is missing).
+    detail = await get_job(job_id, session)
+
+    # Progress (already returns canonical-DAG-ordered stages + the new
+    # Phase 4F-2 flat stage-name lists).
+    progress = await get_job_progress(job_id, session)
+
+    # Timeline.
+    runs = await _stage_runs_for_job(session, job_id)
+    timeline = [_stage_run_to_timeline_entry(r) for r in runs]
+
+    # Artifacts (metadata only — no binary content).
+    art_result = await session.execute(
+        select(Artifact)
+        .where(Artifact.job_id == job_id)
+        .order_by(Artifact.created_at)
+    )
+    artifacts = [_artifact_to_response(a) for a in art_result.scalars().all()]
+
+    # Compliance events.
+    ev_result = await session.execute(
+        select(ComplianceEvent)
+        .where(ComplianceEvent.job_id == job_id)
+        .order_by(ComplianceEvent.created_at)
+    )
+    events = [
+        ComplianceEventApiResponse(
+            event_type=ev.gate,
+            decision=ev.decision,
+            reasons=list(ev.reasons or []),
+            created_at=ev.created_at,
+            metadata_summary=dict(ev.extra or {}),
+        )
+        for ev in ev_result.scalars().all()
+    ]
+
+    # QC report (optional).
+    qc_response: QCReportResponse | None = None
+    qc_dict, qc_art = await _latest_qc_report_dict(session, job_id)
+    if qc_dict is not None and qc_art is not None:
+        qc_response = QCReportResponse(
+            job_id=job_id,
+            artifact_id=qc_art.id,
+            artifact_uri=qc_art.uri,
+            checksum_sha256=qc_art.checksum_sha256,
+            qc_report=qc_dict,
+            created_at=qc_art.created_at,
+        )
+
+    # Final export (optional).
+    fe_response: FinalExportResponse | None = None
+    fe_art = await _latest_final_export(session, job_id)
+    if fe_art is not None:
+        manifest = (fe_art.metadata_json or {}).get("final_export")
+        if isinstance(manifest, dict):
+            fe_response = FinalExportResponse(
+                job_id=job_id,
+                artifact_id=fe_art.id,
+                artifact_uri=fe_art.uri,
+                checksum_sha256=fe_art.checksum_sha256,
+                final_export=manifest,
+                created_at=fe_art.created_at,
+            )
+
+    return JobFullSummary(
+        job=detail,
+        progress=progress,
+        timeline=timeline,
+        artifacts=artifacts,
+        compliance_events=events,
+        qc_report=qc_response,
+        final_export=fe_response,
     )

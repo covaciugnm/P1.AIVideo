@@ -2,7 +2,44 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 4F — Provider settings, broader media intake, TTS preview, audio playback.**
+> **Current status: Phase 4F-2 — Phase 4A API completeness backfill.**
+>
+> Purely additive backend work that closes the five spec gaps surfaced in the Phase 4A audit. No frontend change required; no Docker rebuild; no boundary shift. Backend test count goes from **242 → 256 passed / 1 skipped** under both default `pytest` and the strict `-W error` sweep.
+>
+> **The five deltas**
+> 1. **`GET /api/v1/jobs/{id}/summary`** — combined UI payload. One round-trip bundles `job` (the new `JobDetail` shape) + `progress` + `timeline` + `artifacts` + `compliance_events` + `qc_report` (nullable) + `final_export` (nullable). The individual endpoints stay available for incremental polling. 404 on unknown id.
+> 2. **`JobSummary.qc_passed: bool | None`** + **`JobSummary.final_export_available: bool`** — derived in the list-endpoint helper from the latest QC `metadata`-typed artifact (`metadata_json["qc_report"]["passed"]`) and the latest `final_export` artifact respectively. Defaults preserve every pre-Phase-4F-2 test (`extra="forbid"`-style `issubset` asserts continue to pass).
+> 3. **Aggregate `JobDetail`** — `GET /api/v1/jobs/{id}` now returns a superset of the legacy `JobResponse` shape: every legacy field (id / status / brief / target_duration_seconds / watermark_required / c2pa_required / voice_mode / script_text / tts_backend / audio_ref / face_mode / image_ref / provider_selection / rejection_reason / created_at / updated_at) **plus** `current_stage`, `progress_percent`, `artifact_count`, `compliance_event_count`, `latest_qc_result` (full QC dict or null), `final_export_summary` (six-key headline dict or null). Existing clients reading legacy fields are unaffected.
+> 4. **`JobProgress` flat lists** — `pending_stages: int`, `completed_stage_names: list[str]`, `failed_stage_names: list[str]`, `pending_stage_names: list[str]`. Computed from the canonical-DAG-ordered `stages` array; no DB schema change. Defaults preserve backward compat.
+> 5. **`GET /api/v1/jobs?status=…`** — typed query param (`JobStatus` enum). Invalid values yield `422` from FastAPI's validator. Pagination + default `ORDER BY created_at DESC` unchanged.
+>
+> **Helpers**
+> Two new internal helpers in `backend/app/api/jobs.py`:
+> - `_latest_qc_report_dict(session, job_id) → (dict|None, Artifact|None)` — pulls the most recent QC artifact whose `metadata_json` has a `qc_report` dict.
+> - `_latest_final_export(session, job_id) → Artifact | None` — pulls the latest `final_export` artifact whose `metadata_json["final_export"]` is a dict.
+> They're reused by `_job_to_summary`, the new `JobDetail` constructor, and the `/summary` endpoint to keep computation in one place.
+>
+> **Tests** — `tests/integration/test_phase4f2_job_api_backfill.py` has **14 tests**:
+> 1. `/summary` combined payload for a published job (job + progress + timeline + qc_report + final_export shape) ✓
+> 2. `/summary` 404 on unknown id ✓
+> 3. `/summary` for pending job → qc_report + final_export both null ✓
+> 4. `JobSummary.qc_passed` + `final_export_available` for both pending and published jobs ✓
+> 5. `JobDetail` aggregate fields on a published job ✓
+> 6. `JobDetail` aggregate fields on a pending job (zeros + nulls) ✓
+> 7. `JobProgress` flat lists for a pending job (`pending_stages=11`, all names in canonical order) ✓
+> 8. `JobProgress` flat lists for a published job (`completed_stages=11`) ✓
+> 9. `?status=pending_compliance` and `?status=published` filter correctly ✓
+> 10. `?status=not_a_real_status` → 422 ✓
+> 11. `?status=` combines with `?limit=&offset=` ✓
+> 12. None of the new Phase 4F-2 endpoints leak binary content ✓
+> 13. None leak the compliance-signing key (defensive sweep) ✓
+> 14. Both `/jobs/{id}` legacy prefix AND `/api/v1/jobs/{id}` alias resolve the new shapes ✓
+>
+> **No frontend changes** — the typed frontend interfaces still describe the legacy subset of the response shape; the new fields are picked up at runtime (TypeScript interfaces don't reject extras). A future frontend pass can expose the new fields directly (e.g. show `qc_passed` and `final_export_available` columns in the dashboard); the contract is in place. No Docker rebuild required.
+>
+> **NOT in Phase 4F-2**: any new frontend page, any Docker change, any new dependency. Strictly additive backend.
+
+> **Previous milestone: Phase 4F — Provider settings, broader media intake, TTS preview, audio playback.**
 >
 > Adds the operator-facing controls the pipeline needs *before* any real generation phase lands: a provider catalog with status badges, per-job provider selection dropdowns, a TTS "Generate audio" hook (which intentionally stays a clean `503 tts_provider_not_configured` in light mode), a safe artifact content serving endpoint that powers HTML5 audio + image preview, and a much wider audio upload allow-list (WAV / MP3 / M4A / AAC / FLAC / OGG) with optional ffmpeg-backed conversion to PCM WAV.
 >

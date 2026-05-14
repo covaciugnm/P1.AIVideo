@@ -7,7 +7,7 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test \
         frontend-install frontend-lint frontend-build frontend-check \
         docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
 
@@ -100,6 +100,9 @@ phase4e-test: ## Phase 4E — frontend lint + build + Phase 4E PATCH/DELETE test
 phase4f-test: ## Phase 4F — providers/TTS/artifact-content/upload-formats; ffmpeg test auto-skipped if missing
 	$(MAKE) frontend-check
 	pytest -v tests/integration/test_phase4f_providers_tts_artifacts.py
+
+phase4f2-test: ## Phase 4F-2 — Phase 4A API completeness backfill (summary, JobSummary flags, JobDetail aggregate, JobProgress flat lists, status filter)
+	pytest -v tests/integration/test_phase4f2_job_api_backfill.py
 
 test-integration: ## Alias for `pytest tests/integration`
 	pytest -v tests/integration
