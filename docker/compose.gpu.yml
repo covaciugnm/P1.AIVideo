@@ -32,6 +32,21 @@ services:
 
   agent-lipsync:
     <<: *gpu-one
+    # Phase 7C SadTalker readiness configuration. All flags are off by
+    # default — real inference (Phase 7D) requires the operator to flip
+    # SADTALKER_ENABLE_REAL_INFERENCE=true AND RUN_REAL_SADTALKER=1
+    # AND place weights under ${SADTALKER_MODELS_ROOT}.
+    environment:
+      VIDEO_PROVIDER: ${VIDEO_PROVIDER:-sadtalker}
+      SADTALKER_MODELS_ROOT: /models/lipsync/sadtalker
+      SADTALKER_ENABLE_REAL_INFERENCE: "${SADTALKER_ENABLE_REAL_INFERENCE:-false}"
+      RUN_REAL_SADTALKER: "${RUN_REAL_SADTALKER:-0}"
+      ALLOW_MODEL_AUTODOWNLOAD: "false"
+    # Weights are mounted read-only from the host — no chance the
+    # container can mutate or replace them. The path on the host is the
+    # operator's choice; ../models is the default for `make up-gpu`.
+    volumes:
+      - ../models/lipsync/sadtalker:/models/lipsync/sadtalker:ro
 
   # Local LLM server — enable with `--profile llm`.
   model-llm:

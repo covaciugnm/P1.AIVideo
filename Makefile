@@ -7,11 +7,11 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test phase7a-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test phase7a-test phase7b-test phase7c-test phase7d-test phase7e-test \
         db-migrate db-upgrade db-downgrade db-current db-history runtime-readiness-check \
         frontend-install frontend-lint frontend-build frontend-check \
         docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check \
-        docker-gpu-config-check docker-gpu-smoke
+        docker-gpu-config-check docker-gpu-smoke docker-gpu-build docker-gpu-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -134,11 +134,46 @@ phase6d-test: ## Phase 6D — multi-category provider registry + ProviderSelecti
 phase7a-test: ## Phase 7A — GPU isolation invariants + video catalog gating (no real inference, no GPU required)
 	pytest -v tests/integration/test_phase7a_gpu_planning.py
 
+phase7b-test: ## Phase 7B — SadTalker adapter hardening (readiness + categorised /video/generate errors; no real inference)
+	pytest -v tests/integration/test_phase7b_sadtalker_adapter.py
+
+phase7c-test: ## Phase 7C — GPU image / runtime for SadTalker readiness (static file + compose merge checks; no GPU required)
+	pytest -v tests/integration/test_phase7c_gpu_image.py
+
+phase7d-test: ## Phase 7D — SadTalker real-inference gate + artifact registration (success path monkey-patched; real smoke auto-skipped without RUN_REAL_SADTALKER_SMOKE=1)
+	pytest -v tests/integration/test_phase7d_sadtalker_inference.py
+
+phase7e-test: ## Phase 7E — lipsync DAG stage integration (provider_selection routing, categorised StageRejection, monkey-patched real-inference hook)
+	pytest -v tests/integration/test_phase7e_pipeline_integration.py
+
 docker-gpu-config-check: ## Validate compose.dev + compose.gpu overlay (no services started)
 	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
 	@echo ">> compose.dev + compose.gpu overlay config"
 	$(COMPOSE_GPU) config >/dev/null
 	@echo "OK: GPU overlay merges cleanly with the dev compose."
+
+docker-gpu-build: ## Build ONLY the GPU agent image (Dockerfile.cuda). Default: no torch (INSTALL_TORCH=false). Pass INSTALL_TORCH=true for the Phase 7D-capable image.
+	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "docker not on PATH; cannot build GPU image. Skip."; exit 0; \
+	fi
+	@echo ">> Building aivideo-agent-cuda (INSTALL_TORCH=$${INSTALL_TORCH:-false})"
+	@docker build \
+		--build-arg INSTALL_TORCH=$${INSTALL_TORCH:-false} \
+		--build-arg INSTALL_SADTALKER_DEPS=$${INSTALL_SADTALKER_DEPS:-false} \
+		-f docker/agents/Dockerfile.cuda \
+		-t aivideo-agent-cuda:latest \
+		.
+	@echo "OK: aivideo-agent-cuda built. Run: docker run --rm --gpus all aivideo-agent-cuda:latest"
+
+docker-gpu-down: ## Stop & remove the GPU-profiled services. Light stack stays up.
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "docker not on PATH. Skip."; exit 0; \
+	fi
+	@echo ">> Stopping GPU-profiled services (agent-voice / agent-face / agent-lipsync)"
+	@$(COMPOSE_GPU) --profile gpu stop agent-voice agent-face agent-lipsync 2>&1 || true
+	@$(COMPOSE_GPU) --profile gpu rm -f agent-voice agent-face agent-lipsync 2>&1 || true
+	@echo "OK: GPU services stopped. Light stack still running (use 'make docker-light-down' for the rest)."
 
 docker-gpu-smoke: ## Run nvidia-smi inside a CUDA container. Skips cleanly when host lacks driver / NVIDIA Container Toolkit.
 	@if ! command -v docker >/dev/null 2>&1; then \

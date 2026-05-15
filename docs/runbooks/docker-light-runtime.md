@@ -22,6 +22,12 @@ touching CUDA.
 
 - The light stack does **not** need NVIDIA drivers, the Container Toolkit,
   or any model weights on disk.
+- Phase 7C added the GPU readiness image (`Dockerfile.cuda` →
+  `aivideo-agent-cuda:latest`) **only** behind `make docker-gpu-build` /
+  `--profile gpu`. The light stack is unaffected — every `make
+  docker-light-*` target still excludes `agent-voice` / `agent-face` /
+  `agent-lipsync`. See [`gpu-runtime.md`](gpu-runtime.md) and
+  [`sadtalker-runtime.md`](sadtalker-runtime.md).
 
 ## Services
 

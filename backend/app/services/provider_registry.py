@@ -260,9 +260,60 @@ def _build_tts_providers() -> list[ProviderInfo]:
 # ---------------------------------------------------------------------------
 
 
+def _sadtalker_dynamic_notes() -> tuple[str, str]:
+    """Build a live notes string + docs_url for the SadTalker catalog row.
+
+    The catalog ``status`` stays ``not_implemented`` until Phase 7D wires
+    real inference, but the ``notes`` field describes the current
+    readiness state so operators can see what is (and isn't) in place.
+    Importing the provider here is cheap — it does not load torch.
+    """
+    try:
+        from agents.lipsync.providers.sadtalker.provider import SadTalkerProvider
+
+        status_info = SadTalkerProvider().inspect_status()
+    except Exception as exc:  # pragma: no cover — defensive
+        return (
+            "Phase 7B stub. Readiness probe failed: "
+            f"{type(exc).__name__}: {exc}.",
+            "/docs/runbooks/sadtalker-runtime.md",
+        )
+
+    status = status_info["status"]
+    docs_url = "/docs/runbooks/sadtalker-runtime.md"
+    base = (
+        "Phase 7B hardened. Real inference gated behind "
+        "SADTALKER_ENABLE_REAL_INFERENCE=true + RUN_REAL_SADTALKER=1; "
+        "Phase 7D wires the actual torch.cuda call. "
+    )
+    if status == "not_implemented":
+        return base + "Default state: real-inference gate off.", docs_url
+    if status == "not_configured":
+        return (
+            base + "SADTALKER_MODELS_ROOT is unset; set it in .env.",
+            docs_url,
+        )
+    if status == "assets_missing":
+        missing = status_info.get("details", {}).get("assets", {}).get("missing", [])
+        return (
+            base
+            + f"Weights missing under SADTALKER_MODELS_ROOT: {len(missing)} file(s).",
+            docs_url,
+        )
+    if status == "runtime_missing":
+        return base + "torch is not importable in this image (light backend).", docs_url
+    if status == "gpu_unavailable":
+        return base + "torch present but no CUDA device visible.", docs_url
+    # status == "ready"
+    return (
+        base + "All gates satisfied; awaiting Phase 7D for the real call.",
+        docs_url,
+    )
+
+
 def _build_video_providers() -> list[ProviderInfo]:
     base = [
-        ("sadtalker", "SadTalker (default v1)", "sadtalker", "sadtalker-v1", True, True, "Phase 3A stub. No real inference yet."),
+        ("sadtalker", "SadTalker (default v1)", "sadtalker", "sadtalker-v1", True, True, ""),
         ("musetalk", "MuseTalk (v2)", "musetalk", "musetalk-v2", True, True, "Placeholder. GPU required when wired."),
         ("wav2lip", "Wav2Lip (fallback)", "wav2lip", "wav2lip-v1", True, True, "Placeholder. GPU required when wired."),
         ("liveportrait", "LivePortrait (research)", "liveportrait", "liveportrait-v1", True, True, "Phase 6D placeholder; deferred."),
@@ -271,6 +322,9 @@ def _build_video_providers() -> list[ProviderInfo]:
     ]
     out: list[ProviderInfo] = []
     for pid, label, backend_type, model, local, gpu, note in base:
+        docs_url = ""
+        if pid == "sadtalker":
+            note, docs_url = _sadtalker_dynamic_notes()
         out.append(
             ProviderInfo(
                 category="video_generator",
@@ -285,8 +339,9 @@ def _build_video_providers() -> list[ProviderInfo]:
                 requires_network=not local,
                 requires_gpu=gpu,
                 requires_model_files=gpu and pid in ("sadtalker", "musetalk", "wav2lip", "liveportrait"),
-                healthcheck_available=False,
+                healthcheck_available=pid == "sadtalker",
                 notes=note,
+                docs_url=docs_url,
             )
         )
     return out

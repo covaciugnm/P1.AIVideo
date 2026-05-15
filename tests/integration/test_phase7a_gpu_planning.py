@@ -322,33 +322,74 @@ def test_docker_gpu_overlay_exposes_cuda_agents_with_profile():
 # ---------------------------------------------------------------------------
 
 
-def test_dockerfile_cuda_remains_phase0_stub():
+def test_dockerfile_cuda_stays_within_phase7c_envelope():
+    """Phase 7C hardened Dockerfile.cuda beyond a Phase 0 stub but kept
+    every heavy install gated. The invariant now is:
+
+    - torch may install **only** inside an ``INSTALL_TORCH`` build-arg
+      branch (default false).
+    - SadTalker / MuseTalk / Wav2Lip / diffusers / xformers /
+      transformers / GFPGAN deps must not install at all yet
+      (Phase 7D's job).
+    - No model weight downloads (``wget`` / ``huggingface-cli``).
+    - Base image stays a CUDA runtime.
+    """
     text = DOCKERFILE_CUDA.read_text()
     lowered = text.lower()
-    forbidden_active = [
-        "pip install torch",
+
+    active_only = "\n".join(
+        ln for ln in text.splitlines() if not ln.lstrip().startswith("#")
+    )
+    active_lower = active_only.lower()
+
+    # 1. No SadTalker / heavy-stack installs anywhere — gated or not.
+    fully_forbidden = [
         "pip install diffusers",
         "pip install xformers",
         "pip install transformers",
         "pip install sadtalker",
         "pip install musetalk",
         "pip install wav2lip",
+        "pip install gfpgan",
+        "pip install accelerate",
         "wget ",
-        "curl -",
         "huggingface-cli download",
+        "hf_hub_download",
     ]
-    for needle in forbidden_active:
-        # Allow the needle inside commented-out TODO blocks. Strip out
-        # comment lines, then re-check.
-        active_only = "\n".join(
-            ln for ln in text.splitlines() if not ln.lstrip().startswith("#")
-        )
-        assert needle.lower() not in active_only.lower(), (
+    for needle in fully_forbidden:
+        assert needle.lower() not in active_lower, (
             f"Dockerfile.cuda has an active line containing {needle!r}; "
-            "Phase 7A requires it to remain a Phase 0 stub. Move real "
-            "installs behind a dedicated GPU image when that phase lands."
+            "Phase 7C still defers all SadTalker / heavy-ML deps + "
+            "all model downloads to Phase 7D."
         )
-    # And the base image must still be a CUDA runtime — no silent demotion.
+
+    # 2. If torch installs at all, it must be inside the
+    # ``$INSTALL_TORCH`` opt-in gate. The simplest way to check that:
+    # every line containing the literal ``torch==`` (the install pin)
+    # must live inside a block guarded by ``"$INSTALL_TORCH"``.
+    torch_install_lines = [
+        i for i, ln in enumerate(active_only.splitlines()) if "torch==" in ln.lower()
+    ]
+    if torch_install_lines:
+        gate_blocks: list[tuple[int, int]] = []
+        depth = 0
+        block_start = -1
+        for i, ln in enumerate(active_only.splitlines()):
+            low = ln.lower()
+            if "install_torch" in low and 'if [ "$install_torch"' in low:
+                block_start = i
+                depth += 1
+            elif depth and (low.strip() == "fi" or low.strip().startswith("fi ")):
+                gate_blocks.append((block_start, i))
+                depth -= 1
+                block_start = -1
+        for line_idx in torch_install_lines:
+            assert any(start <= line_idx <= end for start, end in gate_blocks), (
+                f"Dockerfile.cuda line {line_idx} installs torch outside the "
+                "$INSTALL_TORCH opt-in gate."
+            )
+
+    # 3. CUDA base unchanged.
     assert "nvidia/cuda" in lowered, "Dockerfile.cuda base image drifted"
 
 

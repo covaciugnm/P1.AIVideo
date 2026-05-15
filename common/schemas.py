@@ -440,6 +440,12 @@ class DagState(BaseModel):
     # Compliance token, set by the pre_lipsync_auth stage.
     compliance_token: str | None = None
 
+    # Phase 7E: per-job provider selection (Phase 6D shape). Lets the
+    # lipsync stage handler route to the right video provider without
+    # re-reading the Job row mid-DAG. ``None`` means "use the deploy
+    # defaults" (``settings.allowed_lipsync_backend`` etc.).
+    provider_selection: dict[str, str | None] | None = None
+
     # Tracking
     completed_stages: list[str] = Field(default_factory=list)
     rejected: bool = False

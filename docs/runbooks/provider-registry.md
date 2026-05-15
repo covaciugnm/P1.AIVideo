@@ -154,6 +154,25 @@ Run with: `make phase7a-test`. Pair with `make docker-gpu-config-check`
 + `make docker-gpu-smoke` for the host audit. See
 [`gpu-runtime.md`](gpu-runtime.md) and [`video-providers.md`](video-providers.md).
 
+## Phase 7B: SadTalker readiness surface
+
+Phase 7B promotes the SadTalker row from a static placeholder to a live
+readiness surface — without running any real inference. The catalog row
+keeps `status="not_implemented"` (Phase 6A invariant) but now carries:
+
+- `requires_gpu=true`, `requires_model_files=true`, `healthcheck_available=true`.
+- A live `notes` string describing the current readiness state
+  (default off, root unset, weights missing, torch missing, GPU
+  missing, ready-but-deferred).
+- `docs_url` pointing to `sadtalker-runtime.md`.
+
+`/api/v1/video/generate` with `provider_id="sadtalker"` translates the
+provider's `inspect_status()` into six categorised `error_code` values
+the frontend pattern-matches. The full table + the env-var gate is
+documented in [`sadtalker-runtime.md`](sadtalker-runtime.md).
+
+Run with: `make phase7b-test`.
+
 ## What's intentionally NOT in Phase 6D
 
 - Real video generation.

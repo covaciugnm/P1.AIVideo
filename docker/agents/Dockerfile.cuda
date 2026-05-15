@@ -1,15 +1,33 @@
 # =============================================================================
-# P1.AIVideo agents — CUDA base — Phase 0 stub
+# P1.AIVideo agents — CUDA base — Phase 7C SadTalker readiness image.
 #
-# Base image for agents that need a GPU at runtime: voice (XTTS path), face
-# (SDXL), lipsync (SadTalker default; MuseTalk/Wav2Lip via the adapter).
-# Also used by the optional `model-llm` vLLM service.
+# Used by the GPU-profiled agents (agent-voice / agent-face /
+# agent-lipsync) and by the optional model-llm service. As of Phase 7C
+# this image carries enough to validate GPU access + Python tooling for
+# the SadTalker readiness surface, but NOT the SadTalker dependencies
+# themselves (those land in Phase 7D when real inference ships).
 #
-# Phase 0 deliberately keeps this lean — no torch, no diffusers, no SadTalker
-# installs. Those land in Phase 3 alongside the corresponding agent code.
+# What this image installs by default:
+#   - CUDA 12.4 runtime base
+#   - Python 3.11 + pip + ffmpeg + ca-certificates
+#   - The common + agents Python packages (metadata only — no torch)
+#
+# What this image deliberately does NOT install by default:
+#   - torch / torchvision / torchaudio  (controlled via INSTALL_TORCH build ARG)
+#   - SadTalker / MuseTalk / Wav2Lip Python deps
+#   - GFPGAN / diffusers / transformers / opencv (heavy)
+#   - Model weights (always mounted from the host at runtime)
+#
+# Two opt-in escape hatches via build args:
+#   --build-arg INSTALL_TORCH=true   → pip-installs torch + torchvision +
+#                                       torchaudio (CUDA 12.1 wheels work
+#                                       against the cu12 runtime).
+#                                       Adds ~2 GB. Required for Phase 7D.
+#   --build-arg INSTALL_SADTALKER_DEPS=true  → reserved for Phase 7D; today
+#                                       this just no-ops with a marker file.
 #
 # Requires the NVIDIA Container Toolkit on the host. See
-# docs/runbooks/gpu-docker.md.
+# docs/runbooks/gpu-runtime.md.
 # =============================================================================
 # syntax=docker/dockerfile:1.7
 
@@ -26,27 +44,76 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# TODO(phase-3): install Python + ffmpeg (and any per-agent OS deps).
-# Keeping these out of Phase 0 to avoid heavy build downloads during scaffold.
-# RUN apt-get update \
-#     && apt-get install -y --no-install-recommends \
-#         python3.11 python3-pip ffmpeg ca-certificates \
-#     && rm -rf /var/lib/apt/lists/* \
-#     && ln -sf /usr/bin/python3.11 /usr/bin/python
+# OS packages — Python + ffmpeg + curl (for healthchecks). Deliberately
+# minimal so the image stays under 4 GB without torch.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.11 \
+        python3.11-venv \
+        python3-pip \
+        ffmpeg \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python \
+    && python -m pip install --upgrade pip
 
-# TODO(phase-3): install the agent's Python deps (torch, diffusers, etc.).
-# Pin versions and verify against models/MODEL_CARDS.md.
+# Install the common + agents packages. These carry metadata only — no
+# torch — so they land cleanly even when INSTALL_TORCH=false.
+COPY common/ ./common/
+COPY agents/ ./agents/
+RUN pip install -e ./common -e ./agents
 
-# TODO(phase-3): copy agent code (selected by build ARG, same convention as
-# the CPU Dockerfile).
-# ARG AGENT
-# COPY agents/${AGENT}/ ./agent/
+# ---------------------------------------------------------------------------
+# Optional torch install (opt-in via build arg). Default OFF.
+# ---------------------------------------------------------------------------
+ARG INSTALL_TORCH=false
+ARG TORCH_VERSION=2.4.1
+ARG TORCH_INDEX=https://download.pytorch.org/whl/cu121
+RUN if [ "$INSTALL_TORCH" = "true" ]; then \
+        echo ">> Installing torch ${TORCH_VERSION} (CUDA 12.1 wheels)"; \
+        pip install --index-url "${TORCH_INDEX}" \
+            "torch==${TORCH_VERSION}" \
+            "torchvision" \
+            "torchaudio"; \
+        python -c "import torch; print('torch installed:', torch.__version__)"; \
+    else \
+        echo ">> Skipping torch install (build with --build-arg INSTALL_TORCH=true to enable)"; \
+    fi
 
-# Bind-mount /models read-only from the host at runtime (configured in
-# compose.dev.yml / compose.gpu.yml). No model weights are baked in.
+# Marker placeholder for Phase 7D SadTalker dependency install. Today
+# this only writes a file so future image diffs are obvious.
+ARG INSTALL_SADTALKER_DEPS=false
+RUN if [ "$INSTALL_SADTALKER_DEPS" = "true" ]; then \
+        echo ">> Phase 7D will land SadTalker deps here (sadtalker / gfpgan / safetensors)"; \
+        echo "phase7d-placeholder" > /opt/sadtalker_deps.marker; \
+    fi
 
+# Mount /models read-only from the host at runtime. No weights baked in
+# (Phase 7B / 7C invariant).
+
+# Non-root user. Matches the CPU agents image so volume bind-mount
+# permissions line up across the stack.
 RUN useradd --create-home --uid 1000 app || true
 USER 1000
 
-# TODO(phase-3): real entrypoint per agent.
-CMD ["bash", "-lc", "echo 'gpu agent stub — Phase 3 lands here' && sleep infinity"]
+# Default command: a *non-inference* readiness probe. Reports python
+# version, nvidia-smi (when --gpus all is passed), and torch version
+# when torch is installed. Never runs SadTalker.
+CMD ["bash", "-lc", "\
+echo '--- P1.AIVideo CUDA agent (Phase 7C readiness image) ---'; \
+echo 'python:'; python --version 2>&1; \
+echo 'pip:'; pip --version 2>&1; \
+echo 'ffmpeg:'; ffmpeg -version 2>&1 | head -1; \
+echo 'nvidia-smi (host GPU):'; nvidia-smi -L 2>&1 || echo '  (no GPU bound)'; \
+echo 'torch:'; python -c 'import importlib.util as u; spec=u.find_spec(\"torch\"); print(\"available\" if spec else \"NOT INSTALLED — rebuild with INSTALL_TORCH=true\")'; \
+if python -c 'import torch' 2>/dev/null; then \
+  python -c 'import torch; print(\"  torch:\", torch.__version__, \"cuda:\", torch.cuda.is_available(), \"devices:\", torch.cuda.device_count())'; \
+fi; \
+echo 'SADTALKER_MODELS_ROOT:' \"${SADTALKER_MODELS_ROOT:-<unset>}\"; \
+if [ -n \"${SADTALKER_MODELS_ROOT:-}\" ] && [ -d \"${SADTALKER_MODELS_ROOT}\" ]; then \
+  echo '  weights present:'; ls -1 \"${SADTALKER_MODELS_ROOT}\"/checkpoints 2>/dev/null | head -5; \
+fi; \
+echo '--- ready (no inference run) ---'; \
+sleep infinity \
+"]

@@ -70,6 +70,44 @@ Or, with toolkit but no driver:
 Both are intentional — the smoke target is for opt-in pre-flight, not a
 hard gate on the default test suite.
 
+## 2b. Phase 7C: building the GPU readiness image
+
+Phase 7C promotes `Dockerfile.cuda` from a Phase 0 stub to a **readiness
+image** — CUDA base + Python 3.11 + ffmpeg + the `common` and `agents`
+packages, but **no torch and no SadTalker deps** by default. Two build
+arguments let operators opt-in to extra layers:
+
+| Build arg | Default | What it adds |
+|---|---|---|
+| `INSTALL_TORCH=true` | `false` | `torch` + `torchvision` + `torchaudio` (CUDA 12.1 wheels). Adds ~2 GB. Required for Phase 7D. |
+| `INSTALL_SADTALKER_DEPS=true` | `false` | Phase 7D placeholder; today writes a marker file only. |
+
+Build with the Make target:
+
+```bash
+# Lean readiness image (no torch). ~4.5 GB.
+make docker-gpu-build
+
+# Same, with torch baked in (Phase 7D-capable). ~6–7 GB.
+INSTALL_TORCH=true make docker-gpu-build
+```
+
+The resulting image is tagged `aivideo-agent-cuda:latest`. The default
+CMD is a non-inference readiness probe:
+
+```bash
+docker run --rm aivideo-agent-cuda:latest bash -c '\
+  echo python:; python --version; \
+  echo torch:; python -c "import importlib.util as u; print(\"available\" if u.find_spec(\"torch\") else \"NOT INSTALLED\")"; \
+  echo sadtalker readiness:; python -c "import agents.lipsync.providers.sadtalker.provider as p; print(p.SadTalkerProvider().inspect_status())"\
+'
+```
+
+The default `CMD` in the image itself prints `nvidia-smi` (when the
+container has `--gpus all`), Python version, ffmpeg version, the torch
+status, and the SadTalker readiness — then sleeps. It **never** calls
+into SadTalker.
+
 ## 3. Bringing up the GPU overlay (still no real inference)
 
 The GPU overlay only *attaches device reservations* to the three CUDA
@@ -129,6 +167,24 @@ When (8) fails, *something* in the FastAPI startup path is doing
 ``python -c "import sys; import app.main; print({m for m in sys.modules
 if m.startswith('torch')})"`` and remove the offending import — it's
 almost always a stray `from agents.lipsync.providers.sadtalker import …`.
+
+## 4b. Phase 7B status check (SadTalker readiness)
+
+Phase 7B's first promoted provider is SadTalker. Even on a GPU-less
+host, the readiness surface is exercisable:
+
+```bash
+make docker-light-up
+curl -s http://localhost:8000/api/v1/providers/video_generator/sadtalker | jq
+# notes field describes whatever state the host is in:
+# - default → "real-inference gate off"
+# - gate on, no root → "SADTALKER_MODELS_ROOT is unset"
+# - gate on, root set but empty → "Weights missing under SADTALKER_MODELS_ROOT"
+# - gate on, root + weights → "torch is not importable" (light backend)
+```
+
+See [`sadtalker-runtime.md`](sadtalker-runtime.md) for the full
+categorised-error table.
 
 ## 5. What is **not** in scope for Phase 7A
 

@@ -155,6 +155,15 @@ The default assumption baked into this recommendation is: **yes to (1),
 no to (2), correctness over speed for (3)**. If any of those flip, the
 recommendation flips with them.
 
+## 4b. Phase 7B decision: SadTalker adapter hardening (done)
+
+Phase 7B landed the SadTalker adapter as the first hardened video
+provider. The adapter does **not** run real inference; it ships the
+readiness surface, env-var gate, and six categorised error codes the
+operator UX uses. See [`sadtalker-runtime.md`](sadtalker-runtime.md)
+for the full contract and [`provider-registry.md`](provider-registry.md)
+§"Phase 7B" for the catalog implications.
+
 ## 5. What stays unchanged regardless of choice
 
 - `/api/v1/video/generate` keeps its current Phase 6A shape. New states

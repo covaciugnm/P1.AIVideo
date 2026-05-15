@@ -2,7 +2,106 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 7A — GPU runtime planning.**
+> **Current status: Phase 7E — pipeline integration for SadTalker (opt-in real inference still gated).**
+>
+> The DAG's lipsync stage handler is now **provider-aware**.
+> ``DagState`` carries ``provider_selection`` (populated from
+> ``job.provider_selection``); the handler reads
+> ``provider_selection["video_provider_id"]`` and routes:
+> - **default** (real-inference flags off) → emits the Phase 2 no-op
+>   stub unchanged (every earlier test stays green);
+> - **opt-in but un-ready** (``not_configured`` / ``assets_missing`` /
+>   ``runtime_missing`` / ``gpu_unavailable``) → raises a categorised
+>   ``StageRejection`` — the DAG records the failure cleanly, the job
+>   stops, **no phantom artifact** is registered;
+> - **opt-in + ready** → calls a module-level ``_attempt_lipsync_inference``
+>   hook (tests monkeypatch it; the default body calls
+>   ``SadTalkerProvider.generate()`` and surfaces ``video_runtime_missing``
+>   when the SadTalker lib isn't installed). On ``completed``, the
+>   handler builds a video ``ArtifactRef`` with ``local_path`` +
+>   ``checksum_sha256`` + size + duration + dimensions so downstream
+>   QC / publisher stages can read it.
+> - non-sadtalker providers (``musetalk``, ``wav2lip``) fall through to
+>   the no-op stub — their hardened adapters land in later phases
+>   mirroring the SadTalker work.
+> 11 new Phase 7E tests pin the routing + categorised rejections +
+> success-path artifact ref + DAG state population. Downstream
+> Phase 3H / 3I / 3J QC/publisher stages remain green. Default
+> ``make test`` still never invokes real inference. **405 passed / 8
+> skipped** under default and ``-W error``.
+>
+> **Previous milestone: Phase 7D — SadTalker real inference smoke (opt-in only).**
+>
+> `SadTalkerProvider.generate()` now ships the real-inference code
+> path behind a **seven-gate fence**:
+> `SADTALKER_ENABLE_REAL_INFERENCE=true` +
+> `RUN_REAL_SADTALKER=1` + weights on disk + torch importable + CUDA
+> visible + image path readable + audio path readable. If any gate
+> fails, the call short-circuits to a categorised error without
+> importing torch / opencv / SadTalker. The default `make test` still
+> never invokes real inference — every gate is off by default and the
+> real-runtime smoke test (`tests/integration/test_phase7d_sadtalker_inference.py::test_real_sadtalker_smoke_when_explicitly_enabled`)
+> auto-skips without `RUN_REAL_SADTALKER_SMOKE=1`. The success path
+> (monkey-patched for default CI) registers an `ArtifactType.video` row
+> with `mime_type=video/mp4`, checksum, size, optional dimensions, and
+> returns `status="completed"` from `/api/v1/video/generate`. Failure
+> paths register **no phantom artifact** — the API test pins this
+> invariant. Partial-file cleanup on inference exceptions is baked into
+> `_attempt_real_inference()`. The existing frontend `ArtifactTable`
+> renders video rows without code changes. 7 new Phase 7D tests
+> (`make phase7d-test`); Phase 6A / 6D / 7A / 7B / 7C all green. **394
+> passed / 8 skipped** (1 new Phase 7D opt-in skip joining the 7 Piper /
+> Ollama opt-in skips) under default and `-W error`.
+>
+> **Previous milestone: Phase 7C — GPU image / runtime for SadTalker readiness (no real inference yet).**
+>
+> `docker/agents/Dockerfile.cuda` is now a real **readiness image**:
+> CUDA 12.4 base + Python 3.11 + ffmpeg + the `common` / `agents`
+> wheels, but **no torch and no SadTalker deps** by default. Two opt-in
+> build args — `INSTALL_TORCH` (defaults `false`; adds CUDA-12.1 torch
+> wheels) and `INSTALL_SADTALKER_DEPS` (Phase 7D placeholder) — let
+> operators light up the layers Phase 7D will need. New Make targets
+> `make docker-gpu-build` (builds **only** `Dockerfile.cuda`, never
+> touches `backend/`/`agents/Dockerfile`) and `make docker-gpu-down`.
+> `docker/compose.gpu.yml` extends `agent-lipsync` with SadTalker env
+> vars + a **read-only** `:ro` weights mount; both readiness flags
+> default off, `ALLOW_MODEL_AUTODOWNLOAD=false`. The default CMD is a
+> non-inference readiness probe (`nvidia-smi`, `python --version`,
+> torch presence, `inspect_status()`) — never invokes SadTalker. 15
+> new Phase 7C tests pin the static + compose invariants
+> (`make phase7c-test`); the default light Docker stack still excludes
+> all three CUDA agents (`agent-voice` / `agent-face` /
+> `agent-lipsync`). The lean image is **~4.5 GB**; with `INSTALL_TORCH=true`
+> grows to ~6–7 GB. **388 passed / 7 skipped** under default and
+> `-W error`.
+>
+> **Previous milestone: Phase 7B — SadTalker adapter hardening (no real inference yet).**
+>
+> First video provider promoted to a *hardened readiness surface* — no
+> torch in the default backend, no model downloads, no real generation.
+> The SadTalker provider adapter
+> (`agents/lipsync/providers/sadtalker/provider.py`) gains
+> `inspect_runtime()` / `inspect_assets()` / `inspect_gpu()` /
+> `inspect_status()` / `generate()` (stub). All heavy imports are lazy;
+> the module loads in the light backend image with **zero** of `torch`,
+> `diffusers`, `transformers`, `opencv`, `sadtalker`, `gfpgan` in
+> `sys.modules`. `/api/v1/video/generate` for `provider_id="sadtalker"`
+> now translates the adapter's readiness into six categorised error
+> codes — `provider_not_implemented` (default; Phase 6A-compatible),
+> `video_provider_not_configured`, `video_assets_missing`,
+> `video_runtime_missing`, `video_gpu_missing`,
+> `video_generation_failed` (reserved for Phase 7D) — gated behind
+> `SADTALKER_ENABLE_REAL_INFERENCE=true` + `RUN_REAL_SADTALKER=1`.
+> Phase 7B intentionally refuses to invoke real inference **even when
+> both flags are on** — Phase 7D ships the actual `torch.cuda` call.
+> The provider catalog row for sadtalker keeps `status="not_implemented"`
+> (Phase 6A invariant) but now exposes live readiness notes +
+> `docs_url`. New runbook: `docs/runbooks/sadtalker-runtime.md`. 19 new
+> Phase 7B tests pin the surface (`make phase7b-test`); Phase 6A / 6D /
+> 7A invariants remain green. **373 passed / 7 skipped** under default
+> and `-W error`.
+>
+> **Previous milestone: Phase 7A — GPU runtime planning.**
 >
 > Planning + invariants only — no real video, no real lip-sync, no model
 > downloads, no torch in the default backend or agents wheel. The

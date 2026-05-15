@@ -145,6 +145,15 @@ class DagRunner:
                 from common.schemas import ImageRef
 
                 image_ref = ImageRef.model_validate(job.image_ref)
+            # Phase 7E: surface provider_selection so stage handlers can
+            # route to the right adapter without re-reading the job row.
+            provider_selection = None
+            if job.provider_selection:
+                # The column is JSON; pass through as a plain dict so
+                # the schema's Pydantic validator can accept it.
+                provider_selection = {
+                    k: v for k, v in dict(job.provider_selection).items() if v is None or isinstance(v, str)
+                }
             state = DagState(
                 job_id=job.id,
                 brief=job.brief,
@@ -159,6 +168,7 @@ class DagRunner:
                 audio_ref=audio_ref,
                 face_mode=job.face_mode,
                 image_ref=image_ref,
+                provider_selection=provider_selection,
             )
             return state, job
 

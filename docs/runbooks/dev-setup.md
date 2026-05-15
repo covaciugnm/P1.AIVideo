@@ -98,6 +98,54 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 7E: lipsync DAG stage integration (opt-in real inference still gated)
+
+The DAG's lipsync stage handler is now provider-aware:
+``state.provider_selection["video_provider_id"]`` controls which video
+provider runs. When the provider is SadTalker and all real-inference
+gates are satisfied, the handler delegates to a monkey-patchable hook
+(``_attempt_lipsync_inference``) that calls
+``SadTalkerProvider.generate()`` and wraps the result in a video
+``ArtifactRef``. Otherwise the Phase 2 no-op stub is preserved, or a
+categorised ``StageRejection`` fires when the operator opted in but a
+gate is missing.
+
+```bash
+make phase7e-test                # 11 invariants
+```
+
+### Phase 7D: SadTalker real inference (opt-in only)
+
+`SadTalkerProvider.generate()` now invokes real inference behind a
+**seven-gate fence**. Default `make test` never reaches the real path;
+the opt-in smoke test auto-skips without `RUN_REAL_SADTALKER_SMOKE=1`.
+
+```bash
+make phase7d-test                # 6 passed + 1 opt-in skip by default
+
+# Real end-to-end smoke (requires GPU host + weights + heavy GPU image):
+RUN_REAL_SADTALKER_SMOKE=1 SADTALKER_ENABLE_REAL_INFERENCE=true \
+RUN_REAL_SADTALKER=1 SADTALKER_MODELS_ROOT=/path/to/weights \
+  make phase7d-test
+```
+
+See [`sadtalker-runtime.md`](sadtalker-runtime.md) §4b for the
+seven-gate table and the success-path API response shape.
+
+### Phase 7B: SadTalker adapter hardening (no real inference yet)
+
+First hardened video provider. The adapter (`agents/lipsync/providers/sadtalker/provider.py`)
+ships `inspect_runtime()` / `inspect_assets()` / `inspect_gpu()` /
+`inspect_status()` / `generate()` (stub). `/api/v1/video/generate` for
+`provider_id="sadtalker"` now returns six categorised `error_code`s.
+
+```bash
+make phase7b-test                # 19 invariants
+```
+
+See [`sadtalker-runtime.md`](sadtalker-runtime.md) for the env-var gate,
+the error-code table, and the no-auto-download policy.
+
 ### Phase 7A: GPU runtime planning (no real inference yet)
 
 Planning + invariants only. The default light stack stays GPU-free; the
