@@ -2,7 +2,28 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 6B — Alembic migrations.**
+> **Current status: Phase 7A — GPU runtime planning.**
+>
+> Planning + invariants only — no real video, no real lip-sync, no model
+> downloads, no torch in the default backend or agents wheel. The
+> video-generator catalog (`sadtalker`, `musetalk`, `wav2lip`,
+> `liveportrait`, `local_http_video`, `external_video_api`) keeps
+> returning metadata-only `not_implemented` from `/api/v1/video/generate`,
+> but now the catalog *honestly* advertises `requires_gpu=true` +
+> `requires_model_files=true` per provider and the GPU surface is pinned
+> by 15 new isolation tests (`make phase7a-test`). The light Docker
+> stack still has zero GPU services; the GPU overlay only attaches
+> device reservations to three Phase 0 stub agents (`agent-voice`,
+> `agent-face`, `agent-lipsync`) gated behind `--profile gpu`. Two new
+> Make targets — `make docker-gpu-config-check` and `make docker-gpu-smoke`
+> — let operators audit the host without committing to inference. New
+> runbooks: `docs/runbooks/gpu-runtime.md` (host pre-flight + invariants)
+> and `docs/runbooks/video-providers.md` (candidate comparison + Phase
+> 7B first-provider recommendation: **SadTalker adapter hardening, no
+> real inference yet** — mirroring the Phase 5A Piper pattern).
+> Backend remains GPU-free in every default image.
+>
+> **Previous milestone: Phase 6B — Alembic migrations.**
 >
 > Schema changes flow through Alembic now. The FastAPI app does **not** auto-run migrations on startup; operators invoke `make db-upgrade` (or `docker exec aivideo-backend-1 alembic upgrade head` for the Docker light path). `Base.metadata.create_all()` stays in `init_db()` for tests (SQLite in-memory, fresh per fixture); production / dev Postgres deploys go through Alembic instead. +1 dep (`alembic>=1.13`); reuses the existing async drivers via `run_sync()` — no `psycopg2` / `psycopg3` added. Six new Phase 6B smoke tests including a drift guard that fails fast if a model gains a column without a matching migration. New runbook: `docs/runbooks/db-migrations.md`. Backend stays at **306 passed / 4 skipped** under default and `-W error`.
 

@@ -98,6 +98,22 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 7A: GPU runtime planning (no real inference yet)
+
+Planning + invariants only. The default light stack stays GPU-free; the
+GPU overlay attaches `nvidia` device reservations to three CUDA agents
+that remain Phase 0 stubs.
+
+```bash
+make phase7a-test                # 15 isolation invariants
+make docker-gpu-config-check     # compose.dev + compose.gpu merge cleanly
+make docker-gpu-smoke            # nvidia-smi inside CUDA container (skips on CPU host)
+```
+
+See [`gpu-runtime.md`](gpu-runtime.md) for the host pre-flight + invariants
+and [`video-providers.md`](video-providers.md) for the candidate
+comparison + Phase 7B first-provider recommendation.
+
 ### Phase 6D: multi-provider registry + custom providers
 
 Five operator-facing categories: `llm` / `tts` / `video_generator` /

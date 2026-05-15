@@ -135,6 +135,25 @@ modules import with zero of `torch` / `diffusers` / `transformers` /
 
 Run with: `make phase6d-test`.
 
+## Phase 7A: GPU isolation invariants for the video catalog
+
+Phase 7A pins, but does not implement, the GPU surface. The relevant
+guarantees:
+
+- `requires_gpu` / `requires_model_files` are honest for every video
+  provider (`sadtalker`, `musetalk`, `wav2lip`, `liveportrait` →
+  `true/true`; `local_http_video`, `external_video_api` → `false/false`).
+- `/api/v1/video/generate` still returns metadata-only
+  `not_implemented` for the four GPU placeholders and `not_configured`
+  for `liveportrait`.
+- The default backend image and the agents base wheel still import
+  cleanly without pulling torch / diffusers / transformers / xformers
+  / sadtalker / musetalk / wav2lip / liveportrait into `sys.modules`.
+
+Run with: `make phase7a-test`. Pair with `make docker-gpu-config-check`
++ `make docker-gpu-smoke` for the host audit. See
+[`gpu-runtime.md`](gpu-runtime.md) and [`video-providers.md`](video-providers.md).
+
 ## What's intentionally NOT in Phase 6D
 
 - Real video generation.

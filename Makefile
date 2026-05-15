@@ -7,10 +7,11 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test phase7a-test \
         db-migrate db-upgrade db-downgrade db-current db-history runtime-readiness-check \
         frontend-install frontend-lint frontend-build frontend-check \
-        docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
+        docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check \
+        docker-gpu-config-check docker-gpu-smoke
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN{FS=":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -129,6 +130,35 @@ phase6c-test: ## Phase 6C — Piper/Ollama runtime-readiness gating + provider c
 
 phase6d-test: ## Phase 6D — multi-category provider registry + ProviderSelection extensions
 	pytest -v tests/integration/test_phase6d_provider_registry.py
+
+phase7a-test: ## Phase 7A — GPU isolation invariants + video catalog gating (no real inference, no GPU required)
+	pytest -v tests/integration/test_phase7a_gpu_planning.py
+
+docker-gpu-config-check: ## Validate compose.dev + compose.gpu overlay (no services started)
+	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
+	@echo ">> compose.dev + compose.gpu overlay config"
+	$(COMPOSE_GPU) config >/dev/null
+	@echo "OK: GPU overlay merges cleanly with the dev compose."
+
+docker-gpu-smoke: ## Run nvidia-smi inside a CUDA container. Skips cleanly when host lacks driver / NVIDIA Container Toolkit.
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "docker not on PATH; cannot smoke-test GPU. Skip."; exit 0; \
+	fi
+	@if ! docker info 2>/dev/null | grep -qiE "Runtimes:.*nvidia"; then \
+		echo ">> NVIDIA Container Toolkit not registered in docker. Skip."; \
+		echo "   See docs/runbooks/gpu-runtime.md for setup."; \
+		exit 0; \
+	fi
+	@if ! command -v nvidia-smi >/dev/null 2>&1; then \
+		echo ">> nvidia-smi not on host; install the NVIDIA driver first. Skip."; \
+		exit 0; \
+	fi
+	@echo ">> nvidia-smi on host:"
+	@nvidia-smi -L 2>&1 || echo "   (no devices found — host has driver but no GPU bound)"
+	@echo
+	@echo ">> nvidia-smi inside CUDA container (no model download, ~3GB image pull first time):"
+	@docker run --rm --gpus all nvidia/cuda:12.4.1-runtime-ubuntu22.04 nvidia-smi 2>&1 \
+		|| echo "   (container couldn't see a GPU; check NVIDIA Container Toolkit setup)"
 
 runtime-readiness-check: ## Curl every readiness surface against a running backend. Pair with docker-light-up.
 	@curl -fsS http://localhost:$${BACKEND_PORT:-8000}/healthz && echo
