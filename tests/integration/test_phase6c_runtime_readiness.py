@@ -82,14 +82,14 @@ async def test_providers_catalog_lists_all_three_categories(app_under_test):
     r = await app_under_test.get("/api/v1/providers")
     assert r.status_code == 200
     body = r.json()
-    assert set(body.keys()) == {"llm", "tts", "video_generator"}
+    # Phase 6D adds audio_processor + image_processor; the original
+    # three keys remain.
+    assert {"llm", "tts", "video_generator"}.issubset(set(body.keys()))
     assert len(body["llm"]) >= 1
     assert any(p["provider_id"] == "piper" for p in body["tts"])
-    assert {p["provider_id"] for p in body["video_generator"]} == {
-        "sadtalker",
-        "musetalk",
-        "wav2lip",
-    }
+    assert {"sadtalker", "musetalk", "wav2lip"}.issubset(
+        {p["provider_id"] for p in body["video_generator"]}
+    )
 
 
 async def test_providers_catalog_does_not_leak_secrets(app_under_test, monkeypatch):

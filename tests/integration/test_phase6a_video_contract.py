@@ -276,6 +276,8 @@ async def test_providers_video_generator_catalog_pinned(app_under_test):
     r = await app_under_test.get("/api/v1/providers/video-generators")
     assert r.status_code == 200
     ids = {p["provider_id"] for p in r.json()}
-    assert ids == {"sadtalker", "musetalk", "wav2lip"}
+    # Phase 6D extended the catalog. The Phase 3A trio stays present
+    # and every entry remains ``not_implemented``.
+    assert {"sadtalker", "musetalk", "wav2lip"}.issubset(ids)
     for p in r.json():
         assert p["status"] == "not_implemented"

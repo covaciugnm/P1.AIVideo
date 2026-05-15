@@ -5,6 +5,7 @@ import { useState } from "react";
 import { getSystemStatus } from "@/lib/api";
 import * as logBus from "@/lib/log-bus";
 
+import { CustomProvidersSection } from "./CustomProvidersSection";
 import { ProvidersSection } from "./ProvidersSection";
 import { useSettings } from "./SettingsContext";
 import styles from "./SettingsPanel.module.css";
@@ -400,6 +401,8 @@ export function SettingsPanel() {
           <span>Attach provided image by default</span>
         </label>
       </fieldset>
+
+      <CustomProvidersSection />
 
       <ProvidersSection
         defaults={{

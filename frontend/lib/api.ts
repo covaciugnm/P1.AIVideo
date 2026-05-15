@@ -409,14 +409,23 @@ export function getProviders(signal?: AbortSignal): Promise<ProvidersResponse> {
 }
 
 export function getProvidersForCategory(
-  category: "llm" | "tts" | "video_generator",
+  category:
+    | "llm"
+    | "tts"
+    | "video_generator"
+    | "audio_processor"
+    | "image_processor",
   signal?: AbortSignal,
 ): Promise<ProviderInfo[]> {
-  const path =
+  const slug: string =
     category === "video_generator"
-      ? "/api/v1/providers/video-generators"
-      : `/api/v1/providers/${category}`;
-  return request<ProviderInfo[]>(path, { signal });
+      ? "video-generators"
+      : category === "audio_processor"
+        ? "audio-processors"
+        : category === "image_processor"
+          ? "image-processors"
+          : category;
+  return request<ProviderInfo[]>(`/api/v1/providers/${slug}`, { signal });
 }
 
 export interface TTSGenerateResult {

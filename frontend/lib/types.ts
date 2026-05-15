@@ -324,14 +324,22 @@ export interface UploadImageResponse {
 
 // Phase 4F providers + TTS preview.
 
-export type ProviderCategory = "llm" | "tts" | "video_generator";
+export type ProviderCategory =
+  | "llm"
+  | "tts"
+  | "video_generator"
+  | "audio_processor"
+  | "image_processor";
 
 export type ProviderStatus =
   | "available"
   | "configured"
   | "not_configured"
   | "not_implemented"
-  | "disabled";
+  | "disabled"
+  | "error";
+
+export type ProviderLocality = "local" | "external";
 
 export interface ProviderInfo {
   readonly category: ProviderCategory;
@@ -342,12 +350,26 @@ export interface ProviderInfo {
   readonly is_local: boolean;
   readonly status: ProviderStatus;
   readonly notes: string;
+  // Phase 6D additions — optional in the TS contract because older
+  // backends may not return them.
+  readonly local_or_external?: ProviderLocality;
+  readonly supported_models?: readonly string[];
+  readonly requires_network?: boolean;
+  readonly requires_gpu?: boolean;
+  readonly requires_model_files?: boolean;
+  readonly healthcheck_available?: boolean;
+  readonly warning?: string;
+  readonly docs_url?: string;
+  readonly is_custom?: boolean;
 }
 
 export interface ProvidersResponse {
   readonly llm: readonly ProviderInfo[];
   readonly tts: readonly ProviderInfo[];
   readonly video_generator: readonly ProviderInfo[];
+  // Phase 6D — optional for backward-compat with older payloads.
+  readonly audio_processor?: readonly ProviderInfo[];
+  readonly image_processor?: readonly ProviderInfo[];
 }
 
 export interface ProviderSelection {
@@ -357,6 +379,9 @@ export interface ProviderSelection {
   readonly tts_model?: string | null;
   readonly video_provider_id?: string | null;
   readonly video_model?: string | null;
+  // Phase 6D additions.
+  readonly audio_processor_id?: string | null;
+  readonly image_processor_id?: string | null;
 }
 
 export interface TTSGenerateRequest {

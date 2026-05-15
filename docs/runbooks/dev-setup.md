@@ -98,6 +98,18 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 6D: multi-provider registry + custom providers
+
+Five operator-facing categories: `llm` / `tts` / `video_generator` /
+`audio_processor` / `image_processor`. The Settings panel ships an
+"Add custom provider" UI (metadata-only, localStorage-backed). See
+[`provider-registry.md`](provider-registry.md) for the architecture +
+the custom-provider workflow.
+
+```bash
+make phase6d-test      # 21 tests pinning the catalog + selection contract
+```
+
 ### Phase 6C: real runtime readiness (Piper + Ollama)
 
 Pre-GPU dry run for the two CPU-local runtimes. Neither is installed by

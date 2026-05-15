@@ -49,6 +49,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const [videoProvider, setVideoProvider] = useState<string | null>(
     settings.defaultVideoProvider,
   );
+  // Phase 6D — audio + image processor selection.
+  const [audioProcessor, setAudioProcessor] = useState<string | null>(null);
+  const [imageProcessor, setImageProcessor] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsStatus, setTtsStatus] = useState<string | null>(null);
@@ -265,11 +268,17 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       image_consent_confirmed: useFace ? imageConsent : false,
       image_synthetic_person_confirmed: useFace ? imageSynthetic : false,
       provider_selection:
-        llmProvider || ttsProvider || videoProvider
+        llmProvider ||
+        ttsProvider ||
+        videoProvider ||
+        audioProcessor ||
+        imageProcessor
           ? {
               script_provider_id: llmProvider,
               tts_provider_id: ttsProvider,
               video_provider_id: videoProvider,
+              audio_processor_id: audioProcessor,
+              image_processor_id: imageProcessor,
             }
           : null,
     };
@@ -485,6 +494,18 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           onChange={setVideoProvider}
           providers={providers?.video_generator ?? []}
         />
+        <ProviderField
+          label="Audio processor"
+          value={audioProcessor}
+          onChange={setAudioProcessor}
+          providers={providers?.audio_processor ?? []}
+        />
+        <ProviderField
+          label="Image processor"
+          value={imageProcessor}
+          onChange={setImageProcessor}
+          providers={providers?.image_processor ?? []}
+        />
       </section>
 
       <section className="card">
@@ -612,9 +633,36 @@ function ProviderField({ label, value, onChange, providers }: ProviderFieldProps
         {providers.map((p) => (
           <option key={p.provider_id} value={p.provider_id}>
             {p.label} ({p.status.replace(/_/g, " ")})
+            {p.requires_gpu ? " · GPU" : ""}
+            {p.requires_network ? " · network" : ""}
+            {p.is_custom ? " · custom" : ""}
           </option>
         ))}
       </select>
+      {selected && (
+        <span className={styles.providerBadges}>
+          {selected.requires_gpu && (
+            <span className={styles.badgeGpu} title="GPU required">
+              GPU required
+            </span>
+          )}
+          {selected.requires_network && (
+            <span className={styles.badgeNet} title="requires network">
+              requires network
+            </span>
+          )}
+          {selected.requires_model_files && (
+            <span className={styles.badgeAssets} title="requires model files">
+              requires model files
+            </span>
+          )}
+          {selected.is_custom && (
+            <span className={styles.badgeCustom} title="custom provider — metadata only">
+              custom · metadata only
+            </span>
+          )}
+        </span>
+      )}
       {warn && (
         <span className={styles.providerWarn}>
           {selected.notes || `${selected.provider_id} is ${selected.status.replace(/_/g, " ")}.`}

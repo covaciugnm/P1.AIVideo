@@ -79,7 +79,9 @@ async def test_providers_endpoint_returns_three_categories(app_under_test):
     r = await client.get("/api/v1/providers")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert set(body.keys()) == {"llm", "tts", "video_generator"}
+    # Phase 6D added audio_processor + image_processor categories; the
+    # original three keys remain present.
+    assert {"llm", "tts", "video_generator"}.issubset(set(body.keys()))
     # Template LLM is always available.
     assert any(p["provider_id"] == "template" and p["status"] == "available"
                for p in body["llm"])

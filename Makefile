@@ -7,7 +7,7 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test \
         db-migrate db-upgrade db-downgrade db-current db-history runtime-readiness-check \
         frontend-install frontend-lint frontend-build frontend-check \
         docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check
@@ -126,6 +126,9 @@ phase6b-test: ## Phase 6B — Alembic migration smoke + initial-migration drift 
 
 phase6c-test: ## Phase 6C — Piper/Ollama runtime-readiness gating + provider catalog shape. Real Piper/Ollama tests auto-skip without RUN_REAL_*_SMOKE=1.
 	pytest -v tests/integration/test_phase6c_runtime_readiness.py
+
+phase6d-test: ## Phase 6D — multi-category provider registry + ProviderSelection extensions
+	pytest -v tests/integration/test_phase6d_provider_registry.py
 
 runtime-readiness-check: ## Curl every readiness surface against a running backend. Pair with docker-light-up.
 	@curl -fsS http://localhost:$${BACKEND_PORT:-8000}/healthz && echo
