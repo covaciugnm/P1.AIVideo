@@ -98,6 +98,35 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 6C: real runtime readiness (Piper + Ollama)
+
+Pre-GPU dry run for the two CPU-local runtimes. Neither is installed by
+default — both are operator-managed. Pick a path:
+
+```bash
+# Verify the readiness surface (no real runtime needed):
+make phase6c-test                # 12 passed / 3 conditional skips
+
+# Curl the live readiness surface against a running backend:
+make docker-light-up
+make runtime-readiness-check     # full curl matrix
+make docker-light-down
+
+# Enable real generation:
+#   1. See docs/runbooks/piper-runtime.md for Piper TTS setup
+#   2. See docs/runbooks/ollama-scriptwriter.md for qwen3.6 / Ollama setup
+
+# Opt-in real-runtime tests (require manual setup):
+RUN_REAL_PIPER_SMOKE=1 PIPER_MODELS_ROOT=… pytest tests/integration/test_phase6c_runtime_readiness.py
+RUN_REAL_OLLAMA_SMOKE=1 SCRIPTWRITER_ENABLE_NETWORK_CALLS=true pytest tests/integration/test_phase6c_runtime_readiness.py
+```
+
+The two new runbooks
+[`piper-runtime.md`](piper-runtime.md) and
+[`ollama-scriptwriter.md`](ollama-scriptwriter.md) walk each setup
+end-to-end including provider-status interpretation, the 503 code
+dictionary, and Docker integration notes.
+
 ### Phase 6B: database migrations
 
 Schema changes flow through Alembic now. Quick reference:

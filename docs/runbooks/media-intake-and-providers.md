@@ -153,3 +153,12 @@ relevant provider's docs). That dialog is a Phase 4G follow-up.
 - Browser-driven Docker control or shell execution.
 - Model weight auto-downloads.
 - WebSocket/SSE log streaming.
+
+## Phase 6C — runtime readiness runbooks
+
+Detailed operator setup for the two CPU-local runtimes:
+
+- [`piper-runtime.md`](piper-runtime.md) — Piper TTS install, voice placement, status interpretation, debugging.
+- [`ollama-scriptwriter.md`](ollama-scriptwriter.md) — Ollama + qwen3.6 / qwen3:8b install, env toggles, 503 error dictionary.
+
+`make phase6c-test` exercises the catalog + 503 contract without needing either runtime locally; opt-in real-runtime tests gate on `RUN_REAL_PIPER_SMOKE=1` / `RUN_REAL_OLLAMA_SMOKE=1`.

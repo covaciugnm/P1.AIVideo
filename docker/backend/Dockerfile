@@ -48,6 +48,20 @@ COPY backend/app/ ./backend/app/
 # under a non-editable install. Same pattern as the dev venv setup.
 RUN pip install --no-cache-dir -e ./backend
 
+# Phase 5A+ introduced /api/v1/tts/generate (imports
+# ``agents.voice.providers.piper``) and /api/v1/script/generate (imports
+# ``agents.scriptwriter.core.registry``). Both need the ``agents`` package
+# available in the backend image. The orchestrator image already
+# installs it; mirroring it here is the cheapest fix and keeps both
+# images on the same import graph.
+#
+# NOTE: ``agents`` itself does NOT pull torch / diffusers / SadTalker /
+# Whisper. The voice + lipsync subpackages are CPU-only stubs until a
+# future GPU phase wires the real runtimes (and even then, the GPU
+# Dockerfile remains the home for those installs).
+COPY agents/ ./agents/
+RUN pip install --no-cache-dir -e ./agents
+
 # Storage roots for upload + artifact directories used at runtime. These will
 # typically be mounted as named volumes (see compose.dev.yml).
 RUN mkdir -p /storage/inputs/audio /storage/inputs/images /storage/inputs/text /storage/artifacts \
