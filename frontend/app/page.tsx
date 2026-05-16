@@ -10,8 +10,14 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { useSettings } from "@/components/SettingsContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { listJobs } from "@/lib/api";
-import { formatRelative, humanize, shortId } from "@/lib/format";
+import { shortId } from "@/lib/format";
 import { useT } from "@/lib/i18n/LanguageContext";
+import {
+  formatRelativeLocalized,
+  tFaceMode,
+  tStage,
+  tVoiceMode,
+} from "@/lib/i18n/formatters";
 import * as logBus from "@/lib/log-bus";
 import type { JobSummary } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
@@ -55,7 +61,7 @@ export default function DashboardPage() {
       </header>
       {error && (
         <ErrorMessage
-          message={`${error.message}\nCheck Settings → Backend API Base URL.`}
+          message={`${error.message}\n${t("jobs.checkBackendUrl")}`}
           title={t("jobs.failedToLoad")}
         />
       )}
@@ -107,15 +113,13 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
                 <StatusBadge status={job.status} />
               </td>
               <td className={styles.modeCol}>
-                <div>{humanize(job.voice_mode)}</div>
-                <div className="muted">
-                  {job.face_mode ? humanize(job.face_mode) : t("common.noFace")}
-                </div>
+                <div>{tVoiceMode(t, job.voice_mode)}</div>
+                <div className="muted">{tFaceMode(t, job.face_mode)}</div>
               </td>
               <td className={styles.progressCol}>
                 <ProgressBar percent={job.progress_percent} />
               </td>
-              <td>{job.current_stage ? humanize(job.current_stage) : "—"}</td>
+              <td>{job.current_stage ? tStage(t, job.current_stage) : "—"}</td>
               <td>
                 {job.qc_passed === undefined || job.qc_passed === null ? (
                   <span className={styles.qcPending}>{t("common.pending")}</span>
@@ -133,7 +137,7 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
                 )}
               </td>
               <td>{job.artifact_count}</td>
-              <td>{formatRelative(job.updated_at)}</td>
+              <td>{formatRelativeLocalized(t, job.updated_at)}</td>
             </tr>
           ))}
         </tbody>

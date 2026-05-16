@@ -576,6 +576,33 @@ export const HELP_TOPICS_EN: Readonly<Record<string, HelpTopic>> = {
     ],
     related: ["jobs-list", "create-job"],
   },
+  localization: {
+    id: "localization",
+    section: "Reference",
+    title: "Localization (i18n)",
+    summary:
+      "Romanian / English UI parity rule, dictionary structure, formatters helper.",
+    body: [
+      p("Phase 11A introduced the dual EN/RO dictionaries and Phase 11A-FIX completed the cleanup: every operator-visible string lives in `frontend/lib/i18n/dictionaries/{en,ro}.ts`, every Help topic in `frontend/lib/help/dictionaries/{en,ro}.ts`, and runtime enums route through `frontend/lib/i18n/formatters.ts` (tStatus, tStage, tArtifactType, …) so the dashboard never prints raw `pending_compliance` or `tts_provider_not_configured`."),
+      kv([
+        ["t(path, params)", "Look up a dictionary key. Params replace `{name}` placeholders. Missing keys fall back to English, then to the raw path."],
+        ["formatRelativeLocalized(t, iso)", "Bilingual relative time. Replaces the English-only `formatRelative` for any value displayed to the operator."],
+        ["localizeApiDetail(t, err)", "Maps known Pydantic / FastAPI error fragments to dictionary keys (synthetic-person, consent, target-duration range, extra-forbidden field, …) and falls back to the raw English text only for unknown shapes."],
+        ["tStatus / tStage / tArtifactType / tVoiceMode / tFaceMode / tProviderStatus", "Type-safe enum-to-label helpers. Always pass `t` from `useT()`."],
+      ]),
+      callout(
+        "info",
+        "Permanent rule: every new visible label / button / error / status / stage / artifact type / help topic must update BOTH dictionaries in the same PR. Phase 11A-FIX tests enforce key parity and scan for hardcoded English in JSX.",
+        "Maintenance rule",
+      ),
+      list([
+        "Allowed English in JSX: provider IDs, API paths, HTTP verbs, file formats (WAV/MP3/PNG/JPEG/MP4/SRT/VTT), env-var names, model names, raw stack traces in log meta.",
+        "Use `useT()` even in client components that only show one label — it's free.",
+        "When a dictionary value would be byte-identical EN vs RO (e.g. `MP4`), keep it identical — the strict-parity test excludes the known technical allowlist.",
+      ]),
+    ],
+    related: ["settings", "errors-glossary"],
+  },
 };
 
 export const HELP_TOPIC_IDS_EN: readonly string[] = Object.keys(HELP_TOPICS_EN);

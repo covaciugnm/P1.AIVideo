@@ -7,6 +7,7 @@ import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { UploadCard } from "@/components/UploadCard";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { localizeApiDetail } from "@/lib/i18n/formatters";
 import { ApiError, getUiOptions, uploadText } from "@/lib/api";
 import { formatBytes, formatDate, formatDurationSec, shortHash } from "@/lib/format";
 import * as logBus from "@/lib/log-bus";
@@ -177,7 +178,7 @@ function UploadTextPanel({
       setScriptText("");
       setTitle("");
     } catch (err) {
-      const msg = err instanceof ApiError ? err.detail : String(err);
+      const msg = err instanceof ApiError ? localizeApiDetail(t, err) : String(err);
       setError(msg);
       logBus.emit({
         source: "frontend",

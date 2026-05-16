@@ -114,6 +114,7 @@ function sourceAllowed(source: LogSource, settings: ReturnType<typeof useSetting
 }
 
 function LogEntryItem({ entry }: { readonly entry: LogEntry }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const hasMeta = entry.meta && Object.keys(entry.meta).length > 0;
   const time = formatTime(entry.timestamp);
@@ -128,7 +129,7 @@ function LogEntryItem({ entry }: { readonly entry: LogEntry }) {
             type="button"
             className={styles.expand}
             onClick={() => setExpanded((e) => !e)}
-            aria-label={expanded ? "Hide details" : "Show details"}
+            aria-label={expanded ? t("logsPanel.hideDetails") : t("logsPanel.showDetails")}
           >
             {expanded ? "−" : "+"}
           </button>

@@ -219,3 +219,43 @@ override). The Phase 11A test
 `tests/integration/test_phase11a_ui_i18n_static.py::test_en_and_ro_dictionaries_have_same_keys`
 catches dictionary drift; the Phase 10C contribution rule still applies
 (`docs/runbooks/contribution-rules.md`).
+
+## Phase 11A-FIX additions
+
+The original Phase 11A shipped a working `useT()` + dictionaries but a
+follow-up Gemini audit found English leakage: `humanize()` was rendering
+enum values (`pending_compliance`, `voice_mode`, …) untranslated,
+`formatRelative()` produced English-only `5m ago` suffixes, and several
+components (`ComplianceEvents`, `ProgressBar`, `LoadingState`,
+`SettingsPanel` notes, `CustomProvidersSection` form labels) still
+contained hardcoded English strings.
+
+Phase 11A-FIX completes the cleanup. The contract is now:
+
+- **Every operator-visible enum routes through `frontend/lib/i18n/formatters.ts`** — `tStatus`, `tStage`, `tArtifactType`, `tVoiceMode`, `tFaceMode`, `tProviderStatus`, `tAudioFit`, `tAudioFitRecommendation`. They translate the value via the `statuses.*` / `stages.*` / `artifactTypes.*` etc. sections and fall back to the explicit `<section>.unknown` key (still translated) — never `humanize()`.
+- **`formatRelativeLocalized(t, iso)`** replaces `formatRelative()` in every visible call site (`/`, `/jobs`, BackendStatusBadge tooltip). The legacy `formatRelative()` stays for log meta only.
+- **`localizeApiDetail(t, err)`** in the same formatters module maps known Pydantic / FastAPI v2 error fragments to dictionary keys: `synthetic_person_confirmed must be true` → `validation.syntheticPersonRequired`, `Extra inputs are not permitted` → `validation.extraForbiddenField`, `target_duration_seconds must be between {min} and {max}` → `validation.targetDurationRange` with placeholders. Replaces the prior English-only `humanizeApiDetail()` in user-facing call sites; the original helper stays for raw log output.
+- **`t(path, params)`** now accepts `{name}` placeholder interpolation, so messages like `validation.targetDurationRange` and `time.minutesAgo` are fully translatable.
+- **New dictionary sections** mirrored EN+RO: `statuses`, `stages`, `artifactTypes`, `voiceModes`, `faceModes`, `providerStatuses`, `runtime`, `validation`, `time`, `progressBar`, `logsPanel`, `uploadCard`, `complianceList`, plus extensions to `settings`, `customProviders`, `providers`, `stageTimeline`, `editJob`.
+- **New tests** lock the contract: `tests/integration/test_phase11a_no_hardcoded_english.py` static-scans every `frontend/app` + `frontend/components` `.tsx` for the Gemini-listed regressions and refuses `humanize()` imports in mainline visible components; `tests/integration/test_phase11a_i18n_dictionaries.py` now also enforces required sections, required leaf keys per section, no typo identifiers (`curent`, `uat`, …), and no non-technical EN-RO byte-identical pairs.
+
+### Maintenance checklist (REQUIRED for every PR touching the UI)
+
+A change is **incomplete** if it introduces visible text without i18n keys.
+Use this checklist on every PR:
+
+- [ ] New UI label / placeholder / button → `frontend/lib/i18n/dictionaries/en.ts` AND `ro.ts`
+- [ ] New visible enum value (status, stage, artifact type, voice/face mode, provider status) → add to `statuses.*` / `stages.*` / etc. in BOTH files
+- [ ] New runtime error code → `errors.<code>` in BOTH files
+- [ ] New backend Pydantic validation message → add a mapping in `localizeApiDetail` AND a `validation.*` key in BOTH files
+- [ ] New help topic → `frontend/lib/help/dictionaries/en.ts` AND `ro.ts` (same `id`)
+- [ ] New aria-label / title attribute → go through `t()` like any other visible string
+- [ ] Time-relative display → use `formatRelativeLocalized(t, iso)`, never `formatRelative(iso)`
+- [ ] Did not introduce `humanize()` in a JSX visible position — use the right `t<Enum>` helper instead
+- [ ] `pytest -q tests/integration/test_phase11a_i18n_dictionaries.py tests/integration/test_phase11a_no_hardcoded_english.py tests/integration/test_phase11a_help_i18n.py tests/integration/test_phase11a_ui_i18n_static.py` all pass
+
+Allowed English in JSX (no translation needed): provider IDs (`piper`,
+`f5tts_ro`, …), API paths (`/api/v1/...`), HTTP verbs (`GET`/`POST`/…),
+file formats (`MP4`/`WAV`/`SRT`/…), env-var names
+(`RUN_REAL_SADTALKER`, `PIPER_MODELS_ROOT`, …), model names, raw
+backend log lines surfaced as technical diagnostics.

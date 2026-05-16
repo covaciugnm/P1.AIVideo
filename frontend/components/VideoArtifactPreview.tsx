@@ -43,6 +43,7 @@ export function VideoArtifactPreview({ artifacts }: VideoArtifactPreviewProps) {
 }
 
 function VideoPreviewItem({ artifact }: { readonly artifact: ArtifactResponse }) {
+  const t = useT();
   const src = artifactContentUrl(artifact.artifact_id);
   const dl = artifactContentUrl(artifact.artifact_id, { download: true });
   const provider =
@@ -66,12 +67,20 @@ function VideoPreviewItem({ artifact }: { readonly artifact: ArtifactResponse })
         <code className={styles.id}>{shortId(artifact.artifact_id)}</code>
         <span className={styles.mime}>{artifact.mime_type ?? "video/?"}</span>
         {provider && <span className={styles.badge}>{provider}</span>}
-        {isFinalExport && <span className={styles.badgeFinal}>final export</span>}
+        {isFinalExport && (
+          <span className={styles.badgeFinal}>
+            {t("jobDetail.finalExportBadge")}
+          </span>
+        )}
         {watermark && watermark !== "applied" && (
-          <span className={styles.badgePending}>watermark {watermark}</span>
+          <span className={styles.badgePending}>
+            {t("jobDetail.watermarkBadge", { status: watermark })}
+          </span>
         )}
         {c2pa && c2pa !== "signed" && (
-          <span className={styles.badgePending}>c2pa {c2pa}</span>
+          <span className={styles.badgePending}>
+            {t("jobDetail.c2paBadge", { status: c2pa })}
+          </span>
         )}
       </div>
       <video
@@ -80,21 +89,15 @@ function VideoPreviewItem({ artifact }: { readonly artifact: ArtifactResponse })
         preload="metadata"
         src={src}
       >
-        <p className={styles.fallback}>
-          Your browser cannot play this video. Use{" "}
-          <a href={dl} download>
-            Download
-          </a>{" "}
-          to fetch the MP4 file instead.
-        </p>
+        <p className={styles.fallback}>{t("jobDetail.fallbackVideo")}</p>
       </video>
       <dl className={styles.metaList}>
         <div>
-          <dt>Size</dt>
+          <dt>{t("common.size")}</dt>
           <dd>{formatBytes(artifact.size_bytes)}</dd>
         </div>
         <div>
-          <dt>Duration</dt>
+          <dt>{t("common.duration")}</dt>
           <dd>
             {artifact.duration_seconds !== null
               ? formatDurationSec(artifact.duration_seconds)
@@ -102,11 +105,11 @@ function VideoPreviewItem({ artifact }: { readonly artifact: ArtifactResponse })
           </dd>
         </div>
         <div>
-          <dt>Dimensions</dt>
+          <dt>{t("common.dimensions")}</dt>
           <dd>{dims ?? "—"}</dd>
         </div>
         <div>
-          <dt>SHA-256</dt>
+          <dt>{t("common.checksum")}</dt>
           <dd title={artifact.checksum_sha256 ?? ""}>
             <code>{shortHash(artifact.checksum_sha256)}</code>
           </dd>
@@ -114,7 +117,7 @@ function VideoPreviewItem({ artifact }: { readonly artifact: ArtifactResponse })
       </dl>
       <div className={styles.actions}>
         <a className={styles.downloadBtn} href={dl} download>
-          Download MP4
+          {t("jobDetail.downloadMp4")}
         </a>
       </div>
     </>

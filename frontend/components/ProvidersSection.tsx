@@ -28,8 +28,6 @@ export function ProvidersSection({
 }: ProvidersSectionProps) {
   const t = useT();
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
-  // Touch ``t`` so the lint/parity test sees an actual use.
-  void t("providers.providerStatus");
   const [error, setError] = useState<string | null>(null);
   const [ttsTest, setTtsTest] = useState<string | null>(null);
 
@@ -48,13 +46,13 @@ export function ProvidersSection({
   }, []);
 
   const handleTestTts = async (providerId: string) => {
-    setTtsTest(`Testing ${providerId}…`);
+    setTtsTest(t("providersSection.ttsTestRunning"));
     const res = await generateTts({
       script_text: "Test sample for provider preview.",
       tts_provider_id: providerId,
     });
     if (!res.ok) {
-      setTtsTest(`${res.error.code}: ${res.error.message}`);
+      setTtsTest(t("providersSection.ttsTestFailure", { error: res.error.code }));
       logBus.emit({
         source: "frontend",
         level: res.httpStatus === 503 ? "warning" : "error",
@@ -62,33 +60,33 @@ export function ProvidersSection({
         meta: { providerId, code: res.error.code, status: res.httpStatus },
       });
     } else {
-      setTtsTest(`${providerId} OK`);
+      setTtsTest(t("providersSection.ttsTestSuccess"));
     }
   };
 
   if (error) {
     return (
       <div className={styles.section}>
-        <h3 className={styles.heading}>Providers</h3>
-        <p className={styles.err}>Failed to load providers: {error}</p>
+        <h3 className={styles.heading}>{t("providers.providersTitle")}</h3>
+        <p className={styles.err}>{t("providers.failedToLoad", { detail: error })}</p>
       </div>
     );
   }
   if (!providers) {
     return (
       <div className={styles.section}>
-        <h3 className={styles.heading}>Providers</h3>
-        <p className={styles.muted}>Loading providers…</p>
+        <h3 className={styles.heading}>{t("providers.providersTitle")}</h3>
+        <p className={styles.muted}>{t("providers.loadingProviders")}</p>
       </div>
     );
   }
 
   return (
     <div className={styles.section}>
-      <h3 className={styles.heading}>Providers</h3>
+      <h3 className={styles.heading}>{t("providers.providersTitle")}</h3>
 
       <Category
-        title="LLM (script generation)"
+        title={t("providers.categoryLlm")}
         providers={providers.llm}
         defaultValue={defaults.llm}
         onChange={(v) => onDefaultsChange({ llm: v })}
@@ -96,7 +94,7 @@ export function ProvidersSection({
       />
 
       <Category
-        title="TTS (audio narration)"
+        title={t("providers.categoryTts")}
         providers={providers.tts}
         defaultValue={defaults.tts}
         onChange={(v) => onDefaultsChange({ tts: v })}
@@ -106,14 +104,14 @@ export function ProvidersSection({
             className={styles.btnSmall}
             onClick={() => handleTestTts(p.provider_id)}
           >
-            Test
+            {t("common.test")}
           </button>
         )}
       />
       {ttsTest && <p className={styles.testNote}>{ttsTest}</p>}
 
       <Category
-        title="Video generator (lip-sync)"
+        title={t("providers.categoryVideo")}
         providers={providers.video_generator}
         defaultValue={defaults.video}
         onChange={(v) => onDefaultsChange({ video: v })}
@@ -121,10 +119,7 @@ export function ProvidersSection({
       />
 
       <p className={styles.muted}>
-        Adding a new provider package needs config + runtime install on the
-        host (e.g. <code>piper-tts</code>). Adding from the browser will
-        land in Phase 4G — for now, configure providers via env vars and
-        rebuild the relevant image.
+        {t("providers.addingProviderNote")}
       </p>
     </div>
   );
@@ -145,6 +140,7 @@ function Category({
   onChange,
   testButton,
 }: CategoryProps) {
+  const t = useT();
   return (
     <div className={styles.category}>
       <div className={styles.categoryHeader}>
@@ -154,7 +150,7 @@ function Category({
           value={defaultValue ?? ""}
           onChange={(e) => onChange(e.target.value || null)}
         >
-          <option value="">— default —</option>
+          <option value="">{t("providers.defaultOption")}</option>
           {providers.map((p) => (
             <option key={p.provider_id} value={p.provider_id}>
               {p.label}
@@ -170,13 +166,13 @@ function Category({
               <span
                 className={`${styles.status} ${styles[`status-${p.status}`] ?? ""}`}
               >
-                {p.status.replace(/_/g, " ")}
+                {t(`providerStatuses.${p.status}` as any)}
               </span>
               <span className={styles.modelLabel}>
                 {p.default_model ?? "—"}
               </span>
               <span className={styles.locality}>
-                {p.is_local ? "local" : "external"}
+                {p.is_local ? t("providers.isLocal").toLowerCase() : "external"}
               </span>
               {testButton && testButton(p)}
             </div>

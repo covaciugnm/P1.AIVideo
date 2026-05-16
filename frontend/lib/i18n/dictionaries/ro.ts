@@ -87,6 +87,8 @@ export const DICTIONARY_RO: Dictionary = {
     ok: "OK",
     off: "Inactiv",
     on: "Activ",
+    romanian: "Română",
+    english: "Engleză",
   },
   dashboard: {
     title: "Tablou de bord",
@@ -229,6 +231,9 @@ export const DICTIONARY_RO: Dictionary = {
     missingScriptText: "Textul scenariului este obligatoriu când sintetizezi cu TTS.",
     missingAudioRef: "Un artefact audio încărcat este obligatoriu când folosești audio furnizat.",
     missingImageRef: "Un artefact imagine încărcat este obligatoriu când folosești imagine furnizată.",
+    scriptGeneratedStatus: "Generat ({provider}/{model}; ~{duration}s).",
+    ttsGeneratedStatus: "Generat · {duration}s · {rate} Hz · {channels}ch · {size} KB",
+    ttsPreviewLabel: "Previzualizare TTS generată ({provider} · {voice})",
   },
   uploads: {
     title: "Încărcări",
@@ -295,6 +300,12 @@ export const DICTIONARY_RO: Dictionary = {
     portUnreachable: "Port inaccesibil",
     providerDefaultsHint: "Alege furnizorul implicit script / TTS / video folosit când jobul nu îl suprascrie.",
     customProvidersHint: "Înregistrează propriile id-uri de furnizor care indică spre un endpoint HTTP local sau un API extern. Salvate în localStorage.",
+    postgresIndirectNote:
+      "Verificat indirect prin backend /api/v1/system/status (database_reachable).",
+    redisRawTcpNote:
+      "TCP brut — browserul nu poate testa direct. Vizibil în logurile backend.",
+    browserDiagnosticsNote:
+      "Logurile sunt diagnostice locale ale browserului. Editarea porturilor Docker aici nu repornește Docker — copiază comanda de mai sus și rulează-o de pe gazdă.",
   },
   jobDetail: {
     overview: "Sumar",
@@ -378,9 +389,9 @@ export const DICTIONARY_RO: Dictionary = {
     notes: "Note",
     docsLink: "Documentație",
     warning: "Avertisment",
-    categoryLlm: "LLM scenariu",
-    categoryTts: "TTS",
-    categoryVideo: "Video",
+    categoryLlm: "LLM (scriere scenariu)",
+    categoryTts: "TTS (narare audio)",
+    categoryVideo: "Generator video (lip-sync)",
     categoryAudioProcessor: "Procesare audio",
     categoryImageProcessor: "Procesare imagine",
     selectProvider: "Selectează un furnizor",
@@ -390,6 +401,18 @@ export const DICTIONARY_RO: Dictionary = {
     diagnosticsRunning: "Se rulează…",
     diagnosticsOk: "OK",
     diagnosticsFailed: "Eșuat",
+    refreshCatalog: "Reîncarcă catalogul de furnizori",
+    refreshAction: "↻ Reîmprospătează",
+    diagnosticsIntro:
+      "Testează fiecare categorie de furnizori. Butoanele apelează doar endpointurile sigure de readiness / previzualizare — generatoarele video rămân doar pe metadate.",
+    failedToLoad: "Încărcarea furnizorilor a eșuat: {detail}",
+    videoReadinessFootnote:
+      "Generarea reală a videoului nu se rulează din Test1. Doar verificare de readiness.",
+    backendLabel: "Backend",
+    providersTitle: "Furnizori",
+    loadingProviders: "Se încarcă furnizorii…",
+    addingProviderNote: "Adăugarea unui pachet de furnizor necesită configurare + instalare runtime pe gazdă (ex. piper-tts). Configurarea se face prin variabile de mediu.",
+    defaultOption: "— implicit —",
   },
   logs: {
     title: "Loguri",
@@ -514,7 +537,7 @@ export const DICTIONARY_RO: Dictionary = {
     title: "Comenzi de recuperare",
     terminalNote: "Jobul este în stare terminală.",
     terminalCancelDisabled: "Jobul este în stare terminală — anularea e dezactivată.",
-    terminalRetryDisabled: "Reîncercarea e disponibilă doar pentru joburi eșuate / respinse.",
+    terminalRetryDisabled: "Reîncearcă e disponibilă doar pentru joburi eșuate / respinse.",
     retryFromStage: "Reîncearcă de la etapa…",
     retryAvailable: "Reîncercarea este disponibilă.",
     retryNotAvailable: "Reîncercarea nu este disponibilă pentru această stare.",
@@ -554,6 +577,26 @@ export const DICTIONARY_RO: Dictionary = {
     cancel: "Anulează",
     noCustom: "Niciun furnizor personalizat înregistrat.",
     validationError: "Eroare de validare: verifică câmpurile de mai sus.",
+    loading: "Se încarcă…",
+    metadataOnlyNote:
+      "Doar metadate. Adăugarea unui furnizor aici îl înregistrează pentru selecția jobului, dar NU instalează și nu configurează runtime-ul. Fără execuție de shell, fără instalare de pachete, fără scriere de fișiere pe backend. Secretele / cheile API nu sunt acceptate.",
+    providerIdSlugSafe: "ID furnizor (compatibil slug)",
+    providerIdPlaceholder: "ex. my_local_tts",
+    backendType: "Tip backend",
+    backendTypePlaceholder: "ex. local_http",
+    localityField: "Local sau extern",
+    localityLocal: "local",
+    localityExternal: "extern",
+    endpointUrlOptional: "URL endpoint (opțional, fără credențiale)",
+    endpointUrlPlaceholder: "http://localhost:11434",
+    defaultModelOptional: "Model implicit (opțional)",
+    supportedModelsCsv: "Modele suportate (separate prin virgulă)",
+    requiresNetwork: "Necesită rețea",
+    enabled: "Activat",
+    disabled: "Dezactivat",
+    gpuRequiredFlag: "Necesită GPU",
+    addAction: "Adaugă",
+    deleteAria: "Șterge {id}",
   },
   providersSection: {
     title: "Furnizori impliciți",
@@ -652,6 +695,15 @@ export const DICTIONARY_RO: Dictionary = {
     failedStages: "Etape eșuate",
     pendingStages: "Etape în așteptare",
     noStages: "Nicio etapă înregistrată încă.",
+    countCompleted: "{count} finalizate",
+    countFailed: "{count} eșuate",
+    countPending: "{count} în așteptare",
+    noFailedStages: "Nicio etapă eșuată",
+    terminalPollingStopped: "Jobul este într-o stare terminală. Polling-ul s-a oprit.",
+    audioFitTitle: "Potrivire audio",
+    audioFitTarget: "țintă {seconds}s",
+    audioFitAudio: "audio {seconds}s",
+    audioFitDelta: "Δ {delta}",
   },
   recoveryHistory: {
     cancelledAt: "Anulat la",
@@ -709,7 +761,7 @@ export const DICTIONARY_RO: Dictionary = {
     video: "Video",
     final_export: "Export final",
     qc_report: "Raport QC",
-    edit_plan: "Plan editare",
+    edit_plan: "Plan de editare",
     subtitle: "Subtitrare",
     manifest: "Manifest",
     metadata: "Metadate",
@@ -739,13 +791,15 @@ export const DICTIONARY_RO: Dictionary = {
     audioFitMissingAudio: "Nu există încă un artefact audio",
     audioFitLabel: "Potrivire audio",
     audioFitRecAccept: "Acceptă ca atare",
-    audioFitRecRegenScriptShorter: "Regenerează un scenariu mai scurt",
-    audioFitRecRegenScriptLonger: "Regenerează un scenariu mai lung",
+    audioFitRecRegenScriptShorter: "Regenerază un scenariu mai scurt",
+    audioFitRecRegenScriptLonger: "Regenerază un scenariu mai lung",
     audioFitRecAdjustDuration: "Ajustează durata țintă",
     audioFitRecUploadBetterAudio: "Încarcă un fișier audio mai potrivit",
     qcDecisionPass: "Trecut",
     qcDecisionFail: "Eșuat",
     qcDecisionWarn: "Avertisment",
+    audioFitStatus: "Potrivire audio: {status}",
+    audioFitMeta: "țintă {target}s · audio {audio}s · Δ {delta}",
   },
   validation: {
     required: "Acest câmp este obligatoriu.",
@@ -800,5 +854,29 @@ export const DICTIONARY_RO: Dictionary = {
   },
   complianceList: {
     empty: "Niciun eveniment de conformitate înregistrat încă.",
+  },
+  niceErrors: {
+    piper_runtime_missing:
+      "Runtime-ul Piper nu este instalat în această imagine. Reconstruiește backend-ul cu --build-arg INSTALL_PIPER=true (vezi docs/runbooks/piper-runtime.md).",
+    piper_assets_missing:
+      "Fișierele de voce Piper (.onnx + .onnx.json) lipsesc sub PIPER_MODELS_ROOT. Adaugă-le manual — fără descărcare automată.",
+    piper_provider_not_configured:
+      'Furnizorul "{provider}" nu este configurat. Setează PIPER_MODELS_ROOT și adaugă fișierele de voce, apoi reîncearcă.',
+    piper_provider_not_implemented:
+      "Furnizorul TTS este un catalog stub — nicio cale de sinteză reală cablată încă.",
+    piper_generation_failed:
+      "Apelul de sinteză a rulat dar a returnat o eroare. Verifică logurile backend pentru motivul trunchiat.",
+    f5_runtime_missing:
+      "Wrapper-ul F5TTS-Ro este inaccesibil. Pornește serviciul opțional: `make docker-tts-ro-build && make docker-tts-ro-up`, apoi setează F5TTS_RO_BASE_URL în backend. Vezi docs/runbooks/f5tts-ro-runtime.md.",
+    f5_assets_missing:
+      "Greutățile modelului F5TTS-Ro sau vocea de referță română lipsesc sub /models/f5tts-ro. Montează greutățile furnizate de operator + WAV-ul de referință — fără descărcare automată.",
+    f5_provider_not_configured:
+      "F5TTS-Ro nu este configurat. Setează F5TTS_RO_BASE_URL (și pornește serviciul Docker tts-ro), apoi reîncearcă.",
+    f5_provider_not_implemented:
+      "F5TTS-Ro este o intrare în catalog dar serviciul wrapper nu a fost încă construit/pornit.",
+    f5_generation_failed:
+      "Wrapper-ul F5TTS-Ro a răspuns dar sinteza a eșuat. Verifică logurile wrapper-ului (`make docker-tts-ro-logs`).",
+    provider_disabled:
+      "Acest furnizor TTS este dezactivat. Activează-l prin env / Setări înainte de a reîncerca.",
   },
 };

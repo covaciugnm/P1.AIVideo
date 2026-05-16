@@ -9,11 +9,11 @@ import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { localizeApiDetail } from "@/lib/i18n/formatters";
 import {
   ApiError,
   getJob,
   getProviders,
-  humanizeApiDetail,
   retryJob,
   updateJob,
 } from "@/lib/api";
@@ -142,11 +142,12 @@ export default function EditJobPage({
         if (p) setProviders(p);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
-        const msg = err instanceof ApiError ? err.detail : String(err);
+        const msg = err instanceof ApiError ? localizeApiDetail(t, err) : String(err);
         setLoadError(msg);
       }
     })();
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
   if (loadError) {
@@ -290,7 +291,7 @@ export default function EditJobPage({
       }
     } catch (err) {
       const msg =
-        err instanceof ApiError ? humanizeApiDetail(err.detail) : String(err);
+        err instanceof ApiError ? localizeApiDetail(t, err) : String(err);
       setSubmitError(msg);
       setSubmitting(false);
       logBus.emit({
@@ -321,7 +322,7 @@ export default function EditJobPage({
       router.push(`/jobs/${jobId}`);
     } catch (err) {
       const msg =
-        err instanceof ApiError ? humanizeApiDetail(err.detail) : String(err);
+        err instanceof ApiError ? localizeApiDetail(t, err) : String(err);
       setSubmitError(msg);
       setRetrying(false);
     }

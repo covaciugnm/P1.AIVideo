@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { getSystemStatus } from "@/lib/api";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { formatRelativeLocalized } from "@/lib/i18n/formatters";
 import * as logBus from "@/lib/log-bus";
-import { formatRelative } from "@/lib/format";
 
 import { useSettings } from "./SettingsContext";
 import styles from "./BackendStatusBadge.module.css";
@@ -100,7 +100,7 @@ export function BackendStatusBadge() {
   const title =
     reachable === false && lastErr
       ? `${settings.apiBaseUrl}\n${lastErr}`
-      : `${settings.apiBaseUrl}${lastOk ? ` — last OK ${formatRelative(lastOk)}` : ""}`;
+      : `${settings.apiBaseUrl}${lastOk ? ` — ${t("settings.testSuccess")} ${formatRelativeLocalized(t, lastOk)}` : ""}`;
 
   return (
     <div className={styles.wrapper} title={title}>

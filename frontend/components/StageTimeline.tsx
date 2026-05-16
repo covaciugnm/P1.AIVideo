@@ -1,7 +1,8 @@
 "use client";
 
-import { formatDate, formatDurationMs, humanize } from "@/lib/format";
+import { formatDate, formatDurationMs } from "@/lib/format";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { tStage } from "@/lib/i18n/formatters";
 import type { StageProgress, StageTimelineEntry } from "@/lib/types";
 
 import { StatusBadge } from "./StatusBadge";
@@ -46,7 +47,11 @@ export function StageTimeline({ stages, timeline }: StageTimelineProps) {
         const errMsg = entry?.error_message ?? null;
         const refs = entry?.artifact_refs ?? [];
         const tKey = STAGE_TRANSLATION_KEY[stage.stage_name];
-        const stageLabel = tKey ? t(tKey) : humanize(stage.stage_name);
+        // Prefer the legacy ``stageLabels.*`` mapping if present;
+        // otherwise route through ``tStage`` which goes to the
+        // ``stages.*`` section (also bilingual) and never hits raw
+        // humanize.
+        const stageLabel = tKey ? t(tKey) : tStage(t, stage.stage_name);
         return (
           <li key={stage.stage_name} className={styles.item}>
             <div className={styles.row}>

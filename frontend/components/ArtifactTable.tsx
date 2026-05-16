@@ -4,11 +4,11 @@ import {
   formatBytes,
   formatDate,
   formatDurationSec,
-  humanize,
   shortHash,
   shortId,
 } from "@/lib/format";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { tArtifactType } from "@/lib/i18n/formatters";
 import type { ArtifactResponse } from "@/lib/types";
 
 import styles from "./ArtifactTable.module.css";
@@ -40,7 +40,7 @@ export function ArtifactTable({ artifacts }: ArtifactTableProps) {
         <tbody>
           {artifacts.map((a) => (
             <tr key={a.artifact_id}>
-              <td>{humanize(a.artifact_type)}</td>
+              <td>{tArtifactType(t, a.artifact_type)}</td>
               <td>
                 <code>{shortId(a.artifact_id)}</code>
               </td>

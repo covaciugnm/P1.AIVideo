@@ -39,7 +39,7 @@ export function SettingsPanel() {
       const ok = res.ok;
       setPortTest(key, {
         kind: ok ? "success" : "error",
-        detail: `HTTP ${res.status}`,
+        detail: t("validation.httpError", { status: res.status, detail: "" }).trim().replace(/:$/, ""),
       });
       logBus.emit({
         source: "frontend",
@@ -64,7 +64,7 @@ export function SettingsPanel() {
     const controller = new AbortController();
     try {
       const status = await getSystemStatus(controller.signal);
-      const summary = `${status.app_name} · ${status.phase} · db=${status.database_reachable ? "ok" : "FAIL"}`;
+      const summary = `${status.app_name} · ${status.phase} · db=${status.database_reachable ? t("common.ok") : t("common.failed")}`;
       setTestResult({ kind: "success", detail: summary });
       logBus.emit({
         source: "frontend",
@@ -113,8 +113,8 @@ export function SettingsPanel() {
         />
         <p className={styles.help}>
           {settings.apiBaseUrlIsCustom
-            ? "Custom override applied. Editing Backend port below won't change this — clear or reset to re-link."
-            : "Auto-linked to Backend host port. Edit manually to override."}
+            ? t("settings.backendUrlCustomHint")
+            : t("settings.backendUrlAutoHint")}
         </p>
         <div className={styles.row}>
           <button
@@ -188,7 +188,7 @@ export function SettingsPanel() {
           testKey="postgres"
           test={portTests.postgres}
           onTest={null}
-          note="Checked indirectly via backend /api/v1/system/status (database_reachable)."
+          note={t("settings.postgresIndirectNote")}
         />
         <PortRow
           label={t("settings.redisPort")}
@@ -199,7 +199,7 @@ export function SettingsPanel() {
           testKey="redis"
           test={portTests.redis}
           onTest={null}
-          note="Raw TCP — browser cannot test directly. Visible via backend logs."
+          note={t("settings.redisRawTcpNote")}
         />
         <PortRow
           label="MinIO"
@@ -256,7 +256,7 @@ export function SettingsPanel() {
               )
             }
           >
-            Test /api/v1/stages
+            {t("settings.testPort")} /api/v1/stages
           </button>
           {portTests["api-stages"] &&
             (portTests["api-stages"].kind === "success" ||
@@ -435,10 +435,7 @@ export function SettingsPanel() {
         </button>
       </div>
 
-      <p className={styles.note}>
-        Logs are local browser diagnostics. Editing Docker ports here does
-        not restart Docker — copy the command above and run it from the host.
-      </p>
+      <p className={styles.note}>{t("settings.browserDiagnosticsNote")}</p>
     </div>
   );
 }
@@ -466,11 +463,12 @@ function PortRow({
   onTest,
   note,
 }: PortRowProps) {
+  const t = useT();
   return (
     <div className={styles.portRow}>
       <span className={styles.portLabel}>{label}</span>
       <span className={styles.portMap}>
-        host{" "}
+        {t("common.search").replace("Search", "host") === "host" ? "host" : "gazdă"}{" "}
         <input
           className={styles.portInput}
           type="number"
@@ -496,7 +494,7 @@ function PortRow({
           onClick={onTest}
           disabled={test?.kind === "pending"}
         >
-          {test?.kind === "pending" ? "…" : "Test"}
+          {test?.kind === "pending" ? "…" : t("common.test")}
         </button>
       ) : null}
       {test?.kind === "success" && (
@@ -537,4 +535,3 @@ function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
   return Math.max(min, Math.min(max, value));
 }
-

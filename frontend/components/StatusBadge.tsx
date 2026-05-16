@@ -1,7 +1,7 @@
 "use client";
 
-import { humanize } from "@/lib/format";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { tStatus } from "@/lib/i18n/formatters";
 
 import styles from "./StatusBadge.module.css";
 
@@ -79,10 +79,11 @@ export function StatusBadge({ status, title }: StatusBadgeProps) {
   const t = useT();
   const variant: Variant = STATUS_VARIANT[status] ?? "muted";
   const key = TRANSLATION_KEY[status];
-  // Resolve via the translation dictionary when we have a known key;
-  // otherwise fall back to the stringified status (humanised) so the
-  // UI never shows a raw enum value.
-  const label = key ? t(key) : humanize(status);
+  // Resolve via the explicit mapping first (preserves the QC / disclosure
+  // tokens that route to ``common.*`` etc.). For everything else fall
+  // through to ``tStatus()`` which goes through ``statuses.*`` with a
+  // localized "Unknown" fallback — never raw ``humanize()``.
+  const label = key ? t(key) : tStatus(t, status);
   return (
     <span
       className={`${styles.badge} ${styles[variant]}`}

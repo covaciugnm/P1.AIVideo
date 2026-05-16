@@ -5,19 +5,32 @@ export function formatDate(iso: string | null | undefined): string {
   return d.toLocaleString();
 }
 
-export function formatRelative(iso: string | null | undefined): string {
+export function formatRelative(
+  iso: string | null | undefined,
+  t?: (path: string, params?: Record<string, any>) => string,
+): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const diff = Date.now() - d.getTime();
   const sec = Math.round(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
+  if (!t) {
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.round(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.round(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.round(hr / 24);
+    return `${day}d ago`;
+  }
+  if (sec < 5) return t("time.justNow");
+  if (sec < 60) return t("time.secondsAgo", { count: sec });
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return t("time.minutesAgo", { count: min });
   const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return t("time.hoursAgo", { count: hr });
   const day = Math.round(hr / 24);
-  return `${day}d ago`;
+  return t("time.daysAgo", { count: day });
 }
 
 export function formatBytes(bytes: number | null | undefined): string {

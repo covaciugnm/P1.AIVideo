@@ -82,9 +82,9 @@ export function RightSidebar() {
             type="button"
             className={`${styles.railTab} ${state.activeTab === "test1" ? styles.railTabActive : ""}`}
             onClick={() => update({ collapsed: false, activeTab: "test1" })}
-            title="Test1 — provider diagnostics"
+            title={t("badges.test1Description")}
           >
-            <span className={styles.railLabel}>Test1</span>
+            <span className={styles.railLabel}>{t("sidebar.test1")}</span>
           </button>
         </div>
       ) : (

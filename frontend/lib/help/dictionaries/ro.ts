@@ -562,6 +562,33 @@ export const HELP_TOPICS_RO: Readonly<Record<string, HelpTopic>> = {
     ],
     related: ["jobs-list", "create-job"],
   },
+  localization: {
+    id: "localization",
+    section: "Referință",
+    title: "Localizare (i18n)",
+    summary:
+      "Regula de paritate UI RO/EN, structura dicționarelor, helperul de formatare.",
+    body: [
+      p("Faza 11A a introdus dicționarele duale EN/RO, iar Faza 11A-FIX a finalizat curățarea: fiecare șir vizibil operatorului trăiește în `frontend/lib/i18n/dictionaries/{en,ro}.ts`, fiecare topic de Help în `frontend/lib/help/dictionaries/{en,ro}.ts`, iar enumerările runtime trec prin `frontend/lib/i18n/formatters.ts` (tStatus, tStage, tArtifactType, …), astfel încât dashboard-ul nu mai afișează niciodată `pending_compliance` sau `tts_provider_not_configured` în formă brută."),
+      kv([
+        ["t(path, params)", "Caută o cheie din dicționar. Parametrii înlocuiesc placeholderele `{name}`. Cheile lipsă cad pe engleză, apoi pe calea brută."],
+        ["formatRelativeLocalized(t, iso)", "Timp relativ bilingv. Înlocuiește `formatRelative`-ul englezesc pentru orice valoare afișată operatorului."],
+        ["localizeApiDetail(t, err)", "Mapează fragmente cunoscute de erori Pydantic / FastAPI la chei din dicționar (persoană sintetică, consimțământ, intervalul duratei, câmp interzis, …) și cade pe textul brut englezesc doar pentru forme necunoscute."],
+        ["tStatus / tStage / tArtifactType / tVoiceMode / tFaceMode / tProviderStatus", "Helpere tipizate enum-la-etichetă. Pasează mereu `t` din `useT()`."],
+      ]),
+      callout(
+        "info",
+        "Regulă permanentă: fiecare etichetă / buton / eroare / stare / etapă / tip de artefact / topic de Help nou trebuie să actualizeze AMBELE dicționare în același PR. Testele din Faza 11A-FIX impun paritatea cheilor și caută engleză hardcodată în JSX.",
+        "Regulă de mentenanță",
+      ),
+      list([
+        "Engleză permisă în JSX: ID-uri de furnizori, căi API, verbe HTTP, formate de fișiere (WAV/MP3/PNG/JPEG/MP4/SRT/VTT), nume de variabile de mediu, nume de modele, stack trace-uri brute în meta-logurile.",
+        "Folosește `useT()` chiar și în componentele client cu o singură etichetă — e gratuit.",
+        "Când o valoare de dicționar ar fi identică pe ambele limbi (ex. `MP4`), păstrează identitatea — testul strict de paritate exclude lista albă tehnică.",
+      ]),
+    ],
+    related: ["settings", "errors-glossary"],
+  },
 };
 
 export const HELP_TOPIC_IDS_RO: readonly string[] = Object.keys(HELP_TOPICS_RO);

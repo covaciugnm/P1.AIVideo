@@ -29,7 +29,12 @@ import {
   getJobSummary,
   getJobTimeline,
 } from "@/lib/api";
-import { formatDate, humanize, isTerminalStatus, shortId } from "@/lib/format";
+import { formatDate, isTerminalStatus, shortId } from "@/lib/format";
+import {
+  tAudioFit,
+  tAudioFitRecommendation,
+  tStage,
+} from "@/lib/i18n/formatters";
 import * as logBus from "@/lib/log-bus";
 import type {
   ArtifactResponse,
@@ -359,7 +364,7 @@ function JobDetail({
           {fit && <FitBanner fit={fit} />}
         </div>
         {terminal && (
-          <p className="muted">Job is in a terminal state. Polling stopped.</p>
+          <p className="muted">{t("stageTimeline.terminalPollingStopped")}</p>
         )}
       </section>
 
@@ -412,6 +417,7 @@ function JobDetail({
 }
 
 function FitBanner({ fit }: { readonly fit: AudioFitCheckResponse }) {
+  const t = useT();
   const cls =
     fit.fit_status === "ok"
       ? styles.fitOk
@@ -422,21 +428,23 @@ function FitBanner({ fit }: { readonly fit: AudioFitCheckResponse }) {
     fit.delta_seconds === null
       ? "—"
       : `${fit.delta_seconds > 0 ? "+" : ""}${fit.delta_seconds.toFixed(2)}s`;
+  const audioSec =
+    fit.audio_duration_seconds !== null
+      ? `${fit.audio_duration_seconds.toFixed(2)}`
+      : "—";
   return (
     <div className={`${styles.fitBanner} ${cls}`}>
       <span>
-        Audio fit: <strong>{humanize(fit.fit_status)}</strong>
+        {t("stageTimeline.audioFitTitle")}: <strong>{tAudioFit(t, fit.fit_status)}</strong>
       </span>
       <span className={styles.fitMeta}>
-        target {fit.target_duration_seconds}s · audio{" "}
-        {fit.audio_duration_seconds !== null
-          ? `${fit.audio_duration_seconds.toFixed(2)}s`
-          : "—"}{" "}
-        · Δ {deltaLabel}
+        {t("stageTimeline.audioFitTarget", { seconds: fit.target_duration_seconds })} ·{" "}
+        {t("stageTimeline.audioFitAudio", { seconds: audioSec })} ·{" "}
+        {t("stageTimeline.audioFitDelta", { delta: deltaLabel })}
       </span>
       {fit.fit_status !== "ok" && (
         <span className={styles.fitRec}>
-          → {humanize(fit.recommendation)}
+          → {tAudioFitRecommendation(t, fit.recommendation)}
         </span>
       )}
     </div>
@@ -444,6 +452,7 @@ function FitBanner({ fit }: { readonly fit: AudioFitCheckResponse }) {
 }
 
 function StageCountsStrip({ progress }: { readonly progress: JobProgress }) {
+  const t = useT();
   // Phase 4F-2 added the flat name lists. They're optional in the TS
   // contract (older payloads may not include them), so fall back to the
   // count fields + derive the lists from ``stages`` when needed.
@@ -460,25 +469,36 @@ function StageCountsStrip({ progress }: { readonly progress: JobProgress }) {
     progress.stages
       .filter((s) => s.status === "failed" || s.status === "rejected")
       .map((s) => s.stage_name);
+  const failedTitle =
+    failedNames.length > 0
+      ? failedNames.map((n) => tStage(t, n)).join(", ")
+      : t("stageTimeline.noFailedStages");
+  const pendingTitle = pendingNames.map((n) => tStage(t, n)).join(", ");
   return (
     <div className={styles.stageCounts}>
-      <span className={styles.stageCountCompleted} title="Completed stages">
-        ✓ {completedCount} completed
+      <span
+        className={styles.stageCountCompleted}
+        title={t("stageTimeline.completedStages")}
+      >
+        ✓ {t("stageTimeline.countCompleted", { count: completedCount })}
       </span>
       <span
         className={
           failedCount > 0 ? styles.stageCountFailed : styles.stageCountFailedMuted
         }
-        title={failedNames.length > 0 ? failedNames.map(humanize).join(", ") : "No failed stages"}
+        title={failedTitle}
       >
-        ✗ {failedCount} failed
+        ✗ {t("stageTimeline.countFailed", { count: failedCount })}
       </span>
-      <span className={styles.stageCountPending} title={pendingNames.map(humanize).join(", ")}>
-        … {pendingCount} pending
+      <span className={styles.stageCountPending} title={pendingTitle}>
+        … {t("stageTimeline.countPending", { count: pendingCount })}
       </span>
       {progress.current_stage && (
-        <span className={styles.stageCurrent} title="Current stage">
-          → {humanize(progress.current_stage)}
+        <span
+          className={styles.stageCurrent}
+          title={t("stageTimeline.currentStage")}
+        >
+          → {tStage(t, progress.current_stage)}
         </span>
       )}
     </div>

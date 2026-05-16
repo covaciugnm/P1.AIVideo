@@ -14,14 +14,6 @@ import type { ProviderCategory, ProviderLocality } from "@/lib/types";
 
 import styles from "./CustomProvidersSection.module.css";
 
-const CATEGORY_OPTIONS: readonly { value: ProviderCategory; label: string }[] = [
-  { value: "llm", label: "LLM (scriptwriter)" },
-  { value: "tts", label: "TTS (voice)" },
-  { value: "video_generator", label: "Video generator" },
-  { value: "audio_processor", label: "Audio processor" },
-  { value: "image_processor", label: "Image processor" },
-];
-
 function blankInput(): CustomProviderInput {
   return {
     category: "llm",
@@ -42,12 +34,19 @@ function blankInput(): CustomProviderInput {
 
 export function CustomProvidersSection() {
   const t = useT();
-  void t("providers.addCustom");
   const [list, setList] = useState<CustomProviderInput[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState<CustomProviderInput>(blankInput());
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+
+  const categoryOptions: readonly { value: ProviderCategory; label: string }[] = [
+    { value: "llm", label: t("providers.categoryLlm") },
+    { value: "tts", label: t("providers.categoryTts") },
+    { value: "video_generator", label: t("providers.categoryVideo") },
+    { value: "audio_processor", label: t("providers.categoryAudioProcessor") },
+    { value: "image_processor", label: t("providers.categoryImageProcessor") },
+  ];
 
   useEffect(() => {
     setList(loadCustomProviders());
@@ -69,6 +68,9 @@ export function CustomProvidersSection() {
       (p) => p.category === draft.category && p.provider_id === draft.provider_id,
     );
     if (existing) {
+      // Phase 11A — window.confirm remains untranslated in the prompt
+      // but we could use a custom Modal later. For now we use standard
+      // confirm which is browser-localized.
       if (
         !window.confirm(
           `Overwrite existing custom provider "${draft.provider_id}" in category "${draft.category}"?`,
@@ -124,8 +126,8 @@ export function CustomProvidersSection() {
   if (!hydrated) {
     return (
       <div className={styles.section}>
-        <h3 className={styles.heading}>Custom providers</h3>
-        <p className={styles.muted}>Loading…</p>
+        <h3 className={styles.heading}>{t("customProviders.title")}</h3>
+        <p className={styles.muted}>{t("customProviders.loading")}</p>
       </div>
     );
   }
@@ -133,7 +135,7 @@ export function CustomProvidersSection() {
   return (
     <div className={styles.section}>
       <div className={styles.headerRow}>
-        <h3 className={styles.heading}>Custom providers</h3>
+        <h3 className={styles.heading}>{t("customProviders.title")}</h3>
         <button
           type="button"
           className={styles.btn}
@@ -142,18 +144,13 @@ export function CustomProvidersSection() {
             setError(null);
           }}
         >
-          {showForm ? "Cancel" : "+ Add custom provider"}
+          {showForm ? t("customProviders.cancel") : t("customProviders.add")}
         </button>
       </div>
-      <p className={styles.note}>
-        Metadata only. Adding a provider here registers it for job
-        selection but does <strong>NOT</strong> install or configure the
-        runtime. No shell execution, no package install, no backend file
-        write. Secrets / API keys are not accepted.
-      </p>
+      <p className={styles.note}>{t("customProviders.metadataOnlyNote")}</p>
 
       {list.length === 0 && !showForm && (
-        <p className={styles.muted}>No custom providers yet.</p>
+        <p className={styles.muted}>{t("customProviders.noCustom")}</p>
       )}
 
       {list.length > 0 && (
@@ -169,18 +166,18 @@ export function CustomProvidersSection() {
                   type="button"
                   className={styles.delete}
                   onClick={() => handleDelete(p)}
-                  aria-label={`Delete ${p.provider_id}`}
+                  aria-label={t("customProviders.deleteAria", { id: p.provider_id })}
                 >
                   ✕
                 </button>
               </div>
               <div className={styles.flags}>
-                {p.requires_gpu && <span className={styles.gpu}>GPU required</span>}
-                {p.requires_network && <span className={styles.net}>requires network</span>}
+                {p.requires_gpu && <span className={styles.gpu}>{t("customProviders.gpuRequiredFlag")}</span>}
+                {p.requires_network && <span className={styles.net}>{t("customProviders.requiresNetwork")}</span>}
                 {p.requires_model_files && (
-                  <span className={styles.assets}>requires model files</span>
+                  <span className={styles.assets}>{t("customProviders.requiresModelFiles")}</span>
                 )}
-                {!p.enabled && <span className={styles.disabled}>disabled</span>}
+                {!p.enabled && <span className={styles.disabled}>{t("customProviders.disabled")}</span>}
               </div>
               {p.notes && <p className={styles.notes}>{p.notes}</p>}
             </li>
@@ -190,7 +187,7 @@ export function CustomProvidersSection() {
 
       {showForm && (
         <div className={styles.form}>
-          <Field label="Category">
+          <Field label={t("customProviders.category")}>
             <select
               className={styles.input}
               value={draft.category}
@@ -198,14 +195,14 @@ export function CustomProvidersSection() {
                 setDraft({ ...draft, category: e.target.value as ProviderCategory })
               }
             >
-              {CATEGORY_OPTIONS.map((o) => (
+              {categoryOptions.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="provider_id (slug-safe)">
+          <Field label={t("customProviders.providerIdSlugSafe")}>
             <input
               type="text"
               className={styles.input}
@@ -213,10 +210,10 @@ export function CustomProvidersSection() {
               onChange={(e) =>
                 setDraft({ ...draft, provider_id: e.target.value.trim() })
               }
-              placeholder="e.g. my_local_tts"
+              placeholder={t("customProviders.providerIdPlaceholder")}
             />
           </Field>
-          <Field label="Label">
+          <Field label={t("customProviders.label")}>
             <input
               type="text"
               className={styles.input}
@@ -224,16 +221,16 @@ export function CustomProvidersSection() {
               onChange={(e) => setDraft({ ...draft, label: e.target.value })}
             />
           </Field>
-          <Field label="backend_type">
+          <Field label={t("customProviders.backendType")}>
             <input
               type="text"
               className={styles.input}
               value={draft.backend_type}
               onChange={(e) => setDraft({ ...draft, backend_type: e.target.value })}
-              placeholder="e.g. local_http"
+              placeholder={t("customProviders.backendTypePlaceholder")}
             />
           </Field>
-          <Field label="Local or external">
+          <Field label={t("customProviders.localityField")}>
             <select
               className={styles.input}
               value={draft.local_or_external}
@@ -244,20 +241,20 @@ export function CustomProvidersSection() {
                 })
               }
             >
-              <option value="local">local</option>
-              <option value="external">external</option>
+              <option value="local">{t("customProviders.localityLocal")}</option>
+              <option value="external">{t("customProviders.localityExternal")}</option>
             </select>
           </Field>
-          <Field label="Endpoint URL (optional, no credentials)">
+          <Field label={t("customProviders.endpointUrlOptional")}>
             <input
               type="url"
               className={styles.input}
               value={draft.endpoint_url ?? ""}
               onChange={(e) => setDraft({ ...draft, endpoint_url: e.target.value })}
-              placeholder="http://localhost:11434"
+              placeholder={t("customProviders.endpointUrlPlaceholder")}
             />
           </Field>
-          <Field label="Default model (optional)">
+          <Field label={t("customProviders.defaultModelOptional")}>
             <input
               type="text"
               className={styles.input}
@@ -265,7 +262,7 @@ export function CustomProvidersSection() {
               onChange={(e) => setDraft({ ...draft, default_model: e.target.value })}
             />
           </Field>
-          <Field label="Supported models (comma-separated)">
+          <Field label={t("customProviders.supportedModelsCsv")}>
             <input
               type="text"
               className={styles.input}
@@ -290,7 +287,7 @@ export function CustomProvidersSection() {
                   setDraft({ ...draft, requires_network: e.target.checked })
                 }
               />
-              <span>requires network</span>
+              <span>{t("customProviders.requiresNetwork")}</span>
             </label>
             <label className={styles.check}>
               <input
@@ -300,7 +297,7 @@ export function CustomProvidersSection() {
                   setDraft({ ...draft, requires_gpu: e.target.checked })
                 }
               />
-              <span>requires GPU</span>
+              <span>{t("customProviders.requiresGpu")}</span>
             </label>
             <label className={styles.check}>
               <input
@@ -310,7 +307,7 @@ export function CustomProvidersSection() {
                   setDraft({ ...draft, requires_model_files: e.target.checked })
                 }
               />
-              <span>requires model files</span>
+              <span>{t("customProviders.requiresModelFiles")}</span>
             </label>
             <label className={styles.check}>
               <input
@@ -318,10 +315,10 @@ export function CustomProvidersSection() {
                 checked={draft.enabled}
                 onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
               />
-              <span>enabled</span>
+              <span>{t("customProviders.enabled")}</span>
             </label>
           </div>
-          <Field label="Notes">
+          <Field label={t("customProviders.notes")}>
             <input
               type="text"
               className={styles.input}
@@ -332,7 +329,7 @@ export function CustomProvidersSection() {
           {error && <p className={styles.err}>{error}</p>}
           <div className={styles.formActions}>
             <button type="button" className={styles.btnPrimary} onClick={handleAdd}>
-              Add
+              {t("customProviders.addAction")}
             </button>
           </div>
         </div>

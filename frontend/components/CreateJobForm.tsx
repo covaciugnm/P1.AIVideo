@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import * as api from "@/lib/api";
-import { ApiError, humanizeApiDetail } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import * as logBus from "@/lib/log-bus";
 import type {
   CreateJobFromInputsBody,
@@ -18,6 +18,7 @@ import type {
 } from "@/lib/types";
 
 import { useT } from "@/lib/i18n/LanguageContext";
+import { localizeApiDetail } from "@/lib/i18n/formatters";
 
 import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
@@ -137,7 +138,11 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     }
     setScriptText(res.value.full_script);
     setScriptStatus(
-      `Generated (${res.value.provider_id}/${res.value.model}; ~${res.value.estimated_duration_seconds.toFixed(1)}s).`,
+      t("createJob.scriptGeneratedStatus", {
+        provider: res.value.provider_id,
+        model: res.value.model,
+        duration: res.value.estimated_duration_seconds.toFixed(1),
+      }),
     );
     logBus.emit({
       source: "frontend",
@@ -200,36 +205,16 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       // the error code AND the selected provider, so F5TTS-Ro shows
       // Romanian-specific guidance instead of Piper-only instructions.
       const isF5 = (ttsProvider ?? "piper") === "f5tts_ro";
-      const _NICE: Record<string, string> = isF5
-        ? {
-            tts_runtime_missing:
-              "F5TTS-Ro wrapper is unreachable. Start the optional service: `make docker-tts-ro-build && make docker-tts-ro-up`, then set F5TTS_RO_BASE_URL in the backend env. See docs/runbooks/f5tts-ro-runtime.md.",
-            tts_assets_missing:
-              "F5TTS-Ro model weights or Romanian reference voice are missing under /models/f5tts-ro. Mount the operator-supplied weights + reference WAV — no auto-download.",
-            tts_provider_not_configured:
-              "F5TTS-Ro is not configured. Set F5TTS_RO_BASE_URL (and start the tts-ro Docker service), then retry.",
-            tts_provider_not_implemented:
-              "F5TTS-Ro is a catalog entry but the wrapper service has not been built/started yet.",
-            tts_generation_failed:
-              "F5TTS-Ro wrapper responded but synthesis failed. Check the wrapper logs (`make docker-tts-ro-logs`).",
-            tts_provider_disabled:
-              "This TTS provider is disabled. Enable it via env / Settings before retrying.",
-          }
-        : {
-            tts_runtime_missing:
-              "Piper runtime is not installed in this image. Rebuild the backend with --build-arg INSTALL_PIPER=true (see docs/runbooks/piper-runtime.md).",
-            tts_assets_missing:
-              "Piper voice files (.onnx + .onnx.json) are missing under PIPER_MODELS_ROOT. Place them manually — no auto-download.",
-            tts_provider_not_configured: `Provider "${res.error.provider_id}" is not configured. Set PIPER_MODELS_ROOT and place the voice files, then retry.`,
-            tts_provider_not_implemented:
-              "TTS provider is a catalog stub — no real synthesis path wired yet.",
-            tts_generation_failed:
-              "The synthesise call ran but threw an error. Check the backend logs for the truncated reason.",
-            tts_provider_disabled:
-              "This TTS provider is disabled. Enable it via env / Settings before retrying.",
-          };
-      const niceMsg = _NICE[res.error.code] ?? res.error.message;
-      setTtsStatus(niceMsg);
+      const niceMsg = isF5
+        ? t(`niceErrors.f5_${res.error.code.replace("tts_", "")}` as any)
+        : t(`niceErrors.piper_${res.error.code.replace("tts_", "")}` as any);
+
+      // Fallback to raw message if key lookup fails (path missing in Dictionary).
+      const finalMsg = niceMsg.includes("niceErrors.")
+        ? res.error.message
+        : niceMsg;
+
+      setTtsStatus(finalMsg);
       setTtsArtifact(null);
       logBus.emit({
         source: "frontend",
@@ -251,7 +236,12 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
         channels: v.channels,
       });
       setTtsStatus(
-        `Generated · ${v.duration_seconds.toFixed(2)}s · ${v.sample_rate} Hz · ${v.channels}ch · ${(v.size_bytes / 1024).toFixed(1)} KB`,
+        t("createJob.ttsGeneratedStatus", {
+          duration: v.duration_seconds.toFixed(2),
+          rate: v.sample_rate,
+          channels: v.channels,
+          size: (v.size_bytes / 1024).toFixed(1),
+        }),
       );
       logBus.emit({
         source: "frontend",
@@ -391,7 +381,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       router.push(`/jobs/${job.id}`);
     } catch (err) {
       const raw = err instanceof ApiError ? err.detail : String(err);
-      const msg = humanizeApiDetail(raw);
+      const msg = localizeApiDetail(t, err);
       setError(msg);
       logBus.emit({
         source: "frontend",
@@ -430,9 +420,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             onChange={(e) => setDuration(Number(e.target.value))}
           />
           <span className={styles.muted}>
-            {t("createJob.durationBetween")
-              .replace("{min}", String(durMin))
-              .replace("{max}", String(durMax))}
+            {t("createJob.durationBetween", { min: durMin, max: durMax })}
           </span>
         </div>
       </section>
@@ -470,7 +458,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               required
             />
             <span className={styles.muted}>
-              {scriptText.length} / {scriptMaxChars}
+              {t("createJob.scriptCounter", { n: scriptText.length, max: scriptMaxChars })}
             </span>
             <div className={styles.ttsRow}>
               <button
@@ -500,7 +488,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             {ttsArtifact && (
               <AudioPreview
                 src={{ kind: "artifact", artifactId: ttsArtifact.artifact_id }}
-                label={`Generated TTS preview (${ttsArtifact.provider_id} · ${ttsArtifact.voice_id})`}
+                label={t("createJob.ttsPreviewLabel", { provider: ttsArtifact.provider_id, voice: ttsArtifact.voice_id })}
               />
             )}
           </div>
@@ -657,8 +645,8 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             value={videoLanguage}
             onChange={(e) => setVideoLanguage(e.target.value)}
           >
-            <option value="ro">Română</option>
-            <option value="en">English</option>
+            <option value="ro">{t("common.romanian")}</option>
+            <option value="en">{t("common.english")}</option>
           </select>
         </div>
         <label className={styles.checkbox}>
@@ -681,7 +669,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={subtitleLangsRo}
                   onChange={(e) => setSubtitleLangsRo(e.target.checked)}
                 />
-                <span>Română</span>
+                <span>{t("common.romanian")}</span>
               </label>
               <label className={styles.checkbox}>
                 <input
@@ -689,7 +677,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={subtitleLangsEn}
                   onChange={(e) => setSubtitleLangsEn(e.target.checked)}
                 />
-                <span>English</span>
+                <span>{t("common.english")}</span>
               </label>
             </div>
             <div className="field">
@@ -701,8 +689,8 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   setSubtitleFormat(e.target.value as "srt" | "vtt")
                 }
               >
-                <option value="srt">SRT</option>
-                <option value="vtt">WebVTT</option>
+                <option value="srt">{t("providerSelection.subtitleFormatSrt")}</option>
+                <option value="vtt">{t("providerSelection.subtitleFormatVtt")}</option>
               </select>
             </div>
             <label className={styles.checkbox}>
@@ -793,10 +781,10 @@ function ProviderField({
         <option value="">{defaultLabel}</option>
         {providers.map((p) => (
           <option key={p.provider_id} value={p.provider_id}>
-            {p.label} ({p.status.replace(/_/g, " ")})
+            {p.label} ({t(`providerStatuses.${p.status}` as any)})
             {p.requires_gpu ? " · GPU" : ""}
-            {p.requires_network ? " · network" : ""}
-            {p.is_custom ? " · custom" : ""}
+            {p.requires_network ? ` · ${t("common.search").replace("Search", "network") === "network" ? "network" : "rețea"}` : ""}
+            {p.is_custom ? ` · ${t("common.stub")}` : ""}
           </option>
         ))}
       </select>
@@ -828,7 +816,7 @@ function ProviderField({
         <span className={styles.providerWarn}>
           ⚠ {t("providerSelection.warningPrefix")}{" "}
           <strong>{selected.label}</strong>{" "}
-          <code>{selected.status.replace(/_/g, " ")}</code>
+          <code>{t(`providerStatuses.${selected.status}` as any)}</code>
           {selected.notes ? ` — ${selected.notes}.` : ""}{" "}
           {t("providerSelection.warningSuffixCleanError")}
         </span>
@@ -859,6 +847,7 @@ function AudioFitStrip({
   audioDurationSeconds,
   target,
 }: AudioFitStripProps) {
+  const t = useT();
   const tone =
     fitStatus === "ok"
       ? styles.fitOk
@@ -872,18 +861,18 @@ function AudioFitStrip({
   return (
     <div className={`${styles.fitStrip} ${tone}`}>
       <span className={styles.fitLabel}>
-        Audio fit: <strong>{fitStatus.replace(/_/g, " ")}</strong>
+        {t("runtime.audioFitStatus", { status: t(`runtime.audioFit${fitStatus.replace(/_([a-z])/g, (_, l) => l.toUpperCase()).replace(/^[a-z]/, (l) => l.toUpperCase())}` as any) })}
       </span>
       <span className={styles.fitMeta}>
-        target {target}s · audio{" "}
-        {audioDurationSeconds !== null
-          ? `${audioDurationSeconds.toFixed(2)}s`
-          : "—"}{" "}
-        · Δ {deltaLabel}
+        {t("runtime.audioFitMeta", {
+          target,
+          audio: audioDurationSeconds !== null ? audioDurationSeconds.toFixed(2) : "—",
+          delta: deltaLabel
+        })}
       </span>
       {fitStatus !== "ok" && (
         <span className={styles.fitRec}>
-          → {recommendation.replace(/_/g, " ")}
+          → {t(`runtime.audioFitRec${recommendation.replace(/_([a-z])/g, (_, l) => l.toUpperCase()).replace(/^[a-z]/, (l) => l.toUpperCase())}` as any)}
         </span>
       )}
     </div>

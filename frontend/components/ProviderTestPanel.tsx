@@ -159,30 +159,31 @@ export function ProviderTestPanel() {
   return (
     <div className={styles.panel}>
       <div className={styles.toolbar}>
-        <span className={styles.head}>Provider diagnostics</span>
+        <span className={styles.head}>{t("providers.test1Title")}</span>
         <button
           type="button"
           className={styles.refreshBtn}
           onClick={() => setRefreshTick((n) => n + 1)}
-          title="Reload provider catalog"
+          title={t("providers.refreshCatalog")}
         >
-          ↻ Refresh
+          {t("providers.refreshAction")}
         </button>
       </div>
       <p className={styles.intro}>
-        Probe each provider category. The buttons hit only the safe
-        readiness / preview endpoints — video generators stay metadata-only.
-        Backend: <code>{getActiveApiBaseUrl()}</code>
+        {t("providers.diagnosticsIntro")}{" "}
+        {t("providers.backendLabel")}: <code>{getActiveApiBaseUrl()}</code>
       </p>
 
       {loadError && (
-        <p className={styles.error}>Failed to load providers: {loadError}</p>
+        <p className={styles.error}>
+          {t("providers.failedToLoad", { detail: loadError })}
+        </p>
       )}
 
       {providers && (
         <>
           <CategorySection
-            title="Script LLM"
+            title={t("providers.categoryLlm")}
             category="llm"
             providers={providers.llm ?? []}
             outcomes={outcomes}
@@ -191,7 +192,7 @@ export function ProviderTestPanel() {
             test={(p) => runScriptTest(p, setOutcome)}
           />
           <CategorySection
-            title="TTS"
+            title={t("providers.categoryTts")}
             category="tts"
             providers={providers.tts ?? []}
             outcomes={outcomes}
@@ -200,17 +201,17 @@ export function ProviderTestPanel() {
             test={(p) => runTtsTest(p, setOutcome)}
           />
           <CategorySection
-            title="Video Generator"
+            title={t("providers.categoryVideo")}
             category="video_generator"
             providers={providers.video_generator ?? []}
             outcomes={outcomes}
             setOutcome={setOutcome}
             usedInDropdowns={usedInDropdowns}
             test={(p) => runVideoReadinessTest(p, setOutcome)}
-            footnote="Real video generation is not run from Test1. Readiness only."
+            footnote={t("providers.videoReadinessFootnote")}
           />
           <CategorySection
-            title="Audio Processor"
+            title={t("providers.categoryAudioProcessor")}
             category="audio_processor"
             providers={providers.audio_processor ?? []}
             outcomes={outcomes}
@@ -219,7 +220,7 @@ export function ProviderTestPanel() {
             test={(p) => runMetadataOnlyTest(p, setOutcome)}
           />
           <CategorySection
-            title="Image Processor"
+            title={t("providers.categoryImageProcessor")}
             category="image_processor"
             providers={providers.image_processor ?? []}
             outcomes={outcomes}

@@ -88,6 +88,8 @@ export const DICTIONARY_EN: Dictionary = {
     ok: "OK",
     off: "Off",
     on: "On",
+    romanian: "Romanian",
+    english: "English",
   },
   dashboard: {
     title: "Dashboard",
@@ -230,6 +232,9 @@ export const DICTIONARY_EN: Dictionary = {
     missingScriptText: "Script text is required when synthesizing with TTS.",
     missingAudioRef: "An uploaded audio artifact is required when using provided audio.",
     missingImageRef: "An uploaded image artifact is required when using provided image.",
+    scriptGeneratedStatus: "Generated ({provider}/{model}; ~{duration}s).",
+    ttsGeneratedStatus: "Generated · {duration}s · {rate} Hz · {channels}ch · {size} KB",
+    ttsPreviewLabel: "Generated TTS preview ({provider} · {voice})",
   },
   uploads: {
     title: "Uploads",
@@ -296,6 +301,12 @@ export const DICTIONARY_EN: Dictionary = {
     portUnreachable: "Port unreachable",
     providerDefaultsHint: "Pick the default script / TTS / video provider id used when a job doesn't override it.",
     customProvidersHint: "Register your own provider ids that point at a local HTTP endpoint or external API. Stored in localStorage.",
+    postgresIndirectNote:
+      "Checked indirectly via backend /api/v1/system/status (database_reachable).",
+    redisRawTcpNote:
+      "Raw TCP — browser cannot test directly. Visible via backend logs.",
+    browserDiagnosticsNote:
+      "Logs are local browser diagnostics. Editing Docker ports here does not restart Docker — copy the command above and run it from the host.",
   },
   jobDetail: {
     overview: "Overview",
@@ -379,9 +390,9 @@ export const DICTIONARY_EN: Dictionary = {
     notes: "Notes",
     docsLink: "Documentation",
     warning: "Warning",
-    categoryLlm: "Script LLM",
-    categoryTts: "TTS",
-    categoryVideo: "Video",
+    categoryLlm: "LLM (script generation)",
+    categoryTts: "TTS (audio narration)",
+    categoryVideo: "Video generator (lip-sync)",
     categoryAudioProcessor: "Audio processor",
     categoryImageProcessor: "Image processor",
     selectProvider: "Select a provider",
@@ -391,6 +402,18 @@ export const DICTIONARY_EN: Dictionary = {
     diagnosticsRunning: "Running…",
     diagnosticsOk: "OK",
     diagnosticsFailed: "Failed",
+    refreshCatalog: "Reload provider catalog",
+    refreshAction: "↻ Refresh",
+    diagnosticsIntro:
+      "Probe each provider category. The buttons only hit the safe readiness / preview endpoints — video generators stay metadata-only.",
+    failedToLoad: "Failed to load providers: {detail}",
+    videoReadinessFootnote:
+      "Real video generation is not run from Test1. Readiness only.",
+    backendLabel: "Backend",
+    providersTitle: "Providers",
+    loadingProviders: "Loading providers…",
+    addingProviderNote: "Adding a new provider package needs config + runtime install on the host (e.g. piper-tts). Configuration via env vars.",
+    defaultOption: "— default —",
   },
   logs: {
     title: "Logs",
@@ -547,7 +570,6 @@ export const DICTIONARY_EN: Dictionary = {
     category: "Category",
     label: "Label",
     baseUrl: "Base URL",
-    isLocal: "Local",
     requiresGpu: "Requires GPU",
     requiresModelFiles: "Requires model files",
     notes: "Notes",
@@ -555,6 +577,27 @@ export const DICTIONARY_EN: Dictionary = {
     cancel: "Cancel",
     noCustom: "No custom providers registered.",
     validationError: "Validation error: please check the fields above.",
+    loading: "Loading…",
+    metadataOnlyNote:
+      "Metadata only. Adding a provider here registers it for job selection but does NOT install or configure the runtime. No shell execution, no package install, no backend file write. Secrets / API keys are not accepted.",
+    providerIdSlugSafe: "Provider id (slug-safe)",
+    providerIdPlaceholder: "e.g. my_local_tts",
+    backendType: "Backend type",
+    isLocal: "Local provider",
+    backendTypePlaceholder: "e.g. local_http",
+    localityField: "Local or external",
+    localityLocal: "local",
+    localityExternal: "external",
+    endpointUrlOptional: "Endpoint URL (optional, no credentials)",
+    endpointUrlPlaceholder: "http://localhost:11434",
+    defaultModelOptional: "Default model (optional)",
+    supportedModelsCsv: "Supported models (comma-separated)",
+    requiresNetwork: "Requires network",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    gpuRequiredFlag: "GPU required",
+    addAction: "Add",
+    deleteAria: "Delete {id}",
   },
   providersSection: {
     title: "Provider defaults",
@@ -653,6 +696,15 @@ export const DICTIONARY_EN: Dictionary = {
     failedStages: "Failed stages",
     pendingStages: "Pending stages",
     noStages: "No stages recorded yet.",
+    countCompleted: "{count} completed",
+    countFailed: "{count} failed",
+    countPending: "{count} pending",
+    noFailedStages: "No failed stages",
+    terminalPollingStopped: "Job is in a terminal state. Polling stopped.",
+    audioFitTitle: "Audio fit",
+    audioFitTarget: "target {seconds}s",
+    audioFitAudio: "audio {seconds}s",
+    audioFitDelta: "Δ {delta}",
   },
   recoveryHistory: {
     cancelledAt: "Cancelled at",
@@ -747,6 +799,8 @@ export const DICTIONARY_EN: Dictionary = {
     qcDecisionPass: "Pass",
     qcDecisionFail: "Fail",
     qcDecisionWarn: "Warning",
+    audioFitStatus: "Audio fit: {status}",
+    audioFitMeta: "target {target}s · audio {audio}s · Δ {delta}",
   },
   validation: {
     required: "This field is required.",
@@ -801,5 +855,29 @@ export const DICTIONARY_EN: Dictionary = {
   },
   complianceList: {
     empty: "No compliance events recorded yet.",
+  },
+  niceErrors: {
+    piper_runtime_missing:
+      "Piper runtime is not installed in this image. Rebuild the backend with --build-arg INSTALL_PIPER=true (see docs/runbooks/piper-runtime.md).",
+    piper_assets_missing:
+      "Piper voice files (.onnx + .onnx.json) are missing under PIPER_MODELS_ROOT. Place them manually — no auto-download.",
+    piper_provider_not_configured:
+      'Provider "{provider}" is not configured. Set PIPER_MODELS_ROOT and place the voice files, then retry.',
+    piper_provider_not_implemented:
+      "TTS provider is a catalog stub — no real synthesis path wired yet.",
+    piper_generation_failed:
+      "The synthesise call ran but threw an error. Check the backend logs for the truncated reason.",
+    f5_runtime_missing:
+      "F5TTS-Ro wrapper is unreachable. Start the optional service: `make docker-tts-ro-build && make docker-tts-ro-up`, then set F5TTS_RO_BASE_URL in the backend env. See docs/runbooks/f5tts-ro-runtime.md.",
+    f5_assets_missing:
+      "F5TTS-Ro model weights or Romanian reference voice are missing under /models/f5tts-ro. Mount the operator-supplied weights + reference WAV — no auto-download.",
+    f5_provider_not_configured:
+      "F5TTS-Ro is not configured. Set F5TTS_RO_BASE_URL (and start the tts-ro Docker service), then retry.",
+    f5_provider_not_implemented:
+      "F5TTS-Ro is a catalog entry but the wrapper service has not been built/started yet.",
+    f5_generation_failed:
+      "F5TTS-Ro wrapper responded but synthesis failed. Check the wrapper logs (`make docker-tts-ro-logs`).",
+    provider_disabled:
+      "This TTS provider is disabled. Enable it via env / Settings before retrying.",
   },
 };

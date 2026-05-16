@@ -637,7 +637,16 @@ runbook in the same PR.** "User-visible" here means: a UI page or control, a
 backend API endpoint, a provider, a runtime status, a categorised error code,
 an operator setting, or a Docker profile.
 
-Bilingual checklist (Phase 11A re-do):
+Bilingual checklist (Phase 11A re-do + Phase 11A-FIX):
+
+> **Permanent rule:** every user-visible UI / API / provider / runtime /
+> error / help change must update the EN and RO dictionaries and Help
+> topics. A change is *incomplete* if it introduces visible text without
+> i18n keys. The Phase 11A-FIX test suite
+> (`test_phase11a_no_hardcoded_english.py`) scans every `frontend/app/`
+> and `frontend/components/` `.tsx` file for the known regression
+> phrases and refuses `humanize()` imports in mainline visible
+> components.
 
 - New UI label → add the key in **both** `frontend/lib/i18n/dictionaries/en.ts` and `ro.ts`.
 - New button or form section → wire `useT()` + add a `<HelpHint slug="…"/>`.
@@ -645,6 +654,9 @@ Bilingual checklist (Phase 11A re-do):
 - New provider → add a help topic in **both** `frontend/lib/help/dictionaries/en.ts` and `ro.ts`, plus its error codes.
 - New error code → add it to `errors.*` in both UI dictionaries **and** mention it in the `errors-glossary` help topic.
 - New setting → add it to `settings.*` in both UI dictionaries, document in the `settings` help topic.
+- New status / stage / artifact type / voice mode / face mode / provider status → add to `statuses.*` / `stages.*` / `artifactTypes.*` / `voiceModes.*` / `faceModes.*` / `providerStatuses.*` in **both** UI dictionaries. Use the matching `t<Enum>` helper from `frontend/lib/i18n/formatters.ts` — never `humanize()`.
+- New relative-time display → use `formatRelativeLocalized(t, iso)`, never `formatRelative(iso)`.
+- New backend Pydantic validation message → add a mapping in `localizeApiDetail` and a `validation.*` key in both dictionaries.
 
 Concretely, every PR that touches one of those must also update **at least
 one** of these:

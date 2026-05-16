@@ -261,3 +261,210 @@ def test_ro_is_not_a_clone_of_en():
         f"Only {diffs} keys differ between EN and RO — looks like a clone, not a "
         "translation. Translate the missing values."
     )
+
+
+# ---------- Phase 11A-FIX: required sections + new key buckets ----------
+
+# Top-level dictionary sections that MUST exist in both files. Captures
+# the contract the formatters helper + UI components depend on.
+REQUIRED_SECTIONS: tuple[str, ...] = (
+    "common",
+    "nav",
+    "dashboard",
+    "jobs",
+    "jobDetail",
+    "createJob",
+    "uploads",
+    "settings",
+    "providers",
+    "customProviders",
+    "logs",
+    "help",
+    "statuses",
+    "stages",
+    "artifactTypes",
+    "voiceModes",
+    "faceModes",
+    "providerStatuses",
+    "runtime",
+    "errors",
+    "validation",
+    "time",
+)
+
+# Required leaf keys inside specific sections. Matched as
+# ``<section>.<leaf>`` once the test has located the section opener.
+PHASE_11A_FIX_REQUIRED_KEYS: tuple[tuple[str, str], ...] = (
+    ("statuses", "pending_compliance"),
+    ("statuses", "rejected"),
+    ("statuses", "failed"),
+    ("statuses", "published"),
+    ("statuses", "running"),
+    ("statuses", "succeeded"),
+    ("stages", "policy_gate"),
+    ("stages", "scriptwriter"),
+    ("stages", "voice"),
+    ("stages", "lipsync"),
+    ("stages", "publisher"),
+    ("artifactTypes", "script"),
+    ("artifactTypes", "audio"),
+    ("artifactTypes", "image"),
+    ("artifactTypes", "video"),
+    ("artifactTypes", "final_export"),
+    ("voiceModes", "tts"),
+    ("voiceModes", "provided_audio"),
+    ("faceModes", "provided_image"),
+    ("providerStatuses", "available"),
+    ("providerStatuses", "not_configured"),
+    ("validation", "syntheticPersonRequired"),
+    ("validation", "consentRequired"),
+    ("validation", "scriptTextRequiredForTts"),
+    ("validation", "targetDurationRange"),
+    ("validation", "extraForbiddenField"),
+    ("time", "justNow"),
+    ("time", "secondsAgo"),
+    ("time", "minutesAgo"),
+    ("time", "hoursAgo"),
+    ("time", "daysAgo"),
+)
+
+# Typo keys reported by Gemini that must NOT appear as bare keys
+# (``\n  curent: "..."``). The strings may still occur INSIDE values
+# (e.g. ``"curentă"``) — that's fine; we only reject them when they
+# show up as identifiers.
+FORBIDDEN_TYPO_KEYS = ("curent", "uat")
+
+
+def _has_section(src: str, section: str) -> bool:
+    return re.search(rf"\n\s+{re.escape(section)}:\s*\{{", src) is not None
+
+
+def _section_body(src: str, section: str) -> str | None:
+    """Return the body of a top-level ``section: { ... }`` block by
+    brace-matching from the opener. Returns ``None`` if not found."""
+    opener = re.search(rf"\n  {re.escape(section)}:\s*\{{", src)
+    if not opener:
+        return None
+    start = opener.end()
+    depth = 1
+    i = start
+    while i < len(src) and depth > 0:
+        ch = src[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return None
+    return src[start : i - 1]
+
+
+def _has_leaf_in_section(src: str, section: str, leaf: str) -> bool:
+    body = _section_body(src, section)
+    if body is None:
+        return False
+    return re.search(rf"\n\s+{re.escape(leaf)}:\s*[\"'`]", body) is not None
+
+
+def test_required_sections_in_en():
+    src = _read(UI_EN)
+    missing = [s for s in REQUIRED_SECTIONS if not _has_section(src, s)]
+    assert not missing, f"EN dictionary missing required sections: {missing}"
+
+
+def test_required_sections_in_ro():
+    src = _read(UI_RO)
+    missing = [s for s in REQUIRED_SECTIONS if not _has_section(src, s)]
+    assert not missing, f"RO dictionary missing required sections: {missing}"
+
+
+def test_phase_11a_fix_keys_in_en():
+    src = _read(UI_EN)
+    missing = [
+        f"{section}.{leaf}"
+        for section, leaf in PHASE_11A_FIX_REQUIRED_KEYS
+        if not _has_leaf_in_section(src, section, leaf)
+    ]
+    assert not missing, f"EN missing Phase 11A-FIX keys: {missing}"
+
+
+def test_phase_11a_fix_keys_in_ro():
+    src = _read(UI_RO)
+    missing = [
+        f"{section}.{leaf}"
+        for section, leaf in PHASE_11A_FIX_REQUIRED_KEYS
+        if not _has_leaf_in_section(src, section, leaf)
+    ]
+    assert not missing, f"RO missing Phase 11A-FIX keys: {missing}"
+
+
+def test_no_typo_keys_in_dictionaries():
+    """Bare keys like ``curent`` or ``uat`` are typos — the canonical
+    forms are inside ``curentă`` / ``uitat`` / value strings. They must
+    not appear as identifiers (``\n  curent: \"…\"``)."""
+    for label, path in (("EN", UI_EN), ("RO", UI_RO)):
+        src = _read(path)
+        for typo in FORBIDDEN_TYPO_KEYS:
+            pattern = rf"\n\s+{re.escape(typo)}:\s*[\"'`]"
+            assert not re.search(pattern, src), (
+                f"{label} dictionary declares a typo key {typo!r}"
+            )
+
+
+def test_no_identical_non_technical_pairs():
+    """For every leaf that exists in both dictionaries, the RO value
+    must differ from the EN value unless the leaf is on the
+    technical allowlist (provider IDs, file formats, language tokens,
+    ``MP4`` etc.). Catches accidentally-copy-pasted RO values that
+    should have been translated.
+
+    The allowlist is intentionally narrow: every entry on it must be
+    a value the operator would expect to see verbatim in either
+    language."""
+    en = _extract_kv_pairs(_read(UI_EN))
+    ro = _extract_kv_pairs(_read(UI_RO))
+    # Values that are deliberately byte-identical EN/RO because they're
+    # technical tokens (abbreviations / file formats / brand names /
+    # loanwords like "Editor"/"Backend"/"Lip-sync").
+    ALLOWED_IDENTICAL = {
+        "TTS", "Audio", "Video", "OK", "info", "frontend", "backend",
+        "api", "MP4", "SRT", "WebVTT", "Manifest", "Stub", "Real",
+        "sidecar", "QC", "Backend",
+        "Editor", "Lip-sync", "Local", "local", "external",
+        "Export JSON", "Export TXT", "Test1",
+        "Dim / Dur", "manifest",
+        # Technical / format-spec strings that read identically in EN
+        # and RO (units, deltas, file-extension labels).
+        "Audio (WAV)", "audio {seconds}s", "Δ {delta}",
+        "HTTP {status}: {detail}",
+        # Placeholders / patterns. ``{n}`` and similar templates are
+        # numbers / paths that read the same in both languages.
+        "{count}", "{visible} / {total}", "{n} / {max}",
+        "watermark {status}", "c2pa {status}",
+    }
+    suspects: list[tuple[str, str]] = []
+    for k, v_en in en.items():
+        if k not in ro:
+            continue
+        v_ro = ro[k]
+        if v_en != v_ro:
+            continue
+        stripped = v_en.strip()
+        if stripped in ALLOWED_IDENTICAL:
+            continue
+        # URL / placeholder / brace-template strings are safe to share.
+        if stripped.startswith(("http://", "https://", "{")):
+            continue
+        # Single uppercase token (GET, POST, SRT, …).
+        if stripped.isupper() and " " not in stripped:
+            continue
+        # Tokens ≤3 chars: typically abbreviations (OK, SRT, …) — too
+        # short to translate meaningfully.
+        if len(stripped) <= 3:
+            continue
+        suspects.append((k, v_en))
+    assert not suspects, (
+        "Non-technical leaves have identical EN/RO values (suspected "
+        f"copy-paste): {suspects[:10]}"
+    )

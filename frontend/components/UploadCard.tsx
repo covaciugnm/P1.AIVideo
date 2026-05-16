@@ -6,6 +6,7 @@ import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { useT } from "@/lib/i18n/LanguageContext";
+import { localizeApiDetail } from "@/lib/i18n/formatters";
 import * as logBus from "@/lib/log-bus";
 import type { UploadAudioResponse, UploadImageResponse } from "@/lib/types";
 
@@ -50,14 +51,20 @@ export function UploadCard({
     if (!file) return;
     if (file.size > maxBytes) {
       setError(
-        `File is ${formatBytes(file.size)}; max is ${formatBytes(maxBytes)}.`,
+        t("uploadCard.fileTooLarge", {
+          size: formatBytes(file.size),
+          max: formatBytes(maxBytes),
+        }),
       );
       return;
     }
     const ext = "." + file.name.split(".").pop()?.toLowerCase();
     if (!acceptExtensions.includes(ext)) {
       setError(
-        `Unsupported extension ${ext}. Accepted: ${acceptExtensions.join(", ")}.`,
+        t("uploadCard.unsupportedExtension", {
+          ext,
+          extensions: acceptExtensions.join(", "),
+        }),
       );
       return;
     }
@@ -93,7 +100,7 @@ export function UploadCard({
       setPending(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
-      const msg = err instanceof ApiError ? err.detail : String(err);
+      const msg = err instanceof ApiError ? localizeApiDetail(t, err) : String(err);
       setError(msg);
       logBus.emit({
         source: "frontend",

@@ -45,6 +45,7 @@ REQUIRED_TOPIC_IDS = {
     "gpu-runtime",
     "model-assets",
     "demo-jobs",
+    "localization",
 }
 
 
