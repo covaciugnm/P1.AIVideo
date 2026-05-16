@@ -212,11 +212,11 @@ async def tts_generate(
     max_size = settings.audio_max_file_size_bytes
     try:
         meta = validate_and_inspect_wav(
-            Path(result.output_path), mime_type="audio/wav", max_size_bytes=max_size
+            Path(dest), mime_type="audio/wav", max_size_bytes=max_size
         )
     except ValueError as exc:
         try:
-            Path(result.output_path).unlink(missing_ok=True)
+            Path(dest).unlink(missing_ok=True)
         except Exception:
             pass
         _raise_503(
@@ -239,8 +239,8 @@ async def tts_generate(
     artifact = await artifact_service.register_artifact(
         session,
         artifact_type=ArtifactType.audio.value,
-        uri=Path(result.output_path).as_uri(),
-        local_path=str(result.output_path),
+        uri=Path(dest).as_uri(),
+        local_path=str(dest),
         mime_type="audio/wav",
         checksum_sha256=meta.checksum_sha256,
         size_bytes=meta.size_bytes,

@@ -229,7 +229,21 @@ class PiperProvider(VoiceProvider):
             voice = PiperVoice.load(str(model_path))
 
         with wave.open(str(output_path), "wb") as wav_file:
-            voice.synthesize(req.text, wav_file)
+            # piper-tts ≥1.2 ships ``synthesize_wav`` which configures
+            # the ``Wave_write`` header (channels / sampwidth /
+            # framerate) before streaming frames; older versions only
+            # had ``synthesize`` and assumed the caller pre-configured
+            # the file. Prefer the new method when available and fall
+            # back to the legacy one with explicit header setup so we
+            # keep working on either install.
+            if hasattr(voice, "synthesize_wav"):
+                voice.synthesize_wav(req.text, wav_file)
+            else:
+                sample_rate = int(getattr(voice.config, "sample_rate", 22050))
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(sample_rate)
+                voice.synthesize(req.text, wav_file)
 
         with wave.open(str(output_path), "rb") as wav_file:
             sample_rate = wav_file.getframerate()

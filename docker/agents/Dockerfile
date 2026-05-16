@@ -50,6 +50,20 @@ RUN pip install --no-cache-dir -e ./backend
 COPY agents/ ./agents/
 RUN pip install --no-cache-dir -e ./agents
 
+# Phase TTS-rescue — optional piper-tts install so the DAG worker can
+# actually synthesize on the voice stage. Default OFF to preserve the
+# light agents image; build with ``--build-arg INSTALL_PIPER=true`` to
+# enable real Piper synthesis (CPU-only, ~80 MB onnxruntime). When
+# disabled the voice stage continues to surface
+# ``tts_runtime_missing`` as documented in docs/runbooks/piper-runtime.md.
+ARG INSTALL_PIPER=false
+RUN if [ "$INSTALL_PIPER" = "true" ]; then \
+        echo ">> Installing piper-tts in orchestrator image"; \
+        pip install --no-cache-dir 'piper-tts>=1.2'; \
+    else \
+        echo ">> Skipping piper-tts install in orchestrator (build with --build-arg INSTALL_PIPER=true to enable)"; \
+    fi
+
 # Phase 10A-1 — the DAG runner reads its stage order from
 # ``pipelines/reel_default.yaml`` (and Phase-3 variants live alongside).
 # The light_idle launcher never needed this, but the real worker does.

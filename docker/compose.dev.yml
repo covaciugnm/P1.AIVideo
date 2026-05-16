@@ -139,6 +139,11 @@ services:
       # legacy in-process path (which returns runtime_missing in the
       # light image).
       SADTALKER_BASE_URL: "${SADTALKER_BASE_URL:-}"
+      # Phase 10A-1 — when set, the backend proxies /api/v1/tts/generate
+      # (provider=f5tts_ro) to the optional ``model-tts-ro`` Docker
+      # service. Default empty → the backend reports the provider as
+      # ``not_implemented`` so the UI shows clean readiness state.
+      F5TTS_RO_BASE_URL: "${F5TTS_RO_BASE_URL:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -219,6 +224,11 @@ services:
       # WAV under /storage/inputs/audio.
       - inputs_data:/storage/inputs
       - artifacts_data:/storage/artifacts
+      # Phase TTS-rescue — mount the models tree read-only so the
+      # voice stage handler can load Piper .onnx voices from disk.
+      # Backend already mounts ../models at /models; the orchestrator
+      # needs the same view to honor PIPER_MODELS_ROOT=/models/tts/piper.
+      - ../models:/models:ro
     networks: [aivideo-net]
 
   # --- Agents (CPU base) -----------------------------------------------------
