@@ -52,3 +52,6 @@ logs/
 tmp/
 out/
 .claude/
+
+# Local TTS test outputs
+tts-tests/
