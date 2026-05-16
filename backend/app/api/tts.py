@@ -117,9 +117,13 @@ async def tts_generate(
 ) -> TTSGenerateResponse:
     provider_id = payload.tts_provider_id.strip() or "piper"
 
+    # Phase 10A-1 — route F5TTS-Ro to the optional HTTP wrapper service.
+    if provider_id == "f5tts_ro":
+        return await _generate_via_f5tts_ro(payload, session)
+
     if provider_id != "piper":
-        # Only piper is wired for direct preview. Other providers reach
-        # generation only through the future voice stage.
+        # Only piper + f5tts_ro are wired for direct preview. Other
+        # providers reach generation only through the future voice stage.
         _raise_503(
             "tts_provider_not_implemented",
             provider_id,
@@ -245,6 +249,191 @@ async def tts_generate(
         channels=meta.channels,
         metadata_json=metadata_json,
     )
+    return TTSGenerateResponse(
+        status="generated",
+        provider_id=provider_id,
+        voice_id=voice_id,
+        artifact_id=artifact.id,
+        uri=artifact.uri,
+        mime_type="audio/wav",
+        checksum_sha256=meta.checksum_sha256,
+        size_bytes=meta.size_bytes,
+        duration_seconds=meta.duration_seconds,
+        sample_rate=meta.sample_rate,
+        channels=meta.channels,
+    )
+
+
+async def _generate_via_f5tts_ro(
+    payload: TTSGenerateRequest,
+    session: AsyncSession,
+) -> TTSGenerateResponse:
+    """Phase 10A-1 — route TTS generation to the optional ``tts-ro``
+    Docker service over HTTP. The default backend image does NOT import
+    torch or f5-tts; everything happens inside the optional service.
+
+    Error categorisation matches the rest of the TTS API:
+    - ``tts_runtime_missing`` — wrapper service unreachable (TCP error).
+    - ``tts_assets_missing`` — wrapper service replies 404/4xx about
+      the Romanian model / reference audio missing.
+    - ``tts_provider_not_configured`` — ``F5TTS_RO_BASE_URL`` unset.
+    - ``tts_generation_failed`` — wrapper responded but with an error
+      payload (5xx or status!=generated) or the returned WAV failed
+      validation. Partial files are cleaned.
+    """
+    import json
+    import shutil
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    provider_id = "f5tts_ro"
+    base_url = os.environ.get("F5TTS_RO_BASE_URL", "").strip()
+    if not base_url:
+        _raise_503(
+            "tts_provider_not_configured",
+            provider_id,
+            "F5TTS-Ro is not configured. Set F5TTS_RO_BASE_URL "
+            "(e.g. http://localhost:8061) and start the tts-ro Docker "
+            "service. See docs/runbooks/f5tts-ro-runtime.md.",
+        )
+
+    voice_id = payload.tts_model or os.environ.get(
+        "F5TTS_RO_DEFAULT_VOICE", "ro_default"
+    )
+
+    # Pick a destination path under the backend's UPLOAD_AUDIO_ROOT so
+    # the audio artifact ends up on the same volume the operator can
+    # serve via /api/v1/artifacts/{id}/content.
+    root = upload_service.get_upload_root(
+        "UPLOAD_AUDIO_ROOT", settings.upload_audio_root
+    )
+    out_name = upload_service.safe_unique_filename(".wav")
+    dest = root / out_name
+
+    req_body = {
+        "text": payload.script_text,
+        "voice_id": voice_id,
+        "output_path": str(dest),
+        "output_format": "wav",
+        "language": payload.language or "ro",
+        # The Romanian adapter from racai-ro supports voice cloning when
+        # the wrapper has a reference voice on disk. The wrapper resolves
+        # the reference; the backend doesn't ship audio.
+    }
+    data = json.dumps(req_body).encode("utf-8")
+    url = base_url.rstrip("/") + "/tts/generate"
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=int(os.environ.get("F5TTS_RO_TIMEOUT", "120"))) as resp:
+            try:
+                body = json.loads(resp.read().decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                _raise_503(
+                    "tts_generation_failed",
+                    provider_id,
+                    f"F5TTS-Ro wrapper returned malformed JSON: {exc}",
+                )
+            http_code = resp.status
+    except urllib.error.HTTPError as exc:
+        err_text = exc.read().decode("utf-8", errors="replace")[:400]
+        # 404 / 410 / 422 most likely mean asset / config issue; 5xx is
+        # generation failure.
+        if exc.code in (400, 404, 410, 422):
+            code = "tts_assets_missing" if "asset" in err_text.lower() or "model" in err_text.lower() else "tts_provider_not_configured"
+        else:
+            code = "tts_generation_failed"
+        _raise_503(code, provider_id, f"F5TTS-Ro wrapper HTTP {exc.code}: {err_text}")
+    except urllib.error.URLError as exc:
+        _raise_503(
+            "tts_runtime_missing",
+            provider_id,
+            f"F5TTS-Ro wrapper unreachable at {base_url!r}: "
+            f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}",
+        )
+
+    status = body.get("status") if isinstance(body, dict) else None
+    if status != "generated":
+        # The wrapper categorises its own failures; surface them.
+        wrapper_code = (body or {}).get("error_code") or "generation_failed"
+        wrapper_msg = (body or {}).get("message") or f"unknown wrapper error (status={status!r})"
+        mapping = {
+            "runtime_missing": "tts_runtime_missing",
+            "assets_missing": "tts_assets_missing",
+            "config_missing": "tts_provider_not_configured",
+            "generation_failed": "tts_generation_failed",
+        }
+        be_code = mapping.get(str(wrapper_code), "tts_generation_failed")
+        # Clean any partial file the wrapper may have left behind.
+        try:
+            dest.unlink(missing_ok=True)
+        except Exception:
+            pass
+        _raise_503(be_code, provider_id, f"F5TTS-Ro wrapper: {wrapper_msg}")
+
+    # The wrapper writes the WAV at the requested ``output_path``. The
+    # backend then validates it like any other upload-intake audio.
+    if not dest.is_file() or dest.stat().st_size == 0:
+        _raise_503(
+            "tts_generation_failed",
+            provider_id,
+            f"F5TTS-Ro wrapper reported success but {dest} is missing/empty.",
+        )
+    try:
+        meta = validate_and_inspect_wav(
+            dest,
+            mime_type="audio/wav",
+            max_size_bytes=settings.audio_max_file_size_bytes,
+        )
+    except ValueError as exc:
+        try:
+            dest.unlink(missing_ok=True)
+        except Exception:
+            pass
+        _raise_503(
+            "tts_generation_failed",
+            provider_id,
+            f"F5TTS-Ro produced a WAV that failed validation: {exc}",
+        )
+
+    metadata_json = {
+        "phase": "phase10a1_f5tts_ro",
+        "source": "tts_generate",
+        "provider_id": provider_id,
+        "voice_id": voice_id,
+        "language": payload.language or "ro",
+        "sample_rate": meta.sample_rate,
+        "channels": meta.channels,
+        "duration_seconds": meta.duration_seconds,
+        "mime_type": "audio/wav",
+        "f5tts_ro": {
+            "base_url": base_url,
+            "wrapper_status": status,
+            "wrapper_metadata": (body.get("metadata") if isinstance(body, dict) else None) or {},
+            "http_code": http_code,
+        },
+    }
+    artifact = await artifact_service.register_artifact(
+        session,
+        artifact_type=ArtifactType.audio.value,
+        uri=dest.as_uri(),
+        local_path=str(dest),
+        mime_type="audio/wav",
+        checksum_sha256=meta.checksum_sha256,
+        size_bytes=meta.size_bytes,
+        duration_seconds=meta.duration_seconds,
+        sample_rate=meta.sample_rate,
+        channels=meta.channels,
+        metadata_json=metadata_json,
+    )
+    # Avoid unused-import warnings when the optional shutil/parse paths
+    # aren't exercised in this code path.
+    _ = (shutil, urllib.parse)
     return TTSGenerateResponse(
         status="generated",
         provider_id=provider_id,

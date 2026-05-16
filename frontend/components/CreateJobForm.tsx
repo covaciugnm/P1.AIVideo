@@ -192,21 +192,38 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     );
     setTtsBusy(false);
     if (!res.ok) {
-      // Phase 8G-2 — operator-friendly copy for every categorised
-      // 503 the backend can return (the Test1 panel uses the same map).
-      const _NICE: Record<string, string> = {
-        tts_runtime_missing:
-          "Piper runtime is not installed in this image. Rebuild the backend with --build-arg INSTALL_PIPER=true (see docs/runbooks/piper-runtime.md).",
-        tts_assets_missing:
-          "Piper voice files (.onnx + .onnx.json) are missing under PIPER_MODELS_ROOT. Place them manually — no auto-download.",
-        tts_provider_not_configured: `Provider "${res.error.provider_id}" is not configured. Set PIPER_MODELS_ROOT and place the voice files, then retry.`,
-        tts_provider_not_implemented:
-          "TTS provider is a catalog stub — no real synthesis path wired yet.",
-        tts_generation_failed:
-          "The synthesise call ran but threw an error. Check the backend logs for the truncated reason.",
-        tts_provider_disabled:
-          "This TTS provider is disabled. Enable it via env / Settings before retrying.",
-      };
+      // Phase 8G-2 + Phase 10A-1 — operator-friendly copy keyed on both
+      // the error code AND the selected provider, so F5TTS-Ro shows
+      // Romanian-specific guidance instead of Piper-only instructions.
+      const isF5 = (ttsProvider ?? "piper") === "f5tts_ro";
+      const _NICE: Record<string, string> = isF5
+        ? {
+            tts_runtime_missing:
+              "F5TTS-Ro wrapper is unreachable. Start the optional service: `make docker-tts-ro-build && make docker-tts-ro-up`, then set F5TTS_RO_BASE_URL in the backend env. See docs/runbooks/f5tts-ro-runtime.md.",
+            tts_assets_missing:
+              "F5TTS-Ro model weights or Romanian reference voice are missing under /models/f5tts-ro. Mount the operator-supplied weights + reference WAV — no auto-download.",
+            tts_provider_not_configured:
+              "F5TTS-Ro is not configured. Set F5TTS_RO_BASE_URL (and start the tts-ro Docker service), then retry.",
+            tts_provider_not_implemented:
+              "F5TTS-Ro is a catalog entry but the wrapper service has not been built/started yet.",
+            tts_generation_failed:
+              "F5TTS-Ro wrapper responded but synthesis failed. Check the wrapper logs (`make docker-tts-ro-logs`).",
+            tts_provider_disabled:
+              "This TTS provider is disabled. Enable it via env / Settings before retrying.",
+          }
+        : {
+            tts_runtime_missing:
+              "Piper runtime is not installed in this image. Rebuild the backend with --build-arg INSTALL_PIPER=true (see docs/runbooks/piper-runtime.md).",
+            tts_assets_missing:
+              "Piper voice files (.onnx + .onnx.json) are missing under PIPER_MODELS_ROOT. Place them manually — no auto-download.",
+            tts_provider_not_configured: `Provider "${res.error.provider_id}" is not configured. Set PIPER_MODELS_ROOT and place the voice files, then retry.`,
+            tts_provider_not_implemented:
+              "TTS provider is a catalog stub — no real synthesis path wired yet.",
+            tts_generation_failed:
+              "The synthesise call ran but threw an error. Check the backend logs for the truncated reason.",
+            tts_provider_disabled:
+              "This TTS provider is disabled. Enable it via env / Settings before retrying.",
+          };
       const niceMsg = _NICE[res.error.code] ?? res.error.message;
       setTtsStatus(niceMsg);
       setTtsArtifact(null);

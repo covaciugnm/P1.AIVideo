@@ -1,12 +1,131 @@
-# Scenario Jobs — Phase 8E Operator Smoke
+# Scenario Jobs — Phase 8E + Phase 10A-0 Operator Smoke
 
-Eight scenario jobs that cover every realistic path through the
-current product, without faking GPU or paid-API behavior. Use them to
-test the operator UI end-to-end whenever you spin up the Docker stack.
+Two complementary seeders live in `scripts/create_scenario_jobs.py`:
 
-> **Idempotent**: every brief is timestamped + prefixed `Scenario N — `,
-> so re-running the seeder appends jobs rather than mutating existing
-> ones. The script never deletes jobs / artifacts / volumes.
+- **Phase 8E** (default mode) — eight timestamped `Scenario N — …` jobs
+  that exercise every realistic provider-selection path. Re-running
+  appends new timestamped jobs.
+- **Phase 10A-0** (`--demo` flag) — eight **idempotent** `Demo — …`
+  jobs. Re-running the seeder does not create duplicates: it queries
+  `/api/v1/jobs` first and only creates the missing entries. This is
+  the persistent demo matrix used to inspect Phase 9 real-vs-metadata
+  honesty in the UI.
+
+Both modes share the same safety contract: never deletes anything,
+never runs paid APIs, never auto-pulls model weights.
+
+> **Idempotent (Phase 10A-0 mode)**: every `Demo — …` brief is fixed
+> and unique. Re-runs query existing jobs and append nothing. The
+> script never deletes jobs / artifacts / volumes.
+
+## Phase 10A-0 — `Demo —` matrix (idempotent)
+
+Run via:
+
+```bash
+BACKEND_BASE_URL=http://localhost:8001 \
+  python3 scripts/create_scenario_jobs.py --demo
+```
+
+The 8 scenarios:
+
+| # | Brief | Provider selection | Inputs | Expected runtime outcome (default light backend) |
+|---|---|---|---|---|
+| 1 | `Demo — Template Script + TTS Piper path` | script=template, tts=piper, video=sadtalker | `script_text` inline | TTS stage: clean `tts_runtime_missing` (Piper not installed); no fake audio |
+| 2 | `Demo — Mock Script + TTS Piper path` | script=mock, tts=piper, video=sadtalker | `script_text` inline | same as #1, but mock scriptwriter |
+| 3 | `Demo — Ollama Script path` | script=ollama, model=qwen3.6, tts=piper | `script_text` inline | Script stage: `script_provider_unreachable` / `script_model_missing` if daemon/network/model unavailable |
+| 4 | `Demo — Provided WAV audio + Provided image + SadTalker selected` | full matrix, sadtalker | tiny WAV + tiny PNG uploaded | Face/voice real artifacts; lipsync stage: clean `video_runtime_missing` (no torch); no fake MP4 |
+| 5 | `Demo — MP3 upload conversion path` | full matrix | tiny MP3 uploaded → auto-converted to WAV | Audio artifact records `converted_to_wav=true` if ffmpeg present |
+| 6 | `Demo — Future custom providers metadata path` | all `custom_future_*` IDs | `script_text` inline | All stages: clean `not_configured` / `unknown_provider` — UI does not crash |
+| 7 | `Demo — Full local best-effort path` | full deterministic matrix (template/piper/sadtalker) | `script_text` inline | Best available result without GPU; placeholder media for stages without real runtime |
+| 8 | `Demo — Real video success` | sadtalker + provided WAV + provided PNG | tiny WAV + tiny PNG | **Only created when** SadTalker readiness is green (`RUN_REAL_SADTALKER=1`, `SADTALKER_ENABLE_REAL_INFERENCE=true`, weights on disk, GPU visible). Otherwise the seeder records `skipped` with the exact missing gates |
+
+The deliberate honesty: scenarios 1–7 land cleanly without GPU / paid
+APIs. Scenario 8 refuses to fake success. **No fake MP4 / fake
+portrait / fake narration is ever produced** — Phase 9B/9D enforced
+this at the handler level.
+
+### Inspecting Demo jobs
+
+Each created Demo job is reachable at:
+
+```
+http://localhost:3001/jobs/<job_id>
+```
+
+The job-detail page renders:
+
+- the **provider_selection** badge row;
+- the **artifact table** with the Phase 9F "Real file" column (`yes` /
+  `manifest` / `metadata-only` / `no`);
+- the **QC card** with a `real-media` vs `metadata-only` badge;
+- the **Final Export card** with a `real-mp4` vs `manifest-only` badge.
+
+Operator validation checklist for each Demo job:
+
+1. Provider selection on the badge row matches the brief.
+2. No artifact row claims a `.png` / `.wav` / `.mp4` URI without a
+   real on-disk file backing it.
+3. The QC card and Final Export card both surface the metadata-only
+   state honestly (no green "real video" claim when no MP4 exists).
+
+### Phase 10A-1 — Romanian F5TTS-Ro demo job
+
+A dedicated demo job exercises the optional Romanian TTS provider:
+
+| Field | Value |
+|---|---|
+| Brief | `Demo — Romanian F5TTS-Ro voice to video path` |
+| Voice mode | `tts` (with Romanian `script_text`) |
+| Face mode | `provided_image` (tiny PNG fixture) |
+| Provider selection | script=template, **tts=f5tts_ro**, video=sadtalker, audio=ffmpeg_convert, image=stdlib_image_validation |
+| Romanian script | "Bună ziua! Acesta este un test de generare video cu voce în limba română. Sistemul folosește un provider TTS românesc și un generator video configurabil." |
+
+Expected outcome on a default light backend (no F5TTS-Ro service
+running, no SadTalker GPU):
+
+- `POST /api/v1/tts/generate` with `tts_provider_id=f5tts_ro` →
+  503 `tts_provider_not_configured` (until the optional service is
+  built + started and `F5TTS_RO_BASE_URL` is set).
+- Job created in `pending_compliance`; provider_selection persists; UI
+  shows F5TTS-Ro in the TTS dropdown with the `not_implemented` /
+  `configured` / `available` status reflecting the env.
+
+To turn the demo into a real audio run:
+
+1. Build + start the optional service: see
+   [`docs/runbooks/f5tts-ro-runtime.md`](f5tts-ro-runtime.md).
+2. Set `F5TTS_RO_BASE_URL` in the backend env and restart the backend
+   container.
+3. Re-run the Generate Audio flow from the Job Detail page.
+
+### Real-runtime opt-in for Scenario 8
+
+```bash
+export SADTALKER_MODELS_ROOT=/path/to/weights
+export SADTALKER_ENABLE_REAL_INFERENCE=true
+export RUN_REAL_SADTALKER=1
+# host must also have a CUDA-capable GPU + torch installed in the
+# GPU backend image (see docs/runbooks/sadtalker-runtime.md)
+```
+
+Without those, the seeder records:
+
+```json
+{
+  "scenario": 8,
+  "skipped": "Skipped — SadTalker real runtime not ready (no fake success will be claimed)",
+  "missing_gates": {
+    "status": "not_implemented",
+    "SADTALKER_ENABLE_REAL_INFERENCE": false,
+    "RUN_REAL_SADTALKER": false
+  }
+}
+```
+
+---
+
+## Phase 8E — timestamped scenarios (legacy)
 
 ## How to run
 

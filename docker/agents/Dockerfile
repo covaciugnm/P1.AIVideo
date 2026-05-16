@@ -50,6 +50,11 @@ RUN pip install --no-cache-dir -e ./backend
 COPY agents/ ./agents/
 RUN pip install --no-cache-dir -e ./agents
 
+# Phase 10A-1 — the DAG runner reads its stage order from
+# ``pipelines/reel_default.yaml`` (and Phase-3 variants live alongside).
+# The light_idle launcher never needed this, but the real worker does.
+COPY pipelines/ ./pipelines/
+
 # Shared storage roots so any handler that touches the filesystem behaves
 # the same way in Docker as in dev. Read-only mounts on the agents side
 # would still resolve these paths.
@@ -59,6 +64,8 @@ RUN mkdir -p /storage/inputs/audio /storage/inputs/images /storage/inputs/text /
 
 USER app
 
-# Phase 4C light idle launcher — imports everything and sleeps. See
-# agents/orchestrator/light_idle.py for the rationale.
-CMD ["python", "-m", "agents.orchestrator.light_idle"]
+# Phase 10A-1 real DAG worker. Reads pending_compliance jobs from the DB
+# and drives them through the metadata-only / categorised-soft-fail DAG.
+# Respects ORCHESTRATOR_MODE — set ``idle`` to fall back to the Phase 4C
+# import-only smoke. See agents/orchestrator/run_worker.py.
+CMD ["python", "-m", "agents.orchestrator.run_worker"]

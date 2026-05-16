@@ -240,6 +240,73 @@ def _build_tts_providers() -> list[ProviderInfo]:
         )
     )
 
+    # f5tts_ro — Phase 10A-1 Romanian TTS provider, exposed as an
+    # OPTIONAL Docker service (profile: ``tts-ro``). The default light
+    # backend never imports torch / f5-tts at module load; readiness is
+    # probed entirely via env (no network call here — the status reflects
+    # whether ``F5TTS_RO_BASE_URL`` is set + whether the operator-mounted
+    # model directory exists).
+    f5_base = os.environ.get("F5TTS_RO_BASE_URL", "").strip()
+    f5_root = os.environ.get("F5TTS_RO_MODELS_ROOT", "").strip()
+    f5_voice = os.environ.get("F5TTS_RO_DEFAULT_VOICE", "ro_default").strip()
+    if not f5_base and not f5_root:
+        f5_status = "not_implemented"
+        f5_notes = (
+            "F5TTS-Ro service not configured. Build & start the optional "
+            "tts-ro Docker service (`make docker-tts-ro-build && "
+            "make docker-tts-ro-up`) and set F5TTS_RO_BASE_URL — no "
+            "auto-download. See docs/runbooks/f5tts-ro-runtime.md."
+        )
+    elif not f5_base:
+        f5_status = "not_configured"
+        f5_notes = (
+            f"F5TTS_RO_MODELS_ROOT={f5_root!r} but F5TTS_RO_BASE_URL is "
+            "unset — the backend reaches the model only via the optional "
+            "tts-ro HTTP wrapper. Start the tts-ro service and set the URL."
+        )
+    elif not f5_root:
+        f5_status = "configured"
+        f5_notes = (
+            f"F5TTS_RO_BASE_URL={f5_base!r}; F5TTS_RO_MODELS_ROOT unset. "
+            "The wrapper service should mount the operator's Romanian "
+            "model directory (./models/tts/f5tts-ro by default)."
+        )
+    else:
+        # Operator has wired both URL + models root. The actual readiness
+        # is reported by the tts-ro service /health endpoint; the
+        # backend catalog merely marks the operator's intent.
+        f5_status = "available"
+        f5_notes = (
+            f"F5TTS-Ro wrapper at {f5_base!r}, model root {f5_root!r}. "
+            "Real readiness depends on the wrapper /health endpoint."
+        )
+    out.append(
+        ProviderInfo(
+            category="tts",
+            provider_id="f5tts_ro",
+            label="F5TTS-Ro Romanian (optional service)",
+            backend_type="local_http_tts",
+            default_model=f5_voice or None,
+            is_local=True,
+            local_or_external="local",
+            status=f5_status,  # type: ignore[arg-type]
+            supported_models=[f5_voice] if f5_voice else [],
+            requires_network=False,
+            # F5-TTS upstream uses torch; the Romanian adapter inherits
+            # that requirement. CPU-only inference is supported but slow.
+            requires_gpu=False,
+            requires_model_files=True,
+            healthcheck_available=bool(f5_base),
+            notes=f5_notes,
+            warning=(
+                "Romanian voice cloning requires operator-supplied "
+                "reference audio + transcript — racai-ro publishes "
+                "samples only, not the adapter weights."
+            ),
+            docs_url="/docs/runbooks/f5tts-ro-runtime.md",
+        )
+    )
+
     # Stubs for additional TTS providers — operator-installable, but the
     # backend speaks only metadata until a real adapter ships.
     _tts_stub = [

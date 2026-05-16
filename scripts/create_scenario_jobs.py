@@ -1,13 +1,19 @@
-"""Phase 8E Part D — scenario job seeder.
+"""Phase 8E + Phase 10A-0 scenario / demo job seeder.
 
 Creates one job per realistic path through P1.AIVideo so an operator
 can inspect every provider-selection combination in the UI without
 actually running real GPU inference or paid APIs.
 
+Two modes:
+
+- ``run(...)`` (default) — Phase 8E scenarios, timestamped, append-only.
+- ``run_demo(...)`` — Phase 10A-0 "Demo —" matrix (8 stable scenarios).
+  Idempotent: queries ``/api/v1/jobs`` first and skips any
+  ``Demo — <label>`` that already exists. Scenario 8 (Real video
+  success) only attempts creation when SadTalker readiness is green.
+
 Safety contract:
 
-- Idempotent-ish: every brief is prefixed ``Scenario N — `` and timestamped
-  so re-runs append rather than collide.
 - Never deletes existing jobs / artifacts / volumes.
 - Never calls a real GPU / paid API. If a provider isn't configured
   (Piper, SadTalker, Ollama, etc.) the scenario *expects* the
@@ -22,10 +28,9 @@ Safety contract:
 Usage:
 
     BACKEND_BASE_URL=http://localhost:8001 \
-      python scripts/create_scenario_jobs.py
-
-    # Or via the make target:
-    make scenario-jobs
+      python scripts/create_scenario_jobs.py            # Phase 8E
+    BACKEND_BASE_URL=http://localhost:8001 \
+      python scripts/create_scenario_jobs.py --demo     # Phase 10A-0
 
 Outputs: a JSON summary of created job IDs printed to stdout + brief
 human-readable status lines.
@@ -499,6 +504,461 @@ def run(base_url: str) -> dict:
     return summary
 
 
+# ---------------------------------------------------------------------------
+# Phase 10A-0 — "Demo —" matrix (idempotent)
+# ---------------------------------------------------------------------------
+
+
+_DEMO_BRIEFS = (
+    "Demo — Template Script + TTS Piper path",
+    "Demo — Mock Script + TTS Piper path",
+    "Demo — Ollama Script path",
+    "Demo — Provided WAV audio + Provided image + SadTalker selected",
+    "Demo — MP3 upload conversion path",
+    "Demo — Future custom providers metadata path",
+    "Demo — Full local best-effort path",
+    "Demo — Real video success",
+)
+
+
+def _existing_demo_jobs(base: str) -> dict[str, str]:
+    """Return ``{brief: job_id}`` for every existing job whose brief
+    starts with ``"Demo —"``. Used to make ``run_demo()`` idempotent."""
+    code, body = _get_json(base, "/api/v1/jobs")
+    if code != 200 or not isinstance(body, list):
+        return {}
+    out: dict[str, str] = {}
+    for j in body:
+        brief = (j.get("brief") or "").strip()
+        if brief.startswith("Demo —") and j.get("id"):
+            out.setdefault(brief, j["id"])
+    return out
+
+
+def _sadtalker_ready(base: str) -> tuple[bool, dict]:
+    """Cheap readiness probe via the providers catalog. Returns
+    ``(True, details)`` only when the SadTalker status is exactly
+    ``available`` *and* the operator has set the real-inference env
+    flags. Used to decide whether to attempt Scenario 8."""
+    code, body = _get_json(base, "/api/v1/providers")
+    if code != 200 or not isinstance(body, dict):
+        return False, {"error": "providers catalog unreachable"}
+    sad = None
+    for p in body.get("video_generator", []) or []:
+        if p.get("provider_id") == "sadtalker":
+            sad = p
+            break
+    if sad is None:
+        return False, {"error": "sadtalker not in catalog"}
+    status = sad.get("status")
+    real_flag = os.environ.get("SADTALKER_ENABLE_REAL_INFERENCE", "").lower() == "true"
+    run_flag = os.environ.get("RUN_REAL_SADTALKER", "") == "1"
+    ready = status == "available" and real_flag and run_flag
+    return ready, {
+        "status": status,
+        "SADTALKER_ENABLE_REAL_INFERENCE": real_flag,
+        "RUN_REAL_SADTALKER": run_flag,
+    }
+
+
+def run_demo(base_url: str) -> dict:
+    """Phase 10A-0 — create the 8-scenario "Demo —" matrix idempotently.
+
+    Each scenario records: existed_already, created_now, job_id,
+    artifact_ids, http codes, and (for scenario 8) the missing
+    SadTalker gates that prevented creation."""
+    existing = _existing_demo_jobs(base_url)
+    results: list[dict] = []
+
+    def _ensure_job(scenario: int, brief: str, payload: dict) -> dict:
+        if brief in existing:
+            return {
+                "scenario": scenario,
+                "brief": brief,
+                "existed_already": True,
+                "created_now": False,
+                "job_id": existing[brief],
+                "ui_url": f"http://localhost:3001/jobs/{existing[brief]}",
+            }
+        payload = dict(payload)
+        payload["brief"] = brief
+        ok, jid, body, code = _create_job(base_url, payload)
+        entry = {
+            "scenario": scenario,
+            "brief": brief,
+            "existed_already": False,
+            "created_now": bool(ok),
+            "http": code,
+            "job_id": jid,
+        }
+        if not ok:
+            entry["error_body"] = body
+        else:
+            entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+        return entry
+
+    base_kwargs = {
+        "target_duration_seconds": 30,
+        "synthetic_person_confirmed": True,
+        "consent_confirmed": True,
+        "watermark_required": True,
+        "c2pa_required": True,
+    }
+    demo_script = (
+        "Three calming bedtime habits for better sleep: dim the "
+        "lights, stretch slowly, and write tomorrow's first task."
+    )
+
+    # ----- Scenario 1 — Template Script + TTS Piper path -----
+    results.append(
+        _ensure_job(
+            1,
+            _DEMO_BRIEFS[0],
+            {
+                **base_kwargs,
+                "voice_mode": "tts",
+                "script_text": demo_script,
+                "provider_selection": {
+                    "script_provider_id": "template",
+                    "tts_provider_id": "piper",
+                    "video_provider_id": "sadtalker",
+                    "audio_processor_id": "ffmpeg_convert",
+                    "image_processor_id": "stdlib_image_validation",
+                },
+            },
+        )
+    )
+
+    # ----- Scenario 2 — Mock Script + TTS Piper path -----
+    results.append(
+        _ensure_job(
+            2,
+            _DEMO_BRIEFS[1],
+            {
+                **base_kwargs,
+                "voice_mode": "tts",
+                "script_text": demo_script,
+                "provider_selection": {
+                    "script_provider_id": "mock",
+                    "tts_provider_id": "piper",
+                    "video_provider_id": "sadtalker",
+                    "audio_processor_id": "ffmpeg_convert",
+                    "image_processor_id": "stdlib_image_validation",
+                },
+            },
+        )
+    )
+
+    # ----- Scenario 3 — Ollama Script path -----
+    results.append(
+        _ensure_job(
+            3,
+            _DEMO_BRIEFS[2],
+            {
+                **base_kwargs,
+                "voice_mode": "tts",
+                "script_text": demo_script,
+                "provider_selection": {
+                    "script_provider_id": "ollama",
+                    "script_model": os.environ.get(
+                        "DEMO_OLLAMA_MODEL", "qwen3.6"
+                    ),
+                    "tts_provider_id": "piper",
+                    "video_provider_id": "sadtalker",
+                    "audio_processor_id": "ffmpeg_convert",
+                    "image_processor_id": "stdlib_image_validation",
+                },
+            },
+        )
+    )
+
+    # ----- Scenario 4 — Provided WAV + Provided image + SadTalker -----
+    if _DEMO_BRIEFS[3] in existing:
+        results.append(
+            {
+                "scenario": 4,
+                "brief": _DEMO_BRIEFS[3],
+                "existed_already": True,
+                "created_now": False,
+                "job_id": existing[_DEMO_BRIEFS[3]],
+                "ui_url": f"http://localhost:3001/jobs/{existing[_DEMO_BRIEFS[3]]}",
+            }
+        )
+    else:
+        ok_a, aid, _body_a, code_a = _upload(
+            base_url, "audio", _make_tiny_wav(), "demo4.wav", "audio/wav"
+        )
+        ok_i, iid, _body_i, code_i = _upload(
+            base_url, "image", _make_tiny_png(), "demo4.png", "image/png"
+        )
+        if not (ok_a and ok_i):
+            results.append(
+                {
+                    "scenario": 4,
+                    "brief": _DEMO_BRIEFS[3],
+                    "existed_already": False,
+                    "created_now": False,
+                    "error": "audio or image upload failed",
+                    "http_audio": code_a,
+                    "http_image": code_i,
+                }
+            )
+        else:
+            payload = {
+                **base_kwargs,
+                "brief": _DEMO_BRIEFS[3],
+                "voice_mode": "provided_audio",
+                "face_mode": "provided_image",
+                "audio_artifact_id": aid,
+                "audio_consent_confirmed": True,
+                "audio_synthetic_or_owned": True,
+                "image_artifact_id": iid,
+                "image_consent_confirmed": True,
+                "image_synthetic_person_confirmed": True,
+                "script_text": None,
+                "provider_selection": {
+                    "script_provider_id": "template",
+                    "tts_provider_id": "piper",
+                    "video_provider_id": "sadtalker",
+                    "audio_processor_id": "ffmpeg_convert",
+                    "image_processor_id": "stdlib_image_validation",
+                },
+            }
+            ok, jid, body, code = _create_job(base_url, payload)
+            entry = {
+                "scenario": 4,
+                "brief": _DEMO_BRIEFS[3],
+                "existed_already": False,
+                "created_now": bool(ok),
+                "http": code,
+                "audio_artifact_id": aid,
+                "image_artifact_id": iid,
+                "job_id": jid,
+            }
+            if not ok:
+                entry["error_body"] = body
+            else:
+                entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+            results.append(entry)
+
+    # ----- Scenario 5 — MP3 upload conversion path -----
+    if _DEMO_BRIEFS[4] in existing:
+        results.append(
+            {
+                "scenario": 5,
+                "brief": _DEMO_BRIEFS[4],
+                "existed_already": True,
+                "created_now": False,
+                "job_id": existing[_DEMO_BRIEFS[4]],
+                "ui_url": f"http://localhost:3001/jobs/{existing[_DEMO_BRIEFS[4]]}",
+            }
+        )
+    else:
+        mp3 = _make_tiny_mp3_via_ffmpeg()
+        if mp3 is None:
+            results.append(
+                {
+                    "scenario": 5,
+                    "brief": _DEMO_BRIEFS[4],
+                    "existed_already": False,
+                    "created_now": False,
+                    "skipped": "ffmpeg not available on host — MP3 fixture cannot be generated",
+                }
+            )
+        else:
+            ok, aid, body, code = _upload(
+                base_url, "audio", mp3, "demo5.mp3", "audio/mpeg"
+            )
+            if not ok:
+                results.append(
+                    {
+                        "scenario": 5,
+                        "brief": _DEMO_BRIEFS[4],
+                        "existed_already": False,
+                        "created_now": False,
+                        "error": "MP3 upload failed",
+                        "http": code,
+                        "error_body": body,
+                    }
+                )
+            else:
+                converted = (
+                    isinstance(body, dict)
+                    and (body.get("metadata_summary") or {}).get(
+                        "converted_to_wav"
+                    )
+                )
+                payload = {
+                    **base_kwargs,
+                    "brief": _DEMO_BRIEFS[4],
+                    "voice_mode": "provided_audio",
+                    "audio_artifact_id": aid,
+                    "audio_consent_confirmed": True,
+                    "audio_synthetic_or_owned": True,
+                    "script_text": None,
+                    "provider_selection": {
+                        "script_provider_id": "template",
+                        "tts_provider_id": "piper",
+                        "video_provider_id": "sadtalker",
+                        "audio_processor_id": "ffmpeg_convert",
+                        "image_processor_id": "stdlib_image_validation",
+                    },
+                }
+                ok2, jid, body2, code2 = _create_job(base_url, payload)
+                entry = {
+                    "scenario": 5,
+                    "brief": _DEMO_BRIEFS[4],
+                    "existed_already": False,
+                    "created_now": bool(ok2),
+                    "http": code2,
+                    "audio_artifact_id": aid,
+                    "converted_to_wav": bool(converted),
+                    "job_id": jid,
+                }
+                if not ok2:
+                    entry["error_body"] = body2
+                else:
+                    entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+                results.append(entry)
+
+    # ----- Scenario 6 — Future custom providers metadata path -----
+    results.append(
+        _ensure_job(
+            6,
+            _DEMO_BRIEFS[5],
+            {
+                **base_kwargs,
+                "voice_mode": "tts",
+                "script_text": demo_script,
+                "provider_selection": {
+                    "script_provider_id": "custom_future_llm",
+                    "tts_provider_id": "custom_future_tts",
+                    "video_provider_id": "custom_future_video",
+                    "audio_processor_id": "custom_future_audio_processor",
+                    "image_processor_id": "custom_future_image_processor",
+                },
+            },
+        )
+    )
+
+    # ----- Scenario 7 — Full local best-effort path -----
+    results.append(
+        _ensure_job(
+            7,
+            _DEMO_BRIEFS[6],
+            {
+                **base_kwargs,
+                "voice_mode": "tts",
+                "script_text": demo_script,
+                "provider_selection": {
+                    # The "best-effort" choice falls back to deterministic
+                    # local providers when their real runtime isn't wired.
+                    "script_provider_id": "template",
+                    "tts_provider_id": "piper",
+                    "video_provider_id": "sadtalker",
+                    "audio_processor_id": "ffmpeg_convert",
+                    "image_processor_id": "stdlib_image_validation",
+                },
+            },
+        )
+    )
+
+    # ----- Scenario 8 — Real video success (only when SadTalker ready) -----
+    sad_ready, sad_details = _sadtalker_ready(base_url)
+    if _DEMO_BRIEFS[7] in existing:
+        results.append(
+            {
+                "scenario": 8,
+                "brief": _DEMO_BRIEFS[7],
+                "existed_already": True,
+                "created_now": False,
+                "job_id": existing[_DEMO_BRIEFS[7]],
+                "ui_url": f"http://localhost:3001/jobs/{existing[_DEMO_BRIEFS[7]]}",
+            }
+        )
+    elif not sad_ready:
+        results.append(
+            {
+                "scenario": 8,
+                "brief": _DEMO_BRIEFS[7],
+                "existed_already": False,
+                "created_now": False,
+                "skipped": (
+                    "Skipped — SadTalker real runtime not ready "
+                    "(no fake success will be claimed)"
+                ),
+                "missing_gates": sad_details,
+            }
+        )
+    else:
+        # SadTalker is ready. Upload tiny audio + image and create a job
+        # that targets the real video provider.
+        ok_a, aid, _body_a, _ = _upload(
+            base_url, "audio", _make_tiny_wav(), "demo8.wav", "audio/wav"
+        )
+        ok_i, iid, _body_i, _ = _upload(
+            base_url, "image", _make_tiny_png(), "demo8.png", "image/png"
+        )
+        if not (ok_a and ok_i):
+            results.append(
+                {
+                    "scenario": 8,
+                    "brief": _DEMO_BRIEFS[7],
+                    "existed_already": False,
+                    "created_now": False,
+                    "error": "audio or image upload failed",
+                }
+            )
+        else:
+            payload = {
+                **base_kwargs,
+                "brief": _DEMO_BRIEFS[7],
+                "voice_mode": "provided_audio",
+                "face_mode": "provided_image",
+                "audio_artifact_id": aid,
+                "audio_consent_confirmed": True,
+                "audio_synthetic_or_owned": True,
+                "image_artifact_id": iid,
+                "image_consent_confirmed": True,
+                "image_synthetic_person_confirmed": True,
+                "script_text": None,
+                "provider_selection": {
+                    "video_provider_id": "sadtalker",
+                    "audio_processor_id": "ffmpeg_convert",
+                    "image_processor_id": "stdlib_image_validation",
+                },
+            }
+            ok, jid, body, code = _create_job(base_url, payload)
+            entry = {
+                "scenario": 8,
+                "brief": _DEMO_BRIEFS[7],
+                "existed_already": False,
+                "created_now": bool(ok),
+                "http": code,
+                "audio_artifact_id": aid,
+                "image_artifact_id": iid,
+                "job_id": jid,
+                "sadtalker_gates": sad_details,
+            }
+            if not ok:
+                entry["error_body"] = body
+            else:
+                entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+            results.append(entry)
+
+    created = sum(1 for r in results if r.get("created_now"))
+    existed = sum(1 for r in results if r.get("existed_already"))
+    skipped = sum(1 for r in results if r.get("skipped"))
+    return {
+        "base_url": base_url,
+        "scenarios": results,
+        "created_now": created,
+        "existed_already": existed,
+        "skipped": skipped,
+        "total": len(results),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed P1.AIVideo scenario jobs.")
     parser.add_argument(
@@ -506,7 +966,25 @@ def main() -> int:
         default=DEFAULT_BASE_URL,
         help=f"Backend base URL (default: {DEFAULT_BASE_URL!r})",
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run the Phase 10A-0 'Demo —' matrix (idempotent) instead of "
+        "the legacy Phase 8E timestamped scenarios.",
+    )
     args = parser.parse_args()
+    if args.demo:
+        summary = run_demo(args.base_url)
+        print(json.dumps(summary, indent=2))
+        # Treat skipped scenarios as informational, not failures —
+        # Scenario 8 + MP3 path legitimately skip without GPU / ffmpeg.
+        failed = sum(
+            1 for r in summary["scenarios"]
+            if not r.get("created_now")
+            and not r.get("existed_already")
+            and not r.get("skipped")
+        )
+        return 0 if failed == 0 else 2
     summary = run(args.base_url)
     print(json.dumps(summary, indent=2))
     return 0 if summary["passed"] == summary["total"] else 2

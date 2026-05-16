@@ -176,6 +176,13 @@ services:
       UPLOAD_TEXT_ROOT: /storage/inputs/text
       ARTIFACTS_LOCAL_ROOT: /storage/artifacts
       ALLOW_MODEL_AUTODOWNLOAD: "false"
+      # Phase 10A-1 — the orchestrator container is now a real DAG
+      # worker. ``ORCHESTRATOR_MODE=idle`` falls back to the legacy
+      # import-only smoke from light_idle.py. ``ORCHESTRATOR_DISABLE=true``
+      # parks the container without running anything.
+      ORCHESTRATOR_MODE: "${ORCHESTRATOR_MODE:-worker}"
+      ORCHESTRATOR_POLL_INTERVAL_SECONDS: "${ORCHESTRATOR_POLL_INTERVAL_SECONDS:-5}"
+      ORCHESTRATOR_BATCH_SIZE: "${ORCHESTRATOR_BATCH_SIZE:-8}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -184,10 +191,11 @@ services:
       backend:
         condition: service_healthy
     volumes:
-      # Inputs are read-only — the orchestrator should never write into the
-      # upload root. Artifacts are r/w so future stage handlers can emit
-      # metadata files alongside the backend's own writes.
-      - inputs_data:/storage/inputs:ro
+      # Phase 10A-1: the worker now writes audio/video artifacts through
+      # the DAG (when a stage produces a real file). The upload root
+      # must be readable AND writable so e.g. the TTS path can land a
+      # WAV under /storage/inputs/audio.
+      - inputs_data:/storage/inputs
       - artifacts_data:/storage/artifacts
     networks: [aivideo-net]
 
@@ -286,3 +294,40 @@ services:
     volumes:
       - ../models/llm:/models/llm:ro
     networks: [aivideo-net]
+
+  # --- Optional: F5TTS-Ro Romanian TTS wrapper (Phase 10A-1) ----------------
+  # CPU-friendly default (slow). Build & start explicitly:
+  #   make docker-tts-ro-build && make docker-tts-ro-up
+  # Reachable from the backend at http://aivideo-model-tts-ro-1:8080 or
+  # from the host at http://localhost:${TTS_RO_PORT:-8061}.
+  # The service refuses to fake audio: if model assets / reference voice
+  # aren't present under /models/f5tts-ro, /tts/generate returns a
+  # categorised error (runtime_missing/assets_missing/...).
+  model-tts-ro:
+    profiles: ["tts-ro"]
+    build:
+      context: ..
+      dockerfile: docker/model-tts-ro/Dockerfile
+    image: aivideo-model-tts-ro:latest
+    environment:
+      F5TTS_RO_HOST: "0.0.0.0"
+      F5TTS_RO_PORT: "8080"
+      F5TTS_RO_MODELS_ROOT: "/models/f5tts-ro"
+      F5TTS_RO_REFERENCE_AUDIO: "${F5TTS_RO_REFERENCE_AUDIO:-/models/f5tts-ro/reference/voice.wav}"
+      F5TTS_RO_REFERENCE_TEXT: "${F5TTS_RO_REFERENCE_TEXT:-Aceasta este o voce de referinta.}"
+      F5TTS_RO_DEVICE: "${F5TTS_RO_DEVICE:-cpu}"
+      F5TTS_RO_ALLOW_AUTO_DOWNLOAD: "${F5TTS_RO_ALLOW_AUTO_DOWNLOAD:-false}"
+    ports:
+      - "${TTS_RO_PORT:-8061}:8080"
+    volumes:
+      - ../models/tts/f5tts-ro:/models/f5tts-ro:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8080/health\",timeout=2).status==200 else 1)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

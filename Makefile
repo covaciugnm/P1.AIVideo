@@ -6,6 +6,9 @@
 COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
+.PHONY: demo-jobs docker-tts-ro-build docker-tts-ro-up docker-tts-ro-down \
+	docker-tts-ro-logs docker-tts-ro-smoke \
+	orchestrator-logs process-demo-jobs phase10a1-worker-test
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
         check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test phase7a-test phase7b-test phase7c-test phase7d-test phase7e-test phase8a-test phase8b-test phase8c-test phase8d-test phase8e-test phase8f1-test phase8g-test phase8g2-test \
         db-migrate db-upgrade db-downgrade db-current db-history runtime-readiness-check \
@@ -188,6 +191,67 @@ scenario-jobs: ## Phase 8E — seed 8 scenario jobs against a running backend. H
 scenario-jobs-check: ## Phase 8E — sanity-check that scenario jobs exist in the running backend's job list.
 	@curl -fsS $${BACKEND_BASE_URL:-http://localhost:8001}/api/v1/jobs \
 		| python3 -c "import json,sys;jobs=json.load(sys.stdin);scn=[j for j in jobs if isinstance(j.get('brief'),str) and j['brief'].startswith('Scenario ')];print(f'scenario jobs visible: {len(scn)}');[print(f'  - {j[\"brief\"][:80]}') for j in scn[:20]]"
+
+demo-jobs: ## Phase 10A-0 — idempotently seed the persistent "Demo —" matrix.
+	@BACKEND_BASE_URL=$${BACKEND_BASE_URL:-http://localhost:8001} \
+		python3 scripts/create_scenario_jobs.py --demo
+
+orchestrator-logs: ## Phase 10A-1 — tail orchestrator worker logs.
+	@$(COMPOSE_DEV) logs --tail=200 -f orchestrator
+
+process-demo-jobs: ## Phase 10A-1 — wait until every "Demo —" job leaves pending_compliance (max 120s).
+	@BACKEND_BASE_URL=$${BACKEND_BASE_URL:-http://localhost:8001} \
+		python3 -c "import time,sys,urllib.request,json; \
+base=__import__('os').environ.get('BACKEND_BASE_URL','http://localhost:8001'); \
+deadline=time.time()+120; \
+fmt=lambda j: f\"  {j['id'][:8]}.. {j['status']:>22}  {j['brief']}\"; \
+last=[]; \
+import urllib.request as r; \
+go=lambda: json.loads(r.urlopen(f'{base}/api/v1/jobs', timeout=5).read()); \
+\
+def report(jobs): \
+    demos=[j for j in jobs if (j.get('brief') or '').startswith('Demo —')]; \
+    demos.sort(key=lambda j: j['brief']); \
+    pending=[j for j in demos if j['status']=='pending_compliance']; \
+    print(f'  pending={len(pending)}/{len(demos)} demos'); \
+    return pending; \
+while time.time() < deadline: \
+    jobs=go(); pending=report(jobs); \
+    if not pending: break; \
+    time.sleep(3); \
+else: \
+    print('TIMEOUT — demo jobs still pending after 120s', file=sys.stderr); sys.exit(2); \
+print('OK — all demo jobs left pending_compliance.'); \
+[print(fmt(j)) for j in sorted([j for j in jobs if (j.get('brief') or '').startswith('Demo —')], key=lambda j: j['brief'])]"
+
+phase10a1-worker-test: ## Phase 10A-1 — run the orchestrator worker test file.
+	pytest -q tests/integration/test_phase10a1_orchestrator_worker.py
+
+# ----- Phase 10A-1 — optional F5TTS-Ro Romanian TTS wrapper --------------
+docker-tts-ro-build: ## Build the optional F5TTS-Ro wrapper image.
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) --profile tts-ro build model-tts-ro
+
+docker-tts-ro-up: ## Start the optional F5TTS-Ro wrapper. Sets F5TTS_RO_BASE_URL automatically for the backend on next restart.
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) --profile tts-ro up -d model-tts-ro
+
+docker-tts-ro-down: ## Stop the optional F5TTS-Ro wrapper. Does NOT delete volumes.
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) --profile tts-ro stop model-tts-ro
+
+docker-tts-ro-logs: ## Tail F5TTS-Ro wrapper logs.
+	@$(COMPOSE_DEV) logs -f model-tts-ro
+
+docker-tts-ro-smoke: ## Probe /health on the F5TTS-Ro wrapper without touching weights.
+	@curl -fsS $${F5TTS_RO_BASE_URL:-http://localhost:8061}/health \
+		| python3 -m json.tool
 
 docker-gpu-config-check: ## Validate compose.dev + compose.gpu overlay (no services started)
 	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
