@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ErrorMessage } from "@/components/ErrorMessage";
+import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { UploadCard } from "@/components/UploadCard";
 import { ApiError, getUiOptions, uploadText } from "@/lib/api";
@@ -61,7 +62,10 @@ export default function UploadsPage() {
 
   return (
     <div>
-      <h1>Uploads</h1>
+      <h1>
+        Uploads
+        <HelpHint slug="page-uploads" />
+      </h1>
       <p className="muted">
         Register text, audio, or image artifacts. Each upload is stored
         locally on the backend and returns an artifact id you can reference

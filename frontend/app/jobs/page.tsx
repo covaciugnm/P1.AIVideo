@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ErrorMessage } from "@/components/ErrorMessage";
+import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { ProgressBar } from "@/components/ProgressBar";
 import { useSettings } from "@/components/SettingsContext";
@@ -110,7 +111,10 @@ export default function JobsListPage() {
   return (
     <div>
       <header className={styles.header}>
-        <h1>Jobs</h1>
+        <h1>
+          Jobs
+          <HelpHint slug="page-jobs-list" />
+        </h1>
         <Link href="/jobs/new" className="btn btn-primary">
           + New job
         </Link>

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { CreateJobForm } from "@/components/CreateJobForm";
 import { ErrorMessage } from "@/components/ErrorMessage";
+import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { getUiOptions } from "@/lib/api";
 import * as logBus from "@/lib/log-bus";
@@ -46,7 +47,10 @@ export default function NewJobPage() {
 
   return (
     <div>
-      <h1>Create a new job</h1>
+      <h1>
+        Create a new job
+        <HelpHint slug="page-create-job" />
+      </h1>
       <p className="muted">
         Submit a brief and choose a voice source. Compliance attestations are
         mandatory and load-bearing.

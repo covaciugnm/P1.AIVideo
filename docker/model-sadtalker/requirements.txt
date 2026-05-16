@@ -1,0 +1,50 @@
+# SadTalker GPU wrapper — Phase 10B
+#
+# Heavy ML deps land via separate pip install passes in the Dockerfile so
+# torch (cu124 index) and SadTalker's pinned scientific stack can use
+# different indexes. This file holds only the wrapper-layer + the
+# SadTalker / GFPGAN / basicsr stack that works against a modern torch.
+#
+# Versions pinned to what runs cleanly against torch 2.6.x cu124 wheels
+# on Blackwell sm_120 (RTX 5090). When a newer pin breaks, prefer the
+# lower bound — these libraries break compat aggressively.
+
+# Wrapper HTTP layer (matches model-tts-ro for consistency).
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+
+# SadTalker scientific stack. numpy<2 because basicsr/facexlib still
+# call np.float and np.int. scipy 1.13 still exposes np.complex aliases
+# they need indirectly via librosa.
+numpy==1.26.4
+scipy==1.13.1
+scikit-image==0.24.0
+scikit-learn==1.5.2
+imageio==2.36.0
+imageio-ffmpeg==0.5.1
+librosa==0.10.2.post1
+soundfile==0.12.1
+opencv-python-headless==4.10.0.84
+safetensors==0.4.5
+yacs==0.1.8
+pydub==0.25.1
+joblib==1.4.2
+PyYAML==6.0.2
+tqdm==4.66.5
+
+# Face restoration stack. basicsr is the painful one — its source
+# imports torchvision.transforms.functional_tensor which was removed
+# in torchvision 0.17+. The Dockerfile patches the import after install.
+basicsr==1.4.2
+facexlib==0.3.0
+gfpgan==1.3.8
+
+# Modelling utility used by SadTalker upstream.
+kornia==0.7.3
+
+# Optional, but several SadTalker scripts touch them.
+av==13.0.0
+resampy==0.4.3
+numba==0.60.0
+llvmlite==0.43.0

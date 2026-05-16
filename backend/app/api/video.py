@@ -336,6 +336,21 @@ async def video_generate(
         from agents.lipsync.providers.sadtalker.provider import SadTalkerProvider
 
         provider = SadTalkerProvider()
+
+        # Phase 10B — when SADTALKER_BASE_URL is set, the light backend
+        # proxies the heavy call to the model-sadtalker GPU wrapper over
+        # HTTP. The backend image stays torch-free; all readiness
+        # checking + inference lives in the wrapper. Bypass the
+        # in-process inspect_status (which would always report
+        # runtime_missing in the light image) and route directly.
+        if os.environ.get("SADTALKER_BASE_URL", "").strip():
+            return await _run_sadtalker_via_wrapper(
+                session=session,
+                payload=payload,
+                img=img,
+                aud=aud,
+            )
+
         status_info = provider.inspect_status()
 
         # Not ready (or gate off) → translate without ever invoking
@@ -536,6 +551,229 @@ async def _run_sadtalker_and_register(
             "video_uri": output_path.as_uri(),
             "video_size_bytes": size_bytes,
             "video_checksum_sha256": checksum,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 10B — HTTP proxy to the model-sadtalker GPU wrapper
+# ---------------------------------------------------------------------------
+
+
+_SADTALKER_WRAPPER_TO_BACKEND = {
+    "runtime_missing": "video_runtime_missing",
+    "gpu_unavailable": "video_gpu_missing",
+    "assets_missing": "video_assets_missing",
+    "generation_failed": "video_generation_failed",
+}
+
+
+async def _run_sadtalker_via_wrapper(
+    *,
+    session: AsyncSession,
+    payload: "VideoGenerationRequest",
+    img: Artifact,
+    aud: Artifact,
+) -> "VideoGenerationResult":
+    """Phase 10B: POST to the ``model-sadtalker`` HTTP wrapper. The
+    backend keeps its in-process torch-free invariant; the wrapper does
+    the CUDA work and writes the MP4 onto the shared artifacts volume.
+
+    On wrapper success: register the MP4 as an ``ArtifactType.video``
+    row exactly like the in-process path. On categorised wrapper
+    failure: translate the wrapper's ``status``/``error_code`` into the
+    same Phase 7B vocabulary the in-process path uses.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    if img.local_path is None or aud.local_path is None:
+        return VideoGenerationResult(
+            status="missing_inputs",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="missing_local_path",
+            message=(
+                "Image / audio artifact has no local_path; SadTalker "
+                "wrapper needs both readable from the shared volume."
+            ),
+        )
+
+    base_url = os.environ.get("SADTALKER_BASE_URL", "").strip()
+    if not base_url:
+        return VideoGenerationResult(
+            status="not_configured",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="video_provider_not_configured",
+            message=(
+                "SADTALKER_BASE_URL is unset; backend cannot reach the "
+                "model-sadtalker wrapper. Start it with "
+                "`make docker-sadtalker-up`."
+            ),
+        )
+
+    # Pre-compute the output path on the shared artifacts volume so the
+    # wrapper writes where the backend can later checksum + register.
+    out_dir = _artifacts_root() / "video" / str(payload.job_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_name = f"sadtalker_{uuid.uuid4().hex}.mp4"
+    out_path = out_dir / out_name
+
+    body = {
+        "image_path": img.local_path,
+        "audio_path": aud.local_path,
+        "output_path": str(out_path),
+        "target_duration_seconds": payload.target_duration_seconds,
+        "model_id": payload.model_id,
+        "size": 256,
+        "enhancer": "gfpgan",
+        "preprocess": "crop",
+        "still": True,
+    }
+    url = base_url.rstrip("/") + "/sadtalker/generate"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+
+    timeout = int(os.environ.get("SADTALKER_HTTP_TIMEOUT", "1200"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload_bytes = resp.read()
+            http_code = resp.status
+    except urllib.error.HTTPError as exc:
+        err_text = exc.read().decode("utf-8", errors="replace")[:500]
+        return VideoGenerationResult(
+            status="failed",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="video_generation_failed",
+            message=f"SadTalker wrapper HTTP {exc.code}: {err_text}",
+        )
+    except urllib.error.URLError as exc:
+        return VideoGenerationResult(
+            status="not_configured",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="video_runtime_missing",
+            message=(
+                f"SadTalker wrapper unreachable at {base_url!r}: "
+                f"{type(exc).__name__}: {getattr(exc, 'reason', exc)}"
+            ),
+        )
+
+    try:
+        wrapper = json.loads(payload_bytes.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return VideoGenerationResult(
+            status="failed",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="video_generation_failed",
+            message=f"SadTalker wrapper returned malformed JSON: {exc}",
+        )
+
+    wrapper_status = wrapper.get("status")
+    if wrapper_status != "completed":
+        # Categorise + return; clean any partial MP4 the wrapper may
+        # have created on a hard exit.
+        try:
+            if out_path.is_file() and out_path.stat().st_size == 0:
+                out_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        be_code = _SADTALKER_WRAPPER_TO_BACKEND.get(
+            str(wrapper_status), "video_generation_failed"
+        )
+        return VideoGenerationResult(
+            status="failed" if wrapper_status == "generation_failed" else "not_configured",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code=be_code,
+            message=str(wrapper.get("message") or wrapper.get("error_code") or wrapper_status),
+            metadata={"wrapper": wrapper, "http_code": http_code},
+        )
+
+    # ----- Wrapper success: validate + register the artifact -----
+    final_path = Path(wrapper.get("output_path") or out_path)
+    if not final_path.is_file() or final_path.stat().st_size == 0:
+        return VideoGenerationResult(
+            status="failed",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="video_generation_failed",
+            message=(
+                f"SadTalker wrapper reported completed but {final_path} is "
+                "missing/empty. Refusing to register a phantom artifact."
+            ),
+        )
+
+    size_bytes = final_path.stat().st_size
+    checksum = _sha256_of_file(final_path)
+    metadata_json = {
+        "phase": "phase10b_sadtalker_via_wrapper",
+        "provider_id": "sadtalker",
+        "model_id": payload.model_id,
+        "target_duration_seconds": payload.target_duration_seconds,
+        "image_artifact_id": str(payload.image_artifact_id),
+        "audio_artifact_id": str(payload.audio_artifact_id),
+        "edit_plan_artifact_id": (
+            str(payload.edit_plan_artifact_id)
+            if payload.edit_plan_artifact_id is not None
+            else None
+        ),
+        "wrapper_base_url": base_url,
+        "wrapper_http_code": http_code,
+        "wrapper_metadata": wrapper.get("metadata") or {},
+    }
+    artifact = await artifact_service.register_artifact(
+        session,
+        job_id=payload.job_id,
+        artifact_type=ArtifactType.video.value,
+        uri=final_path.as_uri(),
+        local_path=str(final_path),
+        mime_type="video/mp4",
+        checksum_sha256=checksum,
+        size_bytes=size_bytes,
+        duration_seconds=wrapper.get("duration_seconds"),
+        width=wrapper.get("width"),
+        height=wrapper.get("height"),
+        metadata_json=metadata_json,
+    )
+    return VideoGenerationResult(
+        status="completed",
+        provider_id=payload.provider_id,
+        model_id=payload.model_id,
+        job_id=payload.job_id,
+        output_video_artifact_id=artifact.id,
+        message="SadTalker (via model-sadtalker wrapper) completed.",
+        metadata={
+            "image_artifact_id": str(payload.image_artifact_id),
+            "audio_artifact_id": str(payload.audio_artifact_id),
+            "edit_plan_artifact_id": (
+                str(payload.edit_plan_artifact_id)
+                if payload.edit_plan_artifact_id is not None
+                else None
+            ),
+            "target_duration_seconds": payload.target_duration_seconds,
+            "image_dims": [img.width, img.height] if img.width else None,
+            "audio_duration_seconds": aud.duration_seconds,
+            "video_uri": final_path.as_uri(),
+            "video_size_bytes": size_bytes,
+            "video_checksum_sha256": checksum,
+            "wrapper_base_url": base_url,
+            "wrapper_metadata": wrapper.get("metadata") or {},
         },
     )
 

@@ -132,6 +132,13 @@ services:
       SADTALKER_ENABLE_REAL_INFERENCE: "${SADTALKER_ENABLE_REAL_INFERENCE:-false}"
       RUN_REAL_SADTALKER: "${RUN_REAL_SADTALKER:-0}"
       SADTALKER_MODELS_ROOT: "${SADTALKER_MODELS_ROOT:-/models/lipsync/sadtalker}"
+      # Phase 10B — when set, the light backend proxies
+      # /api/v1/video/generate (provider=sadtalker) over HTTP to the
+      # ``model-sadtalker`` GPU wrapper. The light image stays torch-free;
+      # all CUDA work happens inside the wrapper container. Unset → the
+      # legacy in-process path (which returns runtime_missing in the
+      # light image).
+      SADTALKER_BASE_URL: "${SADTALKER_BASE_URL:-}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -309,6 +316,50 @@ services:
     volumes:
       - ../models/llm:/models/llm:ro
     networks: [aivideo-net]
+
+  # --- Optional: SadTalker GPU wrapper (Phase 10B) ---------------------------
+  # GPU-only service. Build & start explicitly:
+  #   make docker-sadtalker-build && make docker-sadtalker-up
+  # Reachable from the backend at http://aivideo-model-sadtalker-1:8080 or
+  # from the host at http://localhost:${SADTALKER_PORT:-8062}.
+  # The wrapper refuses to fake MP4s: missing weights / runtime / GPU
+  # surface a categorised error_code that the backend translates 1:1.
+  model-sadtalker:
+    profiles: ["sadtalker"]
+    build:
+      context: ..
+      dockerfile: docker/model-sadtalker/Dockerfile
+    image: aivideo-model-sadtalker:latest
+    environment:
+      SADTALKER_HOST: "0.0.0.0"
+      SADTALKER_PORT: "8080"
+      SADTALKER_MODELS_ROOT: "/models/lipsync/sadtalker"
+      SADTALKER_SOURCE_DIR: "/opt/sadtalker"
+      SADTALKER_RESULT_DIR: "/storage/artifacts/sadtalker"
+      SADTALKER_INFER_TIMEOUT: "${SADTALKER_INFER_TIMEOUT:-900}"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${SADTALKER_PORT:-8062}:8080"
+    volumes:
+      - ../models/lipsync/sadtalker:/models/lipsync/sadtalker:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8080/health\",timeout=2).status==200 else 1)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   # --- Optional: F5TTS-Ro Romanian TTS wrapper (Phase 10A-1) ----------------
   # CPU-friendly default (slow). Build & start explicitly:

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
+import { HelpHint } from "@/components/HelpHint";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import * as logBus from "@/lib/log-bus";
 
@@ -23,7 +24,10 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <h1>Settings</h1>
+      <h1>
+        Settings
+        <HelpHint slug="page-settings" />
+      </h1>
       <p className="muted">
         These settings live in your browser only (localStorage). Reset clears
         every override and reverts to the build-time defaults.

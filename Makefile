@@ -253,6 +253,32 @@ docker-tts-ro-smoke: ## Probe /health on the F5TTS-Ro wrapper without touching w
 	@curl -fsS $${F5TTS_RO_BASE_URL:-http://localhost:8061}/health \
 		| python3 -m json.tool
 
+# ----- Phase 10B — SadTalker GPU wrapper (heavy, opt-in, --profile sadtalker) -
+docker-sadtalker-build: ## Phase 10B — build the SadTalker GPU wrapper image (~8 GB, requires NVIDIA Container Toolkit).
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) --profile sadtalker build model-sadtalker
+
+docker-sadtalker-up: ## Phase 10B — start the SadTalker GPU wrapper. Set SADTALKER_BASE_URL on the backend afterwards.
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) --profile sadtalker up -d model-sadtalker
+
+docker-sadtalker-down: ## Phase 10B — stop the SadTalker GPU wrapper. Does NOT delete volumes.
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) --profile sadtalker stop model-sadtalker
+
+docker-sadtalker-logs: ## Phase 10B — tail SadTalker wrapper logs.
+	@$(COMPOSE_DEV) logs -f model-sadtalker
+
+docker-sadtalker-smoke: ## Phase 10B — probe /health on the SadTalker wrapper.
+	@curl -fsS $${SADTALKER_BASE_URL:-http://localhost:8062}/health \
+		| python3 -m json.tool
+
 docker-gpu-config-check: ## Validate compose.dev + compose.gpu overlay (no services started)
 	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
 	@echo ">> compose.dev + compose.gpu overlay config"
