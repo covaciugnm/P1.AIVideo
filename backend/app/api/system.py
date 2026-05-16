@@ -33,6 +33,13 @@ from common.enums import (
 
 from app.core.config import settings
 from app.core.deps import get_db_session
+from app.core.languages import (
+    LANGUAGES,
+    catalog_payload,
+    is_supported_language,
+)
+from app.models.operator_settings import SINGLETON_ID, OperatorSettings
+from sqlalchemy import select
 
 
 router = APIRouter(prefix="/api/v1", tags=["system"])
@@ -220,6 +227,138 @@ async def get_ui_options() -> UIOptionsResponse:
             ArtifactTypeInfo(value=at.value, label=_humanize(at.value))
             for at in ArtifactType
         ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/config/languages — Phase 11A
+# ---------------------------------------------------------------------------
+
+
+class LanguageRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    label_native: str
+    label_english: str
+    enabled: bool
+    rtl: bool
+
+
+class SubtitleDefaults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    default_language: str
+    supported_formats: list[str]
+    burn_in_supported: bool
+
+
+class LanguagesConfigResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_ui_language: str
+    default_video_language: str
+    available_languages: list[LanguageRow]
+    subtitle_defaults: SubtitleDefaults
+
+
+@router.get("/config/languages", response_model=LanguagesConfigResponse)
+async def get_languages_config() -> LanguagesConfigResponse:
+    payload = catalog_payload()
+    return LanguagesConfigResponse(
+        default_ui_language=payload["default_ui_language"],
+        default_video_language=payload["default_video_language"],
+        available_languages=[LanguageRow(**row) for row in payload["available_languages"]],
+        subtitle_defaults=SubtitleDefaults(**payload["subtitle_defaults"]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET/PATCH /api/v1/settings/ui — Phase 11A (operator-wide singleton)
+# ---------------------------------------------------------------------------
+
+
+class UiSettingsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ui_language: str
+    default_video_language: str
+    updated_at: datetime
+
+
+class UiSettingsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ui_language: str | None = None
+    default_video_language: str | None = None
+
+
+async def _get_or_create_settings(session: AsyncSession) -> OperatorSettings:
+    row = await session.execute(
+        select(OperatorSettings).where(OperatorSettings.id == SINGLETON_ID)
+    )
+    existing = row.scalar_one_or_none()
+    if existing is not None:
+        return existing
+    fresh = OperatorSettings(id=SINGLETON_ID)
+    session.add(fresh)
+    await session.flush()
+    return fresh
+
+
+@router.get("/settings/ui", response_model=UiSettingsResponse)
+async def get_ui_settings(
+    session: AsyncSession = Depends(get_db_session),
+) -> UiSettingsResponse:
+    row = await _get_or_create_settings(session)
+    await session.commit()
+    return UiSettingsResponse(
+        ui_language=row.ui_language,
+        default_video_language=row.default_video_language,
+        updated_at=row.updated_at,
+    )
+
+
+@router.patch("/settings/ui", response_model=UiSettingsResponse)
+async def patch_ui_settings(
+    payload: UiSettingsPatch,
+    session: AsyncSession = Depends(get_db_session),
+) -> UiSettingsResponse:
+    row = await _get_or_create_settings(session)
+
+    if payload.ui_language is not None:
+        if not is_supported_language(payload.ui_language):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"ui_language {payload.ui_language!r} is not supported; "
+                    f"allowed: {[l.code for l in LANGUAGES if l.enabled]}"
+                ),
+            )
+        row.ui_language = payload.ui_language
+
+    if payload.default_video_language is not None:
+        if not is_supported_language(payload.default_video_language):
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"default_video_language {payload.default_video_language!r} "
+                    f"is not supported"
+                ),
+            )
+        row.default_video_language = payload.default_video_language
+
+    await session.commit()
+    await session.refresh(row)
+    return UiSettingsResponse(
+        ui_language=row.ui_language,
+        default_video_language=row.default_video_language,
+        updated_at=row.updated_at,
     )
 
 

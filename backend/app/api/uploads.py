@@ -593,9 +593,40 @@ async def create_job_from_inputs(
             # Phase 8E — forward provider_selection so the upload-intake
             # path persists the same operator choices the /jobs path does.
             provider_selection=payload.provider_selection,
+            # Phase 11A — forward language + subtitle metadata.
+            video_language=payload.video_language,
+            subtitle_enabled=payload.subtitle_enabled,
+            subtitle_languages=payload.subtitle_languages,
+            subtitle_format=payload.subtitle_format,
+            subtitle_burn_in=payload.subtitle_burn_in,
+            transcript_language=payload.transcript_language,
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     job = await job_service.create_job(session, create_req)
+
+    # Phase 11A — if subtitles are enabled and we have script_text, drop
+    # one sidecar SRT/VTT artifact per requested language. Best-effort:
+    # the subtitle service rounds-down to "approximate" timing because
+    # we don't have forced alignment in light dev.
+    if create_req.subtitle_enabled and script_text:
+        from app.services import subtitle_service
+
+        try:
+            await subtitle_service.generate_subtitle_artifacts(
+                session,
+                job_id=job.id,
+                script_text=script_text,
+                languages=create_req.subtitle_languages or [create_req.video_language],
+                fmt=create_req.subtitle_format,
+                target_duration_seconds=create_req.target_duration_seconds,
+                burn_in_requested=create_req.subtitle_burn_in,
+            )
+            await session.commit()
+        except Exception:  # noqa: BLE001 — defensive
+            # Subtitle generation must never block job creation. Swallow
+            # and continue; the operator can re-run via a future endpoint.
+            await session.rollback()
+
     return JobResponse.model_validate(job)

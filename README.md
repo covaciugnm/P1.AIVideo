@@ -441,11 +441,11 @@ Docker-based multi-agent pipeline that produces short vertical reels (15–60s) 
 >
 > Closes the loop on the Phase 4D regression where the browser still showed `Failed to fetch` even with Settings → Backend API Base URL set. Adds full operator routes (Jobs list with edit/delete, dedicated Uploads page, dedicated Settings page) and exposes the Docker light-runtime ports as editable operator settings with a copy-ready compose-up command.
 >
-> **Root cause of "Failed to fetch"** — the backend's default `BACKEND_CORS_ORIGINS=http://localhost:3000` only allowed the standard frontend port. Browser preflight from `http://localhost:3001` returned `400 Disallowed CORS origin` with no `access-control-allow-origin` header, so every API call from the browser failed at the protocol level even though curl on the host worked fine.
+> **Root cause of "Failed to fetch"** — the backend's default `BACKEND_CORS_ORIGINS=http://localhost:3000` only allowed the standard frontend port. Browser preflight from `http://localhost:3010` returned `400 Disallowed CORS origin` with no `access-control-allow-origin` header, so every API call from the browser failed at the protocol level even though curl on the host worked fine.
 >
 > **Fix.**
-> - `backend/app/core/config.py` default `backend_cors_origins` is now `http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001`. `.env.example` mirrors the new default so a fresh `cp .env.example .env` carries it forward.
-> - Verified end-to-end with the dockerized stack on alt ports: preflight OPTIONS from `Origin: http://localhost:3001` now returns `200` with `access-control-allow-origin: http://localhost:3001`; GET / PATCH / DELETE all return 2xx with the credentialed allow-origin header.
+> - `backend/app/core/config.py` default `backend_cors_origins` is now `http://localhost:3000,http://localhost:3010,http://127.0.0.1:3000,http://127.0.0.1:3010`. `.env.example` mirrors the new default so a fresh `cp .env.example .env` carries it forward.
+> - Verified end-to-end with the dockerized stack on alt ports: preflight OPTIONS from `Origin: http://localhost:3010` now returns `200` with `access-control-allow-origin: http://localhost:3010`; GET / PATCH / DELETE all return 2xx with the credentialed allow-origin header.
 >
 > **Backend** — Two new endpoints + 12 new tests under `tests/integration/test_phase4e_job_patch_delete.py`:
 > - `PATCH /api/v1/jobs/{id}` with `JobUpdateRequest` (every field optional, `extra="forbid"`). Refuses terminal-state edits with `409`. Refuses immutable-field edits (`voice_mode`, `face_mode`, `script_text`, `watermark_required`, `c2pa_required`, `tts_backend`) once the job has progressed past `pending_compliance`. `brief` + `target_duration_seconds` stay editable until terminal.
@@ -474,7 +474,7 @@ Docker-based multi-agent pipeline that produces short vertical reels (15–60s) 
 >
 > **Compose-up command preview** — Settings shows the exact one-liner derived from the current ports + API URL, with a one-click copy button:
 > ```
-> BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 docker compose -f docker/compose.dev.yml up -d postgres redis backend frontend orchestrator
+> BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 docker compose -f docker/compose.dev.yml up -d postgres redis backend frontend orchestrator
 > ```
 >
 > **API client diagnostics** — every fetch now logs `url`, `url_source` (`user-override` vs `build-time`), error name, and a hint for the classic "Failed to fetch" CORS case. `getActiveApiBaseUrl()` still reads localStorage on every call.
@@ -526,7 +526,7 @@ Docker-based multi-agent pipeline that produces short vertical reels (15–60s) 
 > **Verification**
 > - `npm run lint` (zero-warnings via `--max-warnings 0`) and `npm run build` both clean. Bundle sizes: dashboard 1.24 kB → 102 kB first-load; job detail 3.56 kB → 105 kB; new-job 6.85 kB → 94.2 kB (essentially unchanged from Phase 4B).
 > - Backend `make test` + strict-warnings `pytest -W error` both stay at **216 passed, 1 skipped**.
-> - Docker light smoke (`BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose up`): all five services healthy; frontend `/` returns 200; backend `/healthz` + `/api/v1/jobs` return 200 on 8001; the `aivideo:settings:v1` localStorage key is present in the built bundle, confirming the runtime override path is wired.
+> - Docker light smoke (`BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose up`): all five services healthy; frontend `/` returns 200; backend `/healthz` + `/api/v1/jobs` return 200 on 8001; the `aivideo:settings:v1` localStorage key is present in the built bundle, confirming the runtime override path is wired.
 >
 > **NOT in Phase 4D**: WebSocket/SSE streaming, Tailwind, UI/charting libraries, backend log shipping, persisting logs across reloads, server-side backend status checks. Logs remain a per-tab in-memory operator diagnostic.
 
@@ -628,6 +628,45 @@ Docker-based multi-agent pipeline that produces short vertical reels (15–60s) 
 - **Fully local.** Runs in Docker with GPU support; no paid APIs required at any pipeline stage.
 - **No surprise downloads.** Model weights are never auto-fetched at build or first run. See [`docs/runbooks/model-management.md`](docs/runbooks/model-management.md).
 - **Adapter-pattern model integrations.** Lip-sync (and other model backends) are swappable via env vars — `LIPSYNC_BACKEND=sadtalker` is the v1 default. See [`docs/architecture/lipsync-adapter.md`](docs/architecture/lipsync-adapter.md).
+
+## Help & documentation maintenance rule
+
+**Any change that adds, removes, or modifies a user-visible surface must update
+the help system, both translation dictionaries (ro + en), and the relevant
+runbook in the same PR.** "User-visible" here means: a UI page or control, a
+backend API endpoint, a provider, a runtime status, a categorised error code,
+an operator setting, or a Docker profile.
+
+Bilingual checklist (Phase 11A re-do):
+
+- New UI label → add the key in **both** `frontend/lib/i18n/dictionaries/en.ts` and `ro.ts`.
+- New button or form section → wire `useT()` + add a `<HelpHint slug="…"/>`.
+- New API endpoint → update `docs/runbooks/api-surface.md`.
+- New provider → add a help topic in **both** `frontend/lib/help/dictionaries/en.ts` and `ro.ts`, plus its error codes.
+- New error code → add it to `errors.*` in both UI dictionaries **and** mention it in the `errors-glossary` help topic.
+- New setting → add it to `settings.*` in both UI dictionaries, document in the `settings` help topic.
+
+Concretely, every PR that touches one of those must also update **at least
+one** of these:
+
+- `docs/runbooks/api-surface.md` — backend HTTP contract (API row)
+- `docs/runbooks/ui-api-parity.md` — UI ↔ API mapping (matrix row)
+- `frontend/lib/help/content.ts` — in-app Help overlay article(s)
+- `frontend/lib/api.ts` + `frontend/lib/types.ts` — typed client + TS types
+- the relevant runtime runbook in `docs/runbooks/` (e.g. `sadtalker-runtime.md`)
+
+The checklist for which doc to update per change type lives in
+[`docs/runbooks/contribution-rules.md`](docs/runbooks/contribution-rules.md).
+
+Phase 10C ships three lightweight tests that enforce this:
+
+```bash
+pytest -q tests/integration/test_phase10c_api_surface.py
+pytest -q tests/integration/test_phase10c_ui_api_parity.py
+pytest -q tests/integration/test_phase10c_help_coverage.py
+```
+
+A PR is incomplete if any of these fail. Fix the docs (almost never the test).
 
 ## Prerequisites
 

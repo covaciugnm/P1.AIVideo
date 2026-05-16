@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { getSystemStatus } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import { formatRelative } from "@/lib/format";
 
@@ -12,6 +13,7 @@ import styles from "./BackendStatusBadge.module.css";
 const CHECK_INTERVAL_MS = 15_000;
 
 export function BackendStatusBadge() {
+  const t = useT();
   const { settings, hydrated } = useSettings();
   const [reachable, setReachable] = useState<boolean | null>(null);
   const [lastOk, setLastOk] = useState<string | null>(null);
@@ -90,10 +92,10 @@ export function BackendStatusBadge() {
 
   const label =
     reachable === null
-      ? "Checking…"
+      ? t("settings.testing")
       : reachable
-        ? "API reachable"
-        : "API unreachable";
+        ? t("settings.testSuccess")
+        : t("settings.testFailed");
 
   const title =
     reachable === false && lastErr
@@ -108,7 +110,7 @@ export function BackendStatusBadge() {
         <span className={styles.url}>{settings.apiBaseUrl}</span>
       </div>
       {reachable === false && (
-        <span className={styles.hint}>Open Settings to change the URL</span>
+        <span className={styles.hint}>{t("badges.openSettingsToChangeUrl")}</span>
       )}
     </div>
   );

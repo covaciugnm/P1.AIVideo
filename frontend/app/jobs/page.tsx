@@ -9,6 +9,7 @@ import { LoadingState } from "@/components/LoadingState";
 import { ProgressBar } from "@/components/ProgressBar";
 import { useSettings } from "@/components/SettingsContext";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useT } from "@/lib/i18n/LanguageContext";
 import { ApiError, deleteJob, listJobs } from "@/lib/api";
 import { formatRelative, humanize, shortId } from "@/lib/format";
 import * as logBus from "@/lib/log-bus";
@@ -18,17 +19,20 @@ import { usePolling } from "@/lib/usePolling";
 import styles from "./page.module.css";
 
 // Canonical JobStatus values, in the order the dashboard lists them.
-const STATUS_OPTIONS: readonly { readonly value: JobStatus; readonly label: string }[] = [
-  { value: "pending_compliance", label: "Pending compliance" },
-  { value: "accepted", label: "Accepted" },
-  { value: "published", label: "Published" },
-  { value: "rejected", label: "Rejected" },
-  { value: "failed", label: "Failed" },
+// The display label is resolved at render time via the translation
+// dictionary (``statusLabels.<value>``); only the enum value is fixed.
+const STATUS_OPTIONS: readonly JobStatus[] = [
+  "pending_compliance",
+  "accepted",
+  "published",
+  "rejected",
+  "failed",
 ];
 
 type StatusFilter = "all" | JobStatus;
 
 export default function JobsListPage() {
+  const t = useT();
   const { settings, hydrated } = useSettings();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -112,17 +116,17 @@ export default function JobsListPage() {
     <div>
       <header className={styles.header}>
         <h1>
-          Jobs
-          <HelpHint slug="page-jobs-list" />
+          {t("jobs.title")}
+          <HelpHint slug="jobs-list" />
         </h1>
         <Link href="/jobs/new" className="btn btn-primary">
-          + New job
+          {t("jobs.newJob")}
         </Link>
       </header>
 
       <div className={styles.filterBar}>
         <label htmlFor="status-filter" className={styles.filterLabel}>
-          Status
+          {t("jobs.filterByStatus")}
         </label>
         <select
           id="status-filter"
@@ -130,16 +134,16 @@ export default function JobsListPage() {
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
         >
-          <option value="all">All</option>
-          {STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
+          <option value="all">{t("jobs.filterAll")}</option>
+          {STATUS_OPTIONS.map((value) => (
+            <option key={value} value={value}>
+              {t(`statusLabels.${value}`)}
             </option>
           ))}
         </select>
         {data !== null && (
           <span className={styles.filterCount}>
-            {data.length} {data.length === 1 ? "job" : "jobs"}
+            {data.length} {t("nav.jobs").toLowerCase()}
           </span>
         )}
       </div>
@@ -148,10 +152,12 @@ export default function JobsListPage() {
       {error && (
         <ErrorMessage
           message={`${error.message}\nCheck Settings → Backend API Base URL.`}
-          title="Failed to load jobs"
+          title={t("jobs.failedToLoad")}
         />
       )}
-      {loading && data === null && !error && <LoadingState label="Loading jobs…" />}
+      {loading && data === null && !error && (
+        <LoadingState label={t("jobs.loadingJobs")} />
+      )}
       {data !== null && (
         <JobsTable
           jobs={data}
@@ -186,13 +192,14 @@ function JobsTable({
   onCancelDelete,
   onConfirmDelete,
 }: JobsTableProps) {
+  const t = useT();
   if (jobs.length === 0) {
     return (
       <div className="card">
         <p className="muted">
           {statusFilter === "all"
-            ? "No jobs yet. Create one to get started."
-            : `No jobs with status “${humanize(statusFilter)}”.`}
+            ? t("dashboard.noJobsYet")
+            : t("jobs.noJobs")}
         </p>
       </div>
     );
@@ -203,16 +210,16 @@ function JobsTable({
         <table className="simple">
           <thead>
             <tr>
-              <th>Job</th>
-              <th>Status</th>
-              <th>Voice / Face</th>
-              <th>Progress</th>
-              <th>Current stage</th>
-              <th>QC</th>
-              <th>Final export</th>
-              <th>Artifacts</th>
-              <th>Updated</th>
-              <th>Actions</th>
+              <th>{t("jobs.title").replace(/s$/, "")}</th>
+              <th>{t("jobs.status")}</th>
+              <th>{t("jobs.voice")} / {t("jobs.face")}</th>
+              <th>{t("jobs.progress")}</th>
+              <th>{t("jobs.currentStage")}</th>
+              <th>{t("dashboard.qc")}</th>
+              <th>{t("dashboard.finalExport")}</th>
+              <th>{t("jobs.artifacts")}</th>
+              <th>{t("dashboard.updated")}</th>
+              <th>{t("jobs.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -232,7 +239,7 @@ function JobsTable({
                 <td className={styles.modeCol}>
                   <div>{humanize(job.voice_mode)}</div>
                   <div className="muted">
-                    {job.face_mode ? humanize(job.face_mode) : "no face"}
+                    {job.face_mode ? humanize(job.face_mode) : t("common.noFace")}
                   </div>
                 </td>
                 <td className={styles.progressCol}>
@@ -250,20 +257,22 @@ function JobsTable({
                 <td>
                   {confirmingId === job.id ? (
                     <span className={styles.confirm}>
-                      <span className={styles.confirmText}>Delete?</span>
+                      <span className={styles.confirmText}>
+                        {t("jobs.confirmDelete")}
+                      </span>
                       <button
                         type="button"
                         className={styles.btnDanger}
                         onClick={() => onConfirmDelete(job.id)}
                       >
-                        Yes
+                        {t("common.yes")}
                       </button>
                       <button
                         type="button"
                         className={styles.btnGhost}
                         onClick={onCancelDelete}
                       >
-                        No
+                        {t("common.no")}
                       </button>
                     </span>
                   ) : (
@@ -272,20 +281,30 @@ function JobsTable({
                         href={`/jobs/${job.id}`}
                         className={styles.actionLink}
                       >
-                        View
+                        {t("common.view")}
                       </Link>
-                      <Link
-                        href={`/jobs/${job.id}/edit`}
-                        className={styles.actionLink}
-                      >
-                        Edit
-                      </Link>
+                      {(job.can_edit ?? job.status !== "published") ? (
+                        <Link
+                          href={`/jobs/${job.id}/edit`}
+                          className={styles.actionLink}
+                        >
+                          {t("common.edit")}
+                        </Link>
+                      ) : (
+                        <span
+                          className={`${styles.actionLink} ${styles.actionLinkDisabled}`}
+                          title={t("editJob.cannotEditThisJob")}
+                          aria-disabled="true"
+                        >
+                          {t("common.edit")}
+                        </span>
+                      )}
                       <button
                         type="button"
                         className={styles.actionDangerLink}
                         onClick={() => onAskDelete(job.id)}
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
                     </span>
                   )}
@@ -300,20 +319,22 @@ function JobsTable({
 }
 
 function QcCell({ qcPassed }: { readonly qcPassed: boolean | null | undefined }) {
+  const t = useT();
   if (qcPassed === undefined || qcPassed === null) {
-    return <span className={styles.qcPending}>Pending</span>;
+    return <span className={styles.qcPending}>{t("common.pending")}</span>;
   }
   return qcPassed ? (
-    <span className={styles.qcPassed}>Passed</span>
+    <span className={styles.qcPassed}>{t("common.passed")}</span>
   ) : (
-    <span className={styles.qcFailed}>Failed</span>
+    <span className={styles.qcFailed}>{t("common.failed")}</span>
   );
 }
 
 function FinalExportCell({ available }: { readonly available: boolean | undefined }) {
+  const t = useT();
   return available ? (
-    <span className={styles.exportReady}>Available</span>
+    <span className={styles.exportReady}>{t("common.available")}</span>
   ) : (
-    <span className={styles.exportPending}>Not ready</span>
+    <span className={styles.exportPending}>{t("statusLabels.not_ready")}</span>
   );
 }

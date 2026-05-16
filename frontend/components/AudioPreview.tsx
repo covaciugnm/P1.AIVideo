@@ -1,6 +1,7 @@
 "use client";
 
 import { artifactContentUrl } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 
 import styles from "./AudioPreview.module.css";
 
@@ -11,11 +12,13 @@ interface AudioPreviewProps {
 }
 
 export function AudioPreview({ src, label }: AudioPreviewProps) {
+  const t = useT();
   const url =
     src.kind === "artifact" ? artifactContentUrl(src.artifactId) : src.url;
+  const displayLabel = label ?? t("common.preview");
   return (
     <div className={styles.wrapper}>
-      {label && <span className={styles.label}>{label}</span>}
+      <span className={styles.label}>{displayLabel}</span>
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio controls preload="none" src={url} className={styles.audio} />
     </div>

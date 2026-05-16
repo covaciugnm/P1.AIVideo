@@ -7,10 +7,12 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { getUiOptions } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import type { UIOptions } from "@/lib/types";
 
 export default function NewJobPage() {
+  const t = useT();
   const [uiOptions, setUiOptions] = useState<UIOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
   const announcedRef = useRef(false);
@@ -48,15 +50,12 @@ export default function NewJobPage() {
   return (
     <div>
       <h1>
-        Create a new job
-        <HelpHint slug="page-create-job" />
+        {t("createJob.title")}
+        <HelpHint slug="create-job" />
       </h1>
-      <p className="muted">
-        Submit a brief and choose a voice source. Compliance attestations are
-        mandatory and load-bearing.
-      </p>
-      {error && <ErrorMessage message={error} title="Failed to load options" />}
-      {!uiOptions && !error && <LoadingState label="Loading options…" />}
+      <p className="muted">{t("createJob.intro")}</p>
+      {error && <ErrorMessage message={error} title={t("common.error")} />}
+      {!uiOptions && !error && <LoadingState label={t("common.loading")} />}
       {uiOptions && <CreateJobForm uiOptions={uiOptions} />}
     </div>
   );

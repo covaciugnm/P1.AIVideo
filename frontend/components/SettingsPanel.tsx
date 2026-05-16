@@ -3,9 +3,11 @@
 import { useState } from "react";
 
 import { getSystemStatus } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 
 import { CustomProvidersSection } from "./CustomProvidersSection";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ProvidersSection } from "./ProvidersSection";
 import { useSettings } from "./SettingsContext";
 import styles from "./SettingsPanel.module.css";
@@ -17,6 +19,7 @@ type TestResult =
   | { kind: "error"; detail: string };
 
 export function SettingsPanel() {
+  const t = useT();
   const { settings, update, reset } = useSettings();
   const [testResult, setTestResult] = useState<TestResult>({ kind: "idle" });
   const [portTests, setPortTests] = useState<Record<string, TestResult>>({});
@@ -94,7 +97,13 @@ export function SettingsPanel() {
 
   return (
     <div className={styles.panel}>
-      <Field label="Backend API Base URL">
+      <Field label={t("settings.interfaceLanguage")}>
+        <LanguageSwitcher />
+        <p className={styles.help}>
+          {settings.apiBaseUrlIsCustom ? "" : ""}
+        </p>
+      </Field>
+      <Field label={t("settings.backendUrl")}>
         <input
           type="url"
           className={styles.input}
@@ -114,7 +123,7 @@ export function SettingsPanel() {
             onClick={onTestConnection}
             disabled={testResult.kind === "pending"}
           >
-            {testResult.kind === "pending" ? "Testing…" : "Test backend connection"}
+            {testResult.kind === "pending" ? t("settings.testing") : t("settings.testBackend")}
           </button>
           {testResult.kind === "success" && (
             <span className={`${styles.status} ${styles.statusOk}`}>{testResult.detail}</span>
@@ -125,7 +134,7 @@ export function SettingsPanel() {
         </div>
       </Field>
 
-      <Field label="Frontend URL">
+      <Field label={t("settings.frontendPort")}>
         <input
           type="url"
           className={styles.input}
@@ -133,19 +142,13 @@ export function SettingsPanel() {
           onChange={(e) => update({ frontendUrl: e.target.value })}
           placeholder="http://localhost:3000"
         />
-        <p className={styles.help}>Display only — doesn&apos;t move the running frontend.</p>
       </Field>
 
       <fieldset className={styles.fieldset}>
-        <legend className={styles.legend}>Docker Compose host ports</legend>
-        <p className={styles.help}>
-          Editing these values does <strong>not</strong> reconfigure the
-          running Docker stack — they&apos;re local operator settings used to
-          derive URLs and generate the compose-up command below. Restart the
-          stack with those env vars to apply.
-        </p>
+        <legend className={styles.legend}>{t("settings.dockerPorts")}</legend>
+        <p className={styles.help}>{t("settings.dockerPortsHint")}</p>
         <PortRow
-          label="Backend"
+          label={t("settings.backendPort")}
           containerPort={8000}
           hostPort={settings.backendHostPort}
           onChange={(p) => update({ backendHostPort: p })}
@@ -161,7 +164,7 @@ export function SettingsPanel() {
           }
         />
         <PortRow
-          label="Frontend"
+          label={t("settings.frontendPort")}
           containerPort={3000}
           hostPort={settings.frontendHostPort}
           onChange={(p) => update({ frontendHostPort: p })}
@@ -177,7 +180,7 @@ export function SettingsPanel() {
           }
         />
         <PortRow
-          label="Postgres"
+          label={t("settings.postgresPort")}
           containerPort={5432}
           hostPort={settings.postgresHostPort}
           onChange={(p) => update({ postgresHostPort: p })}
@@ -188,7 +191,7 @@ export function SettingsPanel() {
           note="Checked indirectly via backend /api/v1/system/status (database_reachable)."
         />
         <PortRow
-          label="Redis"
+          label={t("settings.redisPort")}
           containerPort={6379}
           hostPort={settings.redisHostPort}
           onChange={(p) => update({ redisHostPort: p })}
@@ -227,7 +230,7 @@ export function SettingsPanel() {
               )
             }
           >
-            Test /api/v1/jobs
+            {t("settings.testPort")} /api/v1/jobs
           </button>
           {portTests["api-jobs"] &&
             (portTests["api-jobs"].kind === "success" ||
@@ -271,7 +274,7 @@ export function SettingsPanel() {
         </div>
       </fieldset>
 
-      <Field label="Compose-up command">
+      <Field label={t("settings.composeCmdLabel")}>
         <pre className={styles.cmdBox}>{composeCmd}</pre>
         <div className={styles.row}>
           <button
@@ -279,12 +282,12 @@ export function SettingsPanel() {
             className={styles.btn}
             onClick={() => copy("cmd", composeCmd)}
           >
-            {copied === "cmd" ? "Copied" : "Copy command"}
+            {copied === "cmd" ? t("common.copied") : t("settings.copyComposeCmd")}
           </button>
         </div>
       </Field>
 
-      <Field label="Polling interval (seconds)">
+      <Field label={t("settings.pollingInterval")}>
         <input
           type="number"
           min={1}
@@ -306,19 +309,19 @@ export function SettingsPanel() {
             checked={settings.autoPollingEnabled}
             onChange={(e) => update({ autoPollingEnabled: e.target.checked })}
           />
-          <span>Enable auto polling</span>
+          <span>{t("settings.autoPolling")}</span>
         </label>
       </Field>
 
       <fieldset className={styles.fieldset}>
-        <legend className={styles.legend}>Log sources</legend>
+        <legend className={styles.legend}>{t("settings.logsSection")}</legend>
         <label className={styles.check}>
           <input
             type="checkbox"
             checked={settings.showFrontendLogs}
             onChange={(e) => update({ showFrontendLogs: e.target.checked })}
           />
-          <span>Frontend</span>
+          <span>{t("settings.showFrontendLogs")}</span>
         </label>
         <label className={styles.check}>
           <input
@@ -326,7 +329,7 @@ export function SettingsPanel() {
             checked={settings.showBackendLogs}
             onChange={(e) => update({ showBackendLogs: e.target.checked })}
           />
-          <span>Backend</span>
+          <span>{t("settings.showBackendLogs")}</span>
         </label>
         <label className={styles.check}>
           <input
@@ -334,7 +337,7 @@ export function SettingsPanel() {
             checked={settings.showApiLogs}
             onChange={(e) => update({ showApiLogs: e.target.checked })}
           />
-          <span>API</span>
+          <span>{t("settings.showApiLogs")}</span>
         </label>
         <label className={styles.check}>
           <input
@@ -342,11 +345,11 @@ export function SettingsPanel() {
             checked={settings.showSystemLogs}
             onChange={(e) => update({ showSystemLogs: e.target.checked })}
           />
-          <span>System</span>
+          <span>{t("settings.showSystemLogs")}</span>
         </label>
       </fieldset>
 
-      <Field label="Max log entries">
+      <Field label={t("logs.title")}>
         <input
           type="number"
           min={50}
@@ -358,12 +361,11 @@ export function SettingsPanel() {
             update({ maxLogEntries: clamp(Number(e.target.value), 50, 5000) })
           }
         />
-        <p className={styles.help}>In-memory only; older entries dropped first.</p>
       </Field>
 
       <fieldset className={styles.fieldset}>
-        <legend className={styles.legend}>Create-job defaults</legend>
-        <Field label="Default target duration (s)">
+        <legend className={styles.legend}>{t("createJob.title")}</legend>
+        <Field label={t("createJob.targetDuration")}>
           <input
             type="number"
             min={15}
@@ -377,7 +379,7 @@ export function SettingsPanel() {
             }
           />
         </Field>
-        <Field label="Default voice mode">
+        <Field label={t("createJob.voiceMode")}>
           <select
             className={styles.input}
             value={settings.defaultVoiceMode}
@@ -388,8 +390,8 @@ export function SettingsPanel() {
               })
             }
           >
-            <option value="tts">TTS from script</option>
-            <option value="provided_audio">Provided audio</option>
+            <option value="tts">{t("createJob.voiceTts")}</option>
+            <option value="provided_audio">{t("createJob.voiceProvided")}</option>
           </select>
         </Field>
         <label className={styles.check}>
@@ -398,7 +400,7 @@ export function SettingsPanel() {
             checked={settings.defaultFaceModeEnabled}
             onChange={(e) => update({ defaultFaceModeEnabled: e.target.checked })}
           />
-          <span>Attach provided image by default</span>
+          <span>{t("createJob.useProvidedImage")}</span>
         </label>
       </fieldset>
 
@@ -429,7 +431,7 @@ export function SettingsPanel() {
             setPortTests({});
           }}
         >
-          Reset to defaults
+          {t("settings.resetDefaults")}
         </button>
       </div>
 

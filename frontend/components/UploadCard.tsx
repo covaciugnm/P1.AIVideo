@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import type { UploadAudioResponse, UploadImageResponse } from "@/lib/types";
 
@@ -34,6 +35,7 @@ export function UploadCard({
   onUploaded,
   currentArtifactId,
 }: UploadCardProps) {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +129,11 @@ export function UploadCard({
         {pending && (
           <div className={styles.pending}>
             <div>
-              Selected: <code>{pending.name}</code> ({formatBytes(pending.size)})
+              {t("uploads.selected")
+                .replace("{name}", "")
+                .replace("({size})", "")
+                .trim()}{" "}
+              <code>{pending.name}</code> ({formatBytes(pending.size)})
             </div>
             <div className={styles.row}>
               <button
@@ -136,7 +142,7 @@ export function UploadCard({
                 onClick={handleUpload}
                 disabled={busy}
               >
-                {busy ? "Uploading…" : "Upload"}
+                {busy ? t("common.submitting") : t("common.upload")}
               </button>
               <button
                 type="button"
@@ -144,20 +150,22 @@ export function UploadCard({
                 onClick={handleClear}
                 disabled={busy}
               >
-                Clear
+                {t("uploads.clear")}
               </button>
             </div>
           </div>
         )}
         {!pending && currentArtifactId && (
           <p className={styles.muted}>
-            Linked artifact: <code>{currentArtifactId.slice(0, 8)}</code>
+            {t("uploads.currentArtifact").replace(
+              "{id}",
+              currentArtifactId.slice(0, 8),
+            )}
           </p>
         )}
       </div>
       <p className={styles.note}>
-        Max size: {formatBytes(maxBytes)}. Files are stored locally; nothing is
-        sent to any third party.
+        {t("uploads.maxFileSize")}: {formatBytes(maxBytes)}
       </p>
       {error && <ErrorMessage message={error} />}
     </div>

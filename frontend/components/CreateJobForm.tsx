@@ -17,8 +17,11 @@ import type {
   VoiceMode,
 } from "@/lib/types";
 
+import { useT } from "@/lib/i18n/LanguageContext";
+
 import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
+import { HelpHint } from "./HelpHint";
 import { useSettings } from "./SettingsContext";
 import { UploadCard } from "./UploadCard";
 import styles from "./CreateJobForm.module.css";
@@ -28,6 +31,7 @@ interface CreateJobFormProps {
 }
 
 export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
+  const t = useT();
   const router = useRouter();
   const { settings } = useSettings();
   const [brief, setBrief] = useState("");
@@ -95,14 +99,14 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
 
   const handleScriptGenerate = async () => {
     if (!brief.trim()) {
-      setScriptStatus("Fill in the brief first.");
+      setScriptStatus(t("badges.fillBriefFirst"));
       return;
     }
     scriptAbortRef.current?.abort();
     const controller = new AbortController();
     scriptAbortRef.current = controller;
     setScriptBusy(true);
-    setScriptStatus("Generating script…");
+    setScriptStatus(t("createJob.generateScriptBusy"));
     logBus.emit({
       source: "frontend",
       level: "info",
@@ -176,7 +180,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     const controller = new AbortController();
     ttsAbortRef.current = controller;
     setTtsBusy(true);
-    setTtsStatus("Generating…");
+    setTtsStatus(t("createJob.generateAudioBusy"));
     logBus.emit({
       source: "frontend",
       level: "info",
@@ -274,6 +278,16 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const [imageConsent, setImageConsent] = useState(false);
   const [imageSynthetic, setImageSynthetic] = useState(false);
 
+  // Phase 11A — language + subtitle state. Default video language
+  // tracks the current UI language so a Romanian operator gets RO out
+  // of the box without an extra click.
+  const [videoLanguage, setVideoLanguage] = useState<string>("ro");
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
+  const [subtitleLangsRo, setSubtitleLangsRo] = useState(true);
+  const [subtitleLangsEn, setSubtitleLangsEn] = useState(false);
+  const [subtitleFormat, setSubtitleFormat] = useState<"srt" | "vtt">("srt");
+  const [subtitleBurnIn, setSubtitleBurnIn] = useState(false);
+
   const [syntheticPerson, setSyntheticPerson] = useState(false);
   const [consent, setConsent] = useState(false);
 
@@ -342,6 +356,17 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               image_processor_id: imageProcessor,
             }
           : null,
+      // Phase 11A — language + subtitle metadata.
+      video_language: videoLanguage,
+      subtitle_enabled: subtitlesEnabled,
+      subtitle_languages: subtitlesEnabled
+        ? [
+            ...(subtitleLangsRo ? ["ro"] : []),
+            ...(subtitleLangsEn ? ["en"] : []),
+          ]
+        : null,
+      subtitle_format: subtitleFormat,
+      subtitle_burn_in: subtitleBurnIn,
     };
 
     logBus.emit({
@@ -381,21 +406,21 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
       <section className="card">
-        <h2>1. Brief</h2>
+        <h2>1. {t("createJob.sectionBrief").replace(/^\d+\.\s*/, "")} <HelpHint slug="create-job" small /></h2>
         <div className="field">
-          <label htmlFor="brief">Topic / brief</label>
+          <label htmlFor="brief">{t("createJob.briefLabel")}</label>
           <textarea
             id="brief"
             value={brief}
             onChange={(e) => setBrief(e.target.value)}
             maxLength={2000}
-            placeholder="e.g. Three calming bedtime habits for better sleep."
+            placeholder={t("createJob.briefPlaceholder")}
             required
           />
           <span className={styles.muted}>{brief.length} / 2000</span>
         </div>
         <div className="field">
-          <label htmlFor="duration">Target duration (seconds)</label>
+          <label htmlFor="duration">{t("createJob.targetDuration")}</label>
           <input
             id="duration"
             type="number"
@@ -405,15 +430,17 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             onChange={(e) => setDuration(Number(e.target.value))}
           />
           <span className={styles.muted}>
-            Between {durMin} and {durMax} seconds.
+            {t("createJob.durationBetween")
+              .replace("{min}", String(durMin))
+              .replace("{max}", String(durMax))}
           </span>
         </div>
       </section>
 
       <section className="card">
-        <h2>2. Voice</h2>
+        <h2>2. {t("createJob.sectionVoice").replace(/^\d+\.\s*/, "")} <HelpHint slug="piper" small /></h2>
         <div className="field">
-          <label>Voice source</label>
+          <label>{t("createJob.voiceMode")}</label>
           <div className="row">
             {uiOptions.voice_modes.map((vm) => (
               <label key={vm.value} className={styles.radio}>
@@ -424,20 +451,22 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={voiceMode === vm.value}
                   onChange={() => setVoiceMode(vm.value)}
                 />
-                <span>{vm.label}</span>
+                <span>
+                  {vm.value === "tts" ? t("createJob.voiceTts") : t("createJob.voiceProvided")}
+                </span>
               </label>
             ))}
           </div>
         </div>
         {voiceMode === "tts" ? (
           <div className="field">
-            <label htmlFor="script">Script text</label>
+            <label htmlFor="script">{t("createJob.scriptText")}</label>
             <textarea
               id="script"
               value={scriptText}
               onChange={(e) => setScriptText(e.target.value)}
               maxLength={scriptMaxChars}
-              placeholder="Open with a hook. End with a single CTA."
+              placeholder={t("createJob.scriptPlaceholder")}
               required
             />
             <span className={styles.muted}>
@@ -449,13 +478,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                 className="btn"
                 onClick={handleScriptGenerate}
                 disabled={scriptBusy || brief.trim().length === 0}
-                title={
-                  brief.trim().length === 0
-                    ? "Fill in the brief first."
-                    : "Calls /api/v1/script/generate with the selected LLM provider."
-                }
+                title={t("createJob.generateScript")}
               >
-                {scriptBusy ? "Generating script…" : "Generate script"}
+                {scriptBusy ? t("createJob.generateScriptBusy") : t("createJob.generateScript")}
               </button>
               <button
                 type="button"
@@ -463,7 +488,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                 onClick={handleTtsGenerate}
                 disabled={ttsBusy || scriptText.trim().length === 0}
               >
-                {ttsBusy ? "Generating audio…" : "Generate audio"}
+                {ttsBusy ? t("createJob.generateAudioBusy") : t("createJob.generateAudio")}
               </button>
               {scriptStatus && (
                 <span className={styles.ttsStatus}>{scriptStatus}</span>
@@ -483,8 +508,8 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           <>
             <UploadCard
               kind="audio"
-              title="Provided audio"
-              help={`Accepted: ${audioExts.join(", ")}. Non-WAV is transcoded to PCM WAV on the server (requires ffmpeg). Minimum 1 s; 22050 Hz+ recommended; mono or stereo; synthetic or owned.`}
+              title={t("createJob.providedAudioTitle")}
+              help={t("uploads.audioHelp")}
               acceptExtensions={audioExts}
               maxBytes={audioMax}
               onUploaded={(r) => {
@@ -497,7 +522,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             {audioArtifact && (
               <AudioPreview
                 src={{ kind: "artifact", artifactId: audioArtifact.artifact_id }}
-                label="Uploaded audio preview"
+                label={t("createJob.providedAudioTitle")}
               />
             )}
             {audioFit && (
@@ -516,10 +541,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={audioConsent}
                   onChange={(e) => setAudioConsent(e.target.checked)}
                 />
-                <span>
-                  I have lawful authority to use this recording (consent
-                  confirmed).
-                </span>
+                <span>{t("createJob.audioConsent")}</span>
               </label>
               <label className={styles.checkbox}>
                 <input
@@ -527,10 +549,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={audioOwned}
                   onChange={(e) => setAudioOwned(e.target.checked)}
                 />
-                <span>
-                  This recording is either synthetic or a voice I own. Cloning a
-                  third party&apos;s voice is not allowed.
-                </span>
+                <span>{t("createJob.audioOwned")}</span>
               </label>
             </div>
           </>
@@ -538,41 +557,37 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       </section>
 
       <section className="card">
-        <h2>2b. Providers</h2>
-        <p className={styles.muted}>
-          Pick a provider per category, or leave blank to use the backend
-          default. Unconfigured providers are visible but selecting one
-          surfaces a warning later when generation is attempted.
-        </p>
+        <h2>{t("createJob.sectionProviders")} <HelpHint slug="provider-selection" small /></h2>
+        <p className={styles.muted}>{t("providersSection.intro")}</p>
         <ProviderField
-          label="Script LLM"
+          label={t("createJob.scriptProvider")}
           value={llmProvider}
           onChange={setLlmProvider}
           providers={providers?.llm ?? []}
           defaultFromSettings={settings.defaultLlmProvider}
         />
         <ProviderField
-          label="TTS"
+          label={t("createJob.ttsProvider")}
           value={ttsProvider}
           onChange={setTtsProvider}
           providers={providers?.tts ?? []}
           defaultFromSettings={settings.defaultTtsProvider}
         />
         <ProviderField
-          label="Video generator"
+          label={t("createJob.videoProvider")}
           value={videoProvider}
           onChange={setVideoProvider}
           providers={providers?.video_generator ?? []}
           defaultFromSettings={settings.defaultVideoProvider}
         />
         <ProviderField
-          label="Audio processor"
+          label={t("createJob.audioProcessor")}
           value={audioProcessor}
           onChange={setAudioProcessor}
           providers={providers?.audio_processor ?? []}
         />
         <ProviderField
-          label="Image processor"
+          label={t("createJob.imageProcessor")}
           value={imageProcessor}
           onChange={setImageProcessor}
           providers={providers?.image_processor ?? []}
@@ -580,21 +595,21 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       </section>
 
       <section className="card">
-        <h2>3. Face (optional)</h2>
+        <h2>{t("createJob.sectionFace")} <HelpHint slug="image-upload" small /></h2>
         <label className={styles.checkbox}>
           <input
             type="checkbox"
             checked={useFace}
             onChange={(e) => setUseFace(e.target.checked)}
           />
-          <span>Attach a portrait/face image for the face stage.</span>
+          <span>{t("createJob.useProvidedImage")}</span>
         </label>
         {useFace && (
           <>
             <UploadCard
               kind="image"
-              title="Portrait image"
-              help="PNG / JPEG / WebP. ≥ 512×512 recommended (1024×1024+ preferred). Front-facing, well-lit, synthetic (AI-generated) only."
+              title={t("createJob.providedImageTitle")}
+              help={t("uploads.imageHelp")}
               acceptExtensions={imageExts}
               maxBytes={imageMax}
               onUploaded={(r) => setImageArtifact(r as UploadImageResponse)}
@@ -615,7 +630,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={imageConsent}
                   onChange={(e) => setImageConsent(e.target.checked)}
                 />
-                <span>I have lawful authority to use this image.</span>
+                <span>{t("createJob.imageConsent")}</span>
               </label>
               <label className={styles.checkbox}>
                 <input
@@ -623,10 +638,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                   checked={imageSynthetic}
                   onChange={(e) => setImageSynthetic(e.target.checked)}
                 />
-                <span>
-                  This image is a synthetic (AI-generated) person. BYO
-                  real-person likeness is not allowed.
-                </span>
+                <span>{t("createJob.imageSynthetic")}</span>
               </label>
             </div>
           </>
@@ -634,12 +646,85 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       </section>
 
       <section className="card">
-        <h2>4. Compliance attestations</h2>
-        <div className="compliance-banner">
-          Every generated reel will carry an AI-content disclosure overlay and
-          C2PA-style provenance metadata. No real-person impersonation. No
-          voice cloning of others.
+        <h2>{t("createJob.sectionLanguage")} <HelpHint slug="subtitles" small /></h2>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 12 }}>
+          {t("createJob.languageIntro")}
+        </p>
+        <div className="field">
+          <label htmlFor="video-language">{t("createJob.videoLanguage")}</label>
+          <select
+            id="video-language"
+            value={videoLanguage}
+            onChange={(e) => setVideoLanguage(e.target.value)}
+          >
+            <option value="ro">Română</option>
+            <option value="en">English</option>
+          </select>
         </div>
+        <label className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={subtitlesEnabled}
+            onChange={(e) => setSubtitlesEnabled(e.target.checked)}
+          />
+          <span>{t("createJob.enableSubtitles")}</span>
+        </label>
+        {subtitlesEnabled && (
+          <>
+            <div className="field" style={{ marginTop: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {t("createJob.subtitleLanguages")}
+              </span>
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={subtitleLangsRo}
+                  onChange={(e) => setSubtitleLangsRo(e.target.checked)}
+                />
+                <span>Română</span>
+              </label>
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={subtitleLangsEn}
+                  onChange={(e) => setSubtitleLangsEn(e.target.checked)}
+                />
+                <span>English</span>
+              </label>
+            </div>
+            <div className="field">
+              <label htmlFor="subtitle-format">{t("createJob.subtitleFormat")}</label>
+              <select
+                id="subtitle-format"
+                value={subtitleFormat}
+                onChange={(e) =>
+                  setSubtitleFormat(e.target.value as "srt" | "vtt")
+                }
+              >
+                <option value="srt">SRT</option>
+                <option value="vtt">WebVTT</option>
+              </select>
+            </div>
+            <label className={styles.checkbox}>
+              <input
+                type="checkbox"
+                checked={subtitleBurnIn}
+                onChange={(e) => setSubtitleBurnIn(e.target.checked)}
+              />
+              <span>
+                {t("createJob.burnSubtitles")}{" "}
+                <em style={{ color: "var(--warn)" }}>
+                  ({t("createJob.burnNotImplemented")})
+                </em>
+              </span>
+            </label>
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <h2>{t("createJob.sectionCompliance")} <HelpHint slug="create-job" small /></h2>
+        <div className="compliance-banner">{t("createJob.complianceBanner")}</div>
         <div className={styles.consentBlock}>
           <label className={styles.checkbox}>
             <input
@@ -647,10 +732,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               checked={syntheticPerson}
               onChange={(e) => setSyntheticPerson(e.target.checked)}
             />
-            <span>
-              I confirm the on-camera person is fully synthetic (not a real
-              individual).
-            </span>
+            <span>{t("createJob.syntheticConfirm")}</span>
           </label>
           <label className={styles.checkbox}>
             <input
@@ -658,10 +740,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
             />
-            <span>
-              I confirm I have the rights and consent to produce and publish
-              this reel.
-            </span>
+            <span>{t("createJob.consentConfirm")}</span>
           </label>
         </div>
       </section>
@@ -674,7 +753,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           className="btn btn-primary"
           disabled={!canSubmit}
         >
-          {submitting ? "Creating job…" : "Create job"}
+          {submitting ? t("createJob.submitting") : t("createJob.submit")}
         </button>
       </div>
     </form>
@@ -696,12 +775,13 @@ function ProviderField({
   providers,
   defaultFromSettings,
 }: ProviderFieldProps) {
+  const t = useT();
   const selected = providers.find((p) => p.provider_id === value);
   const warn =
     selected && selected.status !== "available" && selected.status !== "configured";
   const defaultLabel = defaultFromSettings
-    ? `Use default from Settings — ${defaultFromSettings}`
-    : "Use default from Settings";
+    ? t("createJob.providerInheritWithName").replace("{name}", defaultFromSettings)
+    : t("createJob.providerInherit");
   return (
     <div className="field">
       <label>{label}</label>
@@ -723,35 +803,34 @@ function ProviderField({
       {selected && (
         <span className={styles.providerBadges}>
           {selected.requires_gpu && (
-            <span className={styles.badgeGpu} title="GPU required">
-              GPU required
+            <span className={styles.badgeGpu} title={t("badges.gpuRequired")}>
+              {t("badges.gpuRequired")}
             </span>
           )}
           {selected.requires_network && (
-            <span className={styles.badgeNet} title="requires network">
-              requires network
+            <span className={styles.badgeNet} title={t("badges.requiresNetwork")}>
+              {t("badges.requiresNetwork")}
             </span>
           )}
           {selected.requires_model_files && (
-            <span className={styles.badgeAssets} title="requires model files">
-              requires model files
+            <span className={styles.badgeAssets} title={t("badges.requiresModelFiles")}>
+              {t("badges.requiresModelFiles")}
             </span>
           )}
           {selected.is_custom && (
-            <span className={styles.badgeCustom} title="custom provider — metadata only">
-              custom · metadata only
+            <span className={styles.badgeCustom} title={t("badges.customMetadataOnly")}>
+              {t("badges.customMetadataOnly")}
             </span>
           )}
         </span>
       )}
       {warn && (
         <span className={styles.providerWarn}>
-          ⚠ This job can be created, but{" "}
-          <strong>{selected.label}</strong> is{" "}
+          ⚠ {t("providerSelection.warningPrefix")}{" "}
+          <strong>{selected.label}</strong>{" "}
           <code>{selected.status.replace(/_/g, " ")}</code>
-          {selected.notes ? ` — ${selected.notes}` : "."} The stage that
-          uses this provider will return a clean error until it is
-          configured.
+          {selected.notes ? ` — ${selected.notes}.` : ""}{" "}
+          {t("providerSelection.warningSuffixCleanError")}
         </span>
       )}
     </div>
@@ -812,14 +891,15 @@ function AudioFitStrip({
 }
 
 function ImagePreview({ artifactId, width, height, mimeType }: ImagePreviewProps) {
+  const t = useT();
   const url = api.artifactContentUrl(artifactId);
   return (
     <div className={styles.imagePreview}>
-      <span className={styles.imagePreviewLabel}>Uploaded image preview</span>
+      <span className={styles.imagePreviewLabel}>{t("badges.uploadedImagePreview")}</span>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
-        alt="Uploaded portrait"
+        alt={t("badges.uploadedImagePreview")}
         className={styles.imagePreviewImg}
       />
       <span className={styles.imagePreviewMeta}>

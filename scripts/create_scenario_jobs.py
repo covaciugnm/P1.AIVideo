@@ -578,7 +578,7 @@ def run_demo(base_url: str) -> dict:
                 "existed_already": True,
                 "created_now": False,
                 "job_id": existing[brief],
-                "ui_url": f"http://localhost:3001/jobs/{existing[brief]}",
+                "ui_url": f"http://localhost:3010/jobs/{existing[brief]}",
             }
         payload = dict(payload)
         payload["brief"] = brief
@@ -594,7 +594,7 @@ def run_demo(base_url: str) -> dict:
         if not ok:
             entry["error_body"] = body
         else:
-            entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+            entry["ui_url"] = f"http://localhost:3010/jobs/{jid}"
         return entry
 
     base_kwargs = {
@@ -681,7 +681,7 @@ def run_demo(base_url: str) -> dict:
                 "existed_already": True,
                 "created_now": False,
                 "job_id": existing[_DEMO_BRIEFS[3]],
-                "ui_url": f"http://localhost:3001/jobs/{existing[_DEMO_BRIEFS[3]]}",
+                "ui_url": f"http://localhost:3010/jobs/{existing[_DEMO_BRIEFS[3]]}",
             }
         )
     else:
@@ -738,7 +738,7 @@ def run_demo(base_url: str) -> dict:
             if not ok:
                 entry["error_body"] = body
             else:
-                entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+                entry["ui_url"] = f"http://localhost:3010/jobs/{jid}"
             results.append(entry)
 
     # ----- Scenario 5 — MP3 upload conversion path -----
@@ -750,7 +750,7 @@ def run_demo(base_url: str) -> dict:
                 "existed_already": True,
                 "created_now": False,
                 "job_id": existing[_DEMO_BRIEFS[4]],
-                "ui_url": f"http://localhost:3001/jobs/{existing[_DEMO_BRIEFS[4]]}",
+                "ui_url": f"http://localhost:3010/jobs/{existing[_DEMO_BRIEFS[4]]}",
             }
         )
     else:
@@ -818,7 +818,7 @@ def run_demo(base_url: str) -> dict:
                 if not ok2:
                     entry["error_body"] = body2
                 else:
-                    entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+                    entry["ui_url"] = f"http://localhost:3010/jobs/{jid}"
                 results.append(entry)
 
     # ----- Scenario 6 — Future custom providers metadata path -----
@@ -873,7 +873,7 @@ def run_demo(base_url: str) -> dict:
                 "existed_already": True,
                 "created_now": False,
                 "job_id": existing[_DEMO_BRIEFS[7]],
-                "ui_url": f"http://localhost:3001/jobs/{existing[_DEMO_BRIEFS[7]]}",
+                "ui_url": f"http://localhost:3010/jobs/{existing[_DEMO_BRIEFS[7]]}",
             }
         )
     elif not sad_ready:
@@ -943,7 +943,7 @@ def run_demo(base_url: str) -> dict:
             if not ok:
                 entry["error_body"] = body
             else:
-                entry["ui_url"] = f"http://localhost:3001/jobs/{jid}"
+                entry["ui_url"] = f"http://localhost:3010/jobs/{jid}"
             results.append(entry)
 
     created = sum(1 for r in results if r.get("created_now"))

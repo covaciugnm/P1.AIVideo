@@ -1,4 +1,7 @@
+"use client";
+
 import { formatDate, shortHash } from "@/lib/format";
+import { useT } from "@/lib/i18n/LanguageContext";
 import type { FinalExportResponse } from "@/lib/types";
 
 import { StatusBadge } from "./StatusBadge";
@@ -9,6 +12,7 @@ interface FinalExportCardProps {
 }
 
 export function FinalExportCard({ response }: FinalExportCardProps) {
+  const t = useT();
   const m = response.final_export;
   // Phase 9D — the publisher emits a placeholder export URI when the
   // upstream reel_draft is metadata-only. Distinguish that here so the
@@ -20,62 +24,48 @@ export function FinalExportCard({ response }: FinalExportCardProps) {
   return (
     <div className={styles.wrapper}>
       <div className={styles.header}>
-        <h3>Final Export</h3>
+        <h3>{t("finalExportLabels.title")}</h3>
         <StatusBadge status={m.status} />
-        <StatusBadge status={m.passed_qc ? "pass" : "fail"} title="QC gate" />
+        <StatusBadge status={m.passed_qc ? "pass" : "fail"} title={t("badges.qcGate")} />
         <StatusBadge
           status={m.disclosure_status}
-          title="AI-content disclosure status"
+          title={t("badges.aiDisclosureStatus")}
         />
         <StatusBadge
           status={exportIsPlaceholder ? "manifest-only" : "real-mp4"}
-          title={
-            exportIsPlaceholder
-              ? "No real MP4 was encoded — manifest only"
-              : "Real MP4 export claimed"
-          }
+          title={exportIsPlaceholder ? t("badges.manifestOnly") : t("badges.realMp4")}
         />
       </div>
       <dl className="kv">
-        <dt>Export URI</dt>
+        <dt>{t("finalExportLabels.exportUri")}</dt>
         <dd>
           <code>{m.export_uri}</code>
         </dd>
-        <dt>Export type</dt>
+        <dt>{t("finalExportLabels.exportType")}</dt>
         <dd>
           {m.export_type} ({m.mime_type})
         </dd>
-        <dt>Target duration</dt>
+        <dt>{t("finalExportLabels.targetDuration")}</dt>
         <dd>{m.target_duration_seconds.toFixed(2)} s</dd>
-        <dt>Watermark required</dt>
-        <dd>{String(m.watermark_required)}</dd>
-        <dt>C2PA required</dt>
-        <dd>{String(m.c2pa_required)}</dd>
-        <dt>Reel draft</dt>
+        <dt>{t("finalExportLabels.watermarkRequired")}</dt>
+        <dd>{m.watermark_required ? t("common.yes") : t("common.no")}</dd>
+        <dt>{t("finalExportLabels.c2paRequired")}</dt>
+        <dd>{m.c2pa_required ? t("common.yes") : t("common.no")}</dd>
+        <dt>{t("finalExportLabels.reelDraft")}</dt>
         <dd title={m.source_reel_draft_uri}>
           <code>{shortHash(m.source_reel_draft_checksum)}</code>
         </dd>
-        <dt>QC report</dt>
+        <dt>{t("finalExportLabels.qcReport")}</dt>
         <dd title={m.qc_report_uri}>
           <code>{shortHash(m.qc_report_checksum)}</code>
         </dd>
-        <dt>Created</dt>
+        <dt>{t("jobs.created")}</dt>
         <dd>{formatDate(response.created_at)}</dd>
       </dl>
-      <p className={styles.note}>
-        This is the metadata-only export-decision manifest (Phase 3J / 4B).
-        A real packaged MP4 lives as a separate <code>final_export</code> artifact
-        when the operator triggers <code>POST /api/v1/export/finalize</code>
-        (Phase 8B); the Video preview card below renders that MP4 if present.
-        Watermark + C2PA signing remain pending.
-      </p>
+      <p className={styles.note}>{t("finalExportLabels.note")}</p>
       {(exportIsPlaceholder || reelDraftIsPlaceholder) && (
         <p className={styles.note} role="note">
-          <strong>No real video was encoded.</strong>{" "}
-          The upstream reel draft is metadata-only — either no real video
-          provider ran (e.g. SadTalker not configured) or the operator
-          uploaded no media. Configure a video provider or upload audio +
-          image to produce a real MP4.
+          <strong>{t("finalExportLabels.noEncodedVideoNote")}</strong>
         </p>
       )}
     </div>

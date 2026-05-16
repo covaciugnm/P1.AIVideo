@@ -10,11 +10,11 @@ require a real browser.
 ```bash
 test -f .env || cp .env.example .env
 
-BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 \
+BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 \
   NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
   docker compose -f docker/compose.dev.yml build backend frontend
 
-BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 \
+BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 \
   NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
   docker compose -f docker/compose.dev.yml up -d \
     postgres redis backend frontend orchestrator
@@ -40,7 +40,7 @@ curl -fsS http://localhost:8001/api/v1/jobs?status=pending_compliance
 curl -fsS http://localhost:8001/api/v1/jobs?status=not_a_status -o /dev/null -w "%{http_code}\n"  # expect 422
 curl -fsS http://localhost:8001/api/v1/providers
 curl -fsS http://localhost:8001/api/v1/config/ui-options
-curl -fsS -o /dev/null -w "HTTP %{http_code}\n" http://localhost:3001/
+curl -fsS -o /dev/null -w "HTTP %{http_code}\n" http://localhost:3010/
 ```
 
 Expected: every probe returns 200 except the deliberate 422.

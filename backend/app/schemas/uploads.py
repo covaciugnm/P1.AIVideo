@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from common.schemas import FaceMode, VoiceMode
 
+from app.core.languages import (
+    is_supported_language,
+    is_supported_subtitle_format,
+    language_codes,
+)
 from app.schemas.providers import ProviderSelection
 
 
@@ -130,6 +135,48 @@ class JobFromInputsRequest(BaseModel):
     # rejected legitimate requests.
     provider_selection: ProviderSelection | None = None
 
+    # Phase 11A — language + subtitle metadata on the upload-intake path.
+    # Defaults match POST /api/v1/jobs so the two routes have identical
+    # acceptance criteria.
+    video_language: str = Field(default="ro", max_length=8)
+    subtitle_enabled: bool = False
+    subtitle_languages: list[str] | None = None
+    subtitle_format: str = Field(default="srt", max_length=8)
+    subtitle_burn_in: bool = False
+    transcript_language: str | None = Field(default=None, max_length=8)
+
+    @field_validator("video_language", "transcript_language")
+    @classmethod
+    def _check_language(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not is_supported_language(v):
+            raise ValueError(
+                f"language {v!r} not supported; allowed: {list(language_codes())}"
+            )
+        return v
+
+    @field_validator("subtitle_format")
+    @classmethod
+    def _check_subtitle_format(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not is_supported_subtitle_format(v):
+            raise ValueError("subtitle_format must be one of srt/vtt")
+        return v
+
+    @field_validator("subtitle_languages")
+    @classmethod
+    def _check_subtitle_languages(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        for code in v:
+            if not is_supported_language(code):
+                raise ValueError(
+                    f"subtitle language {code!r} not supported"
+                )
+        return v
+
     @model_validator(mode="after")
     def _validate_combinations(self) -> "JobFromInputsRequest":
         # Voice mode: either inline script_text OR a script_artifact_id (for tts);
@@ -151,5 +198,10 @@ class JobFromInputsRequest(BaseModel):
                 raise ValueError(
                     "face_mode='provided_image' requires image_artifact_id"
                 )
+
+        # Phase 11A: auto-populate subtitle_languages when subtitles are
+        # turned on without an explicit list.
+        if self.subtitle_enabled and not self.subtitle_languages:
+            object.__setattr__(self, "subtitle_languages", [self.video_language])
 
         return self

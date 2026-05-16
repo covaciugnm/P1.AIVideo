@@ -48,6 +48,9 @@ class ArtifactType(str, enum.Enum):
     video = "video"
     metadata = "metadata"
     final_export = "final_export"
+    # Phase 11A: sidecar subtitle / caption artifact (SRT or VTT). Always
+    # carries ``language_code`` + ``format`` in its metadata_summary.
+    subtitle = "subtitle"
 
 
 class ProviderHealthStatus(str, enum.Enum):

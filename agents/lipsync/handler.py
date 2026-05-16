@@ -219,6 +219,14 @@ async def _attempt_lipsync_inference(
     base_root = os.environ.get("ARTIFACTS_LOCAL_ROOT") or tempfile.gettempdir()
     out_dir = Path(base_root) / "video" / str(state.job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Mirror the backend's video.py fix: widen perms so an out-of-process
+    # sadtalker wrapper (Phase 10B, uid 10002) can shutil.move the MP4
+    # into this per-job dir regardless of whether the orchestrator
+    # (uid 1000) created it. Single-uid setups are unaffected.
+    try:
+        out_dir.chmod(0o777)
+    except OSError:
+        pass
 
     result = provider.generate(
         image_path=img_path,

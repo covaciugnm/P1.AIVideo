@@ -10,6 +10,7 @@ import {
   getProviders,
   humanizeApiDetail,
 } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import type { ProviderCategory, ProviderInfo, ProvidersResponse } from "@/lib/types";
 
@@ -109,6 +110,8 @@ type TestOutcome =
 
 
 export function ProviderTestPanel() {
+  const t = useT();
+  void t("providers.testProvider");
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, TestOutcome>>({});
@@ -609,6 +612,10 @@ async function runVideoReadinessTest(
 
   const start = Date.now();
   try {
+    // allow-raw-fetch: this diagnostic panel needs the raw Response so
+    // it can render httpStatus + body for any provider URL the operator
+    // points at, including ad-hoc custom-provider hosts that the
+    // structured lib/api.ts client doesn't know about.
     const r = await fetch(`${getActiveApiBaseUrl()}${endpoint}`);
     const duration = Date.now() - start;
     const body = await r.json().catch(() => null);
@@ -675,6 +682,10 @@ async function runMetadataOnlyTest(
 
   const start = Date.now();
   try {
+    // allow-raw-fetch: this diagnostic panel needs the raw Response so
+    // it can render httpStatus + body for any provider URL the operator
+    // points at, including ad-hoc custom-provider hosts that the
+    // structured lib/api.ts client doesn't know about.
     const r = await fetch(`${getActiveApiBaseUrl()}${endpoint}`);
     const duration = Date.now() - start;
     const body = await r.json().catch(() => null);

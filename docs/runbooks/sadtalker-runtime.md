@@ -18,6 +18,19 @@ the explicit no-auto-download policy.
 > instead of the legacy `provider_not_implemented`. No fake MP4 is
 > registered under any combination of these flags.
 
+> **Phase Demo-RO-1 follow-up (2026-05-16):** the cross-uid permission
+> regression on `/storage/artifacts/video/<job-id>/` is now patched in
+> both code paths — `backend/app/api/video.py::_run_sadtalker_via_wrapper`
+> and `_run_sadtalker_and_register`, plus `agents/lipsync/handler.py::_attempt_lipsync_inference`.
+> Each does `out_dir.chmod(0o777)` immediately after `mkdir`, so the
+> wrapper (uid 10002) can `shutil.move` the produced MP4 into a dir the
+> backend / orchestrator (uid 1000) just created. No `docker exec
+> chmod` workaround needed on a freshly-built backend image.
+>
+> **Also new in `.env.example`:** `SADTALKER_BASE_URL=` and
+> `SADTALKER_HTTP_TIMEOUT=1200` — set `SADTALKER_BASE_URL` to make
+> the backend proxy `/api/v1/video/generate` to the GPU wrapper.
+
 ## How to activate real SadTalker (Phase 10B operator checklist)
 
 Five gates must all pass before `/api/v1/video/generate` can produce a
@@ -37,7 +50,7 @@ Start command (after every gate is green):
 ```bash
 SADTALKER_ENABLE_REAL_INFERENCE=true RUN_REAL_SADTALKER=1 \
   SADTALKER_MODELS_ROOT=/models/lipsync/sadtalker \
-  BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 \
+  BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 \
   NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
   docker compose -f docker/compose.dev.yml \
                  -f docker/compose.gpu.yml \

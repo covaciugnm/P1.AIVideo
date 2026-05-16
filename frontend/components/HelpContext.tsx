@@ -11,7 +11,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { HELP_DEFAULT_SLUG, getArticleBySlug } from "@/lib/help/content";
+import { HELP_TOPICS_EN } from "@/lib/help/dictionaries/en";
+
+const HELP_DEFAULT_SLUG = "dashboard";
+const getArticleBySlug = (slug: string) =>
+  HELP_TOPICS_EN[slug] ? { slug } : undefined;
 
 interface HelpState {
   readonly open: boolean;

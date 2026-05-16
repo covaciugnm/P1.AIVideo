@@ -4,11 +4,13 @@ import { useEffect, useRef } from "react";
 
 import { HelpHint } from "@/components/HelpHint";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 
 import styles from "./page.module.css";
 
 export default function SettingsPage() {
+  const t = useT();
   const announcedRef = useRef(false);
 
   useEffect(() => {
@@ -25,13 +27,10 @@ export default function SettingsPage() {
   return (
     <div>
       <h1>
-        Settings
-        <HelpHint slug="page-settings" />
+        {t("settings.title")}
+        <HelpHint slug="settings" />
       </h1>
-      <p className="muted">
-        These settings live in your browser only (localStorage). Reset clears
-        every override and reverts to the build-time defaults.
-      </p>
+      <p className="muted">{t("settings.intro")}</p>
       <div className={styles.fullPanel}>
         <SettingsPanel />
       </div>

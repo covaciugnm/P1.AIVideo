@@ -460,6 +460,14 @@ async def _run_sadtalker_and_register(
 
     out_dir = _artifacts_root() / "video" / str(payload.job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # When sadtalker runs out-of-process (Phase 10B wrapper, uid 10002),
+    # the wrapper needs to drop the MP4 into this per-job dir. Widen
+    # perms so cross-uid writes succeed regardless of who mkdir'd it.
+    # Harmless when the in-process path runs (single uid).
+    try:
+        out_dir.chmod(0o777)
+    except OSError:
+        pass
 
     result = provider.generate(
         image_path=img.local_path,
@@ -618,8 +626,16 @@ async def _run_sadtalker_via_wrapper(
 
     # Pre-compute the output path on the shared artifacts volume so the
     # wrapper writes where the backend can later checksum + register.
+    # The wrapper container runs as a different non-root uid (10002) than
+    # the backend (1000); both must be able to create + write files in
+    # this per-job subdir. We widen perms after mkdir so the wrapper's
+    # shutil.move() can land the MP4 (the umask makes the default 0755).
     out_dir = _artifacts_root() / "video" / str(payload.job_id)
     out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        out_dir.chmod(0o777)
+    except OSError:
+        pass
     out_name = f"sadtalker_{uuid.uuid4().hex}.mp4"
     out_path = out_dir / out_name
 

@@ -14,24 +14,31 @@ import * as logBus from "./log-bus";
 import { getActiveApiBaseUrl } from "./settings";
 import type {
   ArtifactResponse,
+  ArtifactTypeInfo,
   AudioFitCheckRequest,
   AudioFitCheckResponse,
   ComplianceEventResponse,
   CreateJobBody,
   CreateJobFromInputsBody,
   FinalExportResponse,
+  FinalizeExportRequest,
+  FinalizeExportResponse,
   JobDetail,
   JobFullSummary,
   JobProgress,
   JobResponse,
   JobStatus,
   JobSummary,
+  JobUpdateBody,
   ProviderInfo,
   ProvidersResponse,
+  QcInspectRequest,
+  QcInspectResponse,
   QCReportResponse,
   ScriptGenerateError,
   ScriptGenerateRequest,
   ScriptGenerateResponse,
+  StageInfo,
   StageTimelineEntry,
   SystemStatus,
   TTSGenerateError,
@@ -41,6 +48,8 @@ import type {
   UploadAudioResponse,
   UploadImageResponse,
   UploadTextResponse,
+  VideoGenerateRequest,
+  VideoGenerateResponse,
 } from "./types";
 
 export { getActiveApiBaseUrl };
@@ -377,18 +386,16 @@ export function createJobFromInputs(
   });
 }
 
+/**
+ * Phase 11B — PATCH /api/v1/jobs/{id}. Accepts the full editable
+ * surface: brief, target duration, script, voice/face modes, provider
+ * selection (per-category ids + models), language + subtitle settings.
+ * The server policy decides which fields are accepted for the current
+ * job status (see ``can_edit`` / ``locked_fields`` on JobResponse).
+ */
 export function updateJob(
   jobId: string,
-  patch: Partial<{
-    brief: string;
-    target_duration_seconds: number;
-    script_text: string;
-    voice_mode: "tts" | "provided_audio";
-    face_mode: "provided_image" | null;
-    tts_backend: string;
-    watermark_required: boolean;
-    c2pa_required: boolean;
-  }>,
+  patch: JobUpdateBody,
   signal?: AbortSignal,
 ): Promise<JobResponse> {
   return request<JobResponse>(`/api/v1/jobs/${jobId}`, {
@@ -635,4 +642,94 @@ export function audioFitCheck(
     body: JSON.stringify(body),
     signal,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10C — typed wrappers for endpoints previously called by raw fetch
+// or not consumed by the UI today. Mirrors api-surface.md row-for-row so
+// future pages can pick them up without re-deriving the request shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/v1/video/generate. Always returns HTTP 200 with a categorised
+ * status; the caller pattern-matches on ``status`` + ``error_code``.
+ * Real inference requires the SadTalker wrapper service (or in-process
+ * torch + weights + GPU). See `docs/runbooks/sadtalker-runtime.md`.
+ */
+export function generateVideo(
+  body: VideoGenerateRequest,
+  signal?: AbortSignal,
+): Promise<VideoGenerateResponse> {
+  return request<VideoGenerateResponse>("/api/v1/video/generate", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/**
+ * POST /api/v1/qc/inspect — re-runs the QC pipeline against an existing
+ * artifact (or the job's latest media). Persists a new QCReport.
+ */
+export function inspectQc(
+  body: QcInspectRequest,
+  signal?: AbortSignal,
+): Promise<QcInspectResponse> {
+  return request<QcInspectResponse>("/api/v1/qc/inspect", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/**
+ * POST /api/v1/export/finalize — bundle the job's final MP4 with watermark
+ * + C2PA, register a `final_export` artifact.
+ */
+export function finalizeExport(
+  body: FinalizeExportRequest,
+  signal?: AbortSignal,
+): Promise<FinalizeExportResponse> {
+  return request<FinalizeExportResponse>("/api/v1/export/finalize", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/** GET /api/v1/stages — DAG metadata, used by docs / Test panel. */
+export function getStages(signal?: AbortSignal): Promise<StageInfo[]> {
+  return request<StageInfo[]>("/api/v1/stages", { signal });
+}
+
+/** GET /api/v1/artifact-types — the artifact-type catalog. */
+export function getArtifactTypes(
+  signal?: AbortSignal,
+): Promise<ArtifactTypeInfo[]> {
+  return request<ArtifactTypeInfo[]>("/api/v1/artifact-types", { signal });
+}
+
+/**
+ * GET /api/v1/providers/{category}/{provider_id} — single-provider detail
+ * (richer readiness payload than the list endpoint). Category uses the
+ * underscore form on this endpoint (``video_generator``, ``audio_processor``,
+ * ``image_processor``) — we normalise here.
+ */
+export function getProviderDetail(
+  category:
+    | "llm"
+    | "tts"
+    | "video_generator"
+    | "audio_processor"
+    | "image_processor",
+  providerId: string,
+  signal?: AbortSignal,
+): Promise<ProviderInfo> {
+  return request<ProviderInfo>(
+    `/api/v1/providers/${category}/${encodeURIComponent(providerId)}`,
+    { signal, logLabel: `/api/v1/providers/${category}/:id` },
+  );
 }

@@ -50,6 +50,15 @@
   text-decoration: none;
 }
 
+.actionLinkDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionLinkDisabled:hover {
+  background: var(--surface-2);
+}
+
 .actionDangerLink {
   font-size: 12px;
   padding: 2px 6px;

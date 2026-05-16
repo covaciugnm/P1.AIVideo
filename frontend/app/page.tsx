@@ -11,6 +11,7 @@ import { useSettings } from "@/components/SettingsContext";
 import { StatusBadge } from "@/components/StatusBadge";
 import { listJobs } from "@/lib/api";
 import { formatRelative, humanize, shortId } from "@/lib/format";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import type { JobSummary } from "@/lib/types";
 import { usePolling } from "@/lib/usePolling";
@@ -19,6 +20,7 @@ import styles from "./page.module.css";
 
 export default function DashboardPage() {
   const { settings, hydrated } = useSettings();
+  const t = useT();
   const announcedRef = useRef(false);
 
   useEffect(() => {
@@ -44,30 +46,33 @@ export default function DashboardPage() {
     <div>
       <header className={styles.header}>
         <h1>
-          Jobs
-          <HelpHint slug="page-dashboard" />
+          {t("dashboard.title")}
+          <HelpHint slug="dashboard" />
         </h1>
         <Link href="/jobs/new" className="btn btn-primary">
-          + New job
+          {t("dashboard.newJob")}
         </Link>
       </header>
       {error && (
         <ErrorMessage
           message={`${error.message}\nCheck Settings → Backend API Base URL.`}
-          title="Failed to load jobs"
+          title={t("jobs.failedToLoad")}
         />
       )}
-      {loading && data === null && !error && <LoadingState label="Loading jobs…" />}
+      {loading && data === null && !error && (
+        <LoadingState label={t("common.loading")} />
+      )}
       {data !== null && <JobsTable jobs={data} />}
     </div>
   );
 }
 
 function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
+  const t = useT();
   if (jobs.length === 0) {
     return (
       <div className="card">
-        <p className="muted">No jobs yet. Create one to get started.</p>
+        <p className="muted">{t("dashboard.noJobsYet")}</p>
       </div>
     );
   }
@@ -76,15 +81,15 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
       <table className="simple">
         <thead>
           <tr>
-            <th>Job</th>
-            <th>Status</th>
-            <th>Voice / Face</th>
-            <th>Progress</th>
-            <th>Current stage</th>
-            <th>QC</th>
-            <th>Final export</th>
-            <th>Artifacts</th>
-            <th>Updated</th>
+            <th>{t("jobs.title").replace(/s$/, "")}</th>
+            <th>{t("jobs.status")}</th>
+            <th>{t("jobs.voice")} / {t("jobs.face")}</th>
+            <th>{t("jobs.progress")}</th>
+            <th>{t("jobs.currentStage")}</th>
+            <th>{t("dashboard.qc")}</th>
+            <th>{t("dashboard.finalExport")}</th>
+            <th>{t("jobs.artifacts")}</th>
+            <th>{t("dashboard.updated")}</th>
           </tr>
         </thead>
         <tbody>
@@ -104,7 +109,7 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
               <td className={styles.modeCol}>
                 <div>{humanize(job.voice_mode)}</div>
                 <div className="muted">
-                  {job.face_mode ? humanize(job.face_mode) : "no face"}
+                  {job.face_mode ? humanize(job.face_mode) : t("common.noFace")}
                 </div>
               </td>
               <td className={styles.progressCol}>
@@ -113,18 +118,18 @@ function JobsTable({ jobs }: { readonly jobs: readonly JobSummary[] }) {
               <td>{job.current_stage ? humanize(job.current_stage) : "—"}</td>
               <td>
                 {job.qc_passed === undefined || job.qc_passed === null ? (
-                  <span className={styles.qcPending}>Pending</span>
+                  <span className={styles.qcPending}>{t("common.pending")}</span>
                 ) : job.qc_passed ? (
-                  <span className={styles.qcPassed}>Passed</span>
+                  <span className={styles.qcPassed}>{t("common.passed")}</span>
                 ) : (
-                  <span className={styles.qcFailed}>Failed</span>
+                  <span className={styles.qcFailed}>{t("common.failed")}</span>
                 )}
               </td>
               <td>
                 {job.final_export_available ? (
-                  <span className={styles.exportReady}>Available</span>
+                  <span className={styles.exportReady}>{t("common.available")}</span>
                 ) : (
-                  <span className={styles.exportPending}>Not ready</span>
+                  <span className={styles.exportPending}>{t("statusLabels.not_ready")}</span>
                 )}
               </td>
               <td>{job.artifact_count}</td>

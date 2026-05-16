@@ -54,6 +54,29 @@ class Job(Base):
     # shape can evolve without schema migrations for every new field.
     # Nullable so every pre-8D test keeps passing.
     recovery_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 11A — language + subtitle metadata.
+    # ``video_language`` ISO-ish code (e.g. ``ro`` / ``en``); validated
+    # against ``app.core.languages.LANGUAGES``.
+    video_language: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="ro", default="ro"
+    )
+    subtitle_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    # JSON list of language codes; defaults to ``[]`` (which the API
+    # auto-expands to ``[video_language]`` when subtitle_enabled=True).
+    subtitle_languages: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    subtitle_format: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="srt", default="srt"
+    )
+    subtitle_burn_in: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    # Optional override for transcript / forced-alignment language.
+    # Defaults to ``video_language`` when unset.
+    transcript_language: Mapped[str | None] = mapped_column(
+        String(8), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False

@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     # alias when entered explicitly. Override via BACKEND_CORS_ORIGINS as a
     # comma-separated list for any extra origins.
     backend_cors_origins: str = (
-        "http://localhost:3000,http://localhost:3001,"
-        "http://127.0.0.1:3000,http://127.0.0.1:3001"
+        "http://localhost:3000,http://localhost:3001,http://localhost:3010,"
+        "http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3010"
     )
 
     # --- Postgres ---

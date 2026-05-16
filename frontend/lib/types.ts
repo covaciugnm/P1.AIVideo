@@ -45,6 +45,13 @@ export interface JobSummary {
   readonly final_export_available?: boolean;
   // Phase 8F-1: per-job provider selection on each list row.
   readonly provider_selection?: ProviderSelection | null;
+  // Phase 11A — language + subtitle highlights surfaced on the list row.
+  readonly video_language?: string;
+  readonly subtitle_enabled?: boolean;
+  readonly subtitle_languages?: readonly string[] | null;
+  // Phase 11B — editability hints surfaced on the list row.
+  readonly can_edit?: boolean;
+  readonly can_retry?: boolean;
 }
 
 export interface JobResponse {
@@ -67,8 +74,42 @@ export interface JobResponse {
    * backends that don't return the field still typecheck.
    */
   readonly recovery_metadata?: Record<string, unknown> | null;
+  // Phase 11A — language + subtitle metadata.
+  readonly video_language?: string;
+  readonly subtitle_enabled?: boolean;
+  readonly subtitle_languages?: readonly string[] | null;
+  readonly subtitle_format?: "srt" | "vtt";
+  readonly subtitle_burn_in?: boolean;
+  readonly transcript_language?: string | null;
+  // Phase 11B — server-computed editability hints.
+  readonly can_edit?: boolean;
+  readonly can_retry?: boolean;
+  readonly locked_fields?: readonly string[];
   readonly created_at: string;
   readonly updated_at: string;
+}
+
+/**
+ * Phase 11B — PATCH /api/v1/jobs/{id} body. Every field is optional;
+ * only the fields included in the request are applied. Mirrors
+ * ``backend/app/schemas/job.py::JobUpdateRequest``.
+ */
+export interface JobUpdateBody {
+  readonly brief?: string;
+  readonly target_duration_seconds?: number;
+  readonly script_text?: string;
+  readonly voice_mode?: VoiceMode;
+  readonly face_mode?: FaceMode | null;
+  readonly tts_backend?: string;
+  readonly watermark_required?: boolean;
+  readonly c2pa_required?: boolean;
+  readonly provider_selection?: ProviderSelection | null;
+  readonly video_language?: string;
+  readonly subtitle_enabled?: boolean;
+  readonly subtitle_languages?: readonly string[] | null;
+  readonly subtitle_format?: "srt" | "vtt";
+  readonly subtitle_burn_in?: boolean;
+  readonly transcript_language?: string | null;
 }
 
 /**
@@ -532,4 +573,85 @@ export interface CreateJobFromInputsBody {
   readonly image_consent_confirmed?: boolean;
   readonly image_synthetic_person_confirmed?: boolean;
   readonly provider_selection?: ProviderSelection | null;
+  // Phase 11A — language + subtitle metadata.
+  readonly video_language?: string;
+  readonly subtitle_enabled?: boolean;
+  readonly subtitle_languages?: readonly string[] | null;
+  readonly subtitle_format?: "srt" | "vtt";
+  readonly subtitle_burn_in?: boolean;
+  readonly transcript_language?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10C — types for endpoints that previously lacked a typed wrapper.
+// ---------------------------------------------------------------------------
+
+export interface VideoGenerateRequest {
+  readonly job_id: string;
+  readonly image_artifact_id: string;
+  readonly audio_artifact_id: string;
+  readonly provider_id?: string;
+  readonly model_id?: string | null;
+  readonly target_duration_seconds: number;
+  readonly edit_plan_artifact_id?: string | null;
+  readonly metadata?: Record<string, unknown>;
+}
+
+export type VideoGenerateStatus =
+  | "accepted"
+  | "not_configured"
+  | "missing_inputs"
+  | "failed"
+  | "completed"
+  | "not_implemented";
+
+export interface VideoGenerateResponse {
+  readonly status: VideoGenerateStatus;
+  readonly provider_id: string;
+  readonly model_id: string | null;
+  readonly job_id: string;
+  readonly output_video_artifact_id: string | null;
+  readonly error_code: string | null;
+  readonly message: string;
+  readonly metadata: Record<string, unknown>;
+}
+
+export interface QcInspectRequest {
+  readonly job_id: string;
+  readonly artifact_id?: string | null;
+  readonly require_audio?: boolean;
+  readonly expected_duration_seconds?: number | null;
+}
+
+export interface QcInspectResponse {
+  readonly status: "completed" | "missing_inputs" | "not_configured";
+  readonly job_id: string;
+  readonly artifact_id: string | null;
+  readonly artifact_type: string | null;
+  readonly error_code: string | null;
+  readonly message: string;
+  readonly report: Record<string, unknown> | null;
+}
+
+export interface FinalizeExportRequest {
+  readonly job_id: string;
+  readonly video_artifact_id?: string | null;
+  readonly audio_artifact_id?: string | null;
+  readonly watermark_required?: boolean;
+  readonly c2pa_required?: boolean;
+}
+
+export interface FinalizeExportResponse {
+  readonly status: FinalExportStatus;
+  readonly job_id: string;
+  readonly final_export_artifact_id: string | null;
+  readonly output_uri: string | null;
+  readonly size_bytes: number | null;
+  readonly duration_seconds: number | null;
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly checksum_sha256: string | null;
+  readonly error_code: string | null;
+  readonly message: string;
+  readonly metadata: Record<string, unknown>;
 }

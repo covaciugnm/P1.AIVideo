@@ -122,7 +122,7 @@ asyncio.run(m())"
 
 # Piper — opt in at build time.
 INSTALL_PIPER=true \
-  BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 \
+  BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 \
   NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
   docker compose -f docker/compose.dev.yml build backend
 
@@ -409,7 +409,7 @@ Without ffmpeg, non-WAV uploads still succeed but are flagged
 
 If the browser shows "Failed to fetch" even with the correct Backend API Base
 URL, the cause is almost always CORS. Phase 4E ships a default allow-list
-covering `http://localhost:3000`, `http://localhost:3001`, and the
+covering `http://localhost:3000`, `http://localhost:3010`, and the
 `127.0.0.1` aliases. Older `.env` files from Phase 4C-D may still have the
 single-origin default — regenerate with `cp .env.example .env` and restart
 the backend (or `make docker-light-down && make docker-light-up`).
@@ -472,7 +472,7 @@ Useful endpoints:
 - Frontend: <http://localhost:3000>
 - Backend API: <http://localhost:8000/docs>
 - MinIO console: <http://localhost:9001>
-- Grafana: <http://localhost:3001>
+- Grafana: <http://localhost:3010>
 
 ## Common dev tasks
 

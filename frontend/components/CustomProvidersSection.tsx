@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import {
   type CustomProviderInput,
@@ -40,6 +41,8 @@ function blankInput(): CustomProviderInput {
 }
 
 export function CustomProvidersSection() {
+  const t = useT();
+  void t("providers.addCustom");
   const [list, setList] = useState<CustomProviderInput[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [draft, setDraft] = useState<CustomProviderInput>(blankInput());

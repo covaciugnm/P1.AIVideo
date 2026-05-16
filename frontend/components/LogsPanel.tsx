@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 
 import { getActiveApiBaseUrl } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import type { LogEntry, LogLevel, LogSource } from "@/lib/log-bus";
 
+import { HelpHint } from "./HelpHint";
 import { useLogs } from "./LogsContext";
 import { useSettings } from "./SettingsContext";
 import styles from "./LogsPanel.module.css";
@@ -31,6 +33,7 @@ const _EXPORTABLE_SETTINGS_KEYS = [
 ] as const;
 
 export function LogsPanel() {
+  const t = useT();
   const { entries, clear } = useLogs();
   const { settings } = useSettings();
   const [levelFilter, setLevelFilter] = useState<LogLevel | "all">("all");
@@ -50,9 +53,9 @@ export function LogsPanel() {
           className={styles.select}
           value={levelFilter}
           onChange={(e) => setLevelFilter(e.target.value as LogLevel | "all")}
-          aria-label="Filter by level"
+          aria-label={t("logs.filterByLevel")}
         >
-          <option value="all">All levels</option>
+          <option value="all">{t("logs.allLevels")}</option>
           {LEVELS.map((level) => (
             <option key={level} value={level}>
               {level}
@@ -65,7 +68,7 @@ export function LogsPanel() {
           className={styles.exportBtn}
           onClick={handleExportJson}
           disabled={entries.length === 0}
-          title="Download visible logs as JSON"
+          title={t("logs.exportJson")}
         >
           ↓ JSON
         </button>
@@ -74,21 +77,18 @@ export function LogsPanel() {
           className={styles.exportBtn}
           onClick={handleExportTxt}
           disabled={entries.length === 0}
-          title="Download visible logs as plain text"
+          title={t("logs.exportTxt")}
         >
           ↓ TXT
         </button>
         <button type="button" className={styles.clear} onClick={clear}>
-          Clear
+          {t("logs.clearLogs")}
         </button>
+        <HelpHint slug="logs" small />
       </div>
       <ul className={styles.list}>
         {visible.length === 0 && (
-          <li className={styles.empty}>
-            {entries.length === 0
-              ? "No log entries yet."
-              : "No entries match the current filters."}
-          </li>
+          <li className={styles.empty}>{t("logs.noEntries")}</li>
         )}
         {visible.map((entry) => (
           <LogEntryItem key={entry.id} entry={entry} />

@@ -1,4 +1,7 @@
+"use client";
+
 import { formatDate, shortHash } from "@/lib/format";
+import { useT } from "@/lib/i18n/LanguageContext";
 import type { QCReportResponse } from "@/lib/types";
 
 import { StatusBadge } from "./StatusBadge";
@@ -9,6 +12,7 @@ interface QcReportCardProps {
 }
 
 export function QcReportCard({ report }: QcReportCardProps) {
+  const t = useT();
   const r = report.qc_report;
   // Phase 9D — distinguish a metadata-only reel_draft (placeholder URI)
   // from a real one so the operator can tell at a glance whether the
@@ -20,40 +24,40 @@ export function QcReportCard({ report }: QcReportCardProps) {
   return (
     <div className={styles.wrapper}>
       <div className={styles.header}>
-        <h3>QC Report</h3>
+        <h3>{t("jobDetail.qcReport")}</h3>
         <StatusBadge status={r.passed ? "pass" : "fail"} />
         <StatusBadge
           status={reelDraftIsPlaceholder ? "metadata-only" : "real-media"}
           title={
             reelDraftIsPlaceholder
-              ? "QC inspected metadata only — no real video bytes were checked"
-              : "QC inspected real reel_draft bytes"
+              ? t("qc.metadataOnlyNote")
+              : t("qc.realMediaNote")
           }
         />
       </div>
       <dl className="kv">
-        <dt>Target duration</dt>
+        <dt>{t("qc.targetDuration")}</dt>
         <dd>{r.target_duration_seconds.toFixed(2)} s</dd>
-        <dt>Segments</dt>
+        <dt>{t("qc.segments")}</dt>
         <dd>
           {r.segment_count} ({r.expected_segments.join(", ")})
         </dd>
-        <dt>Script</dt>
+        <dt>{t("qc.script")}</dt>
         <dd title={r.script_artifact_uri}>
           <code>{shortHash(r.script_artifact_checksum)}</code>
         </dd>
-        <dt>Edit plan</dt>
+        <dt>{t("qc.editPlan")}</dt>
         <dd title={r.edit_plan_artifact_uri}>
           <code>{shortHash(r.edit_plan_artifact_checksum)}</code>
         </dd>
-        <dt>Reel draft URI</dt>
+        <dt>{t("qc.reelDraftUri")}</dt>
         <dd>
           <code>{r.reel_draft_artifact_uri}</code>
         </dd>
-        <dt>Created</dt>
+        <dt>{t("jobs.created")}</dt>
         <dd>{formatDate(report.created_at)}</dd>
       </dl>
-      <h4 className={styles.checksHeading}>Checks</h4>
+      <h4 className={styles.checksHeading}>{t("qc.checksHeading")}</h4>
       <ul className={styles.checks}>
         {r.checks.map((c) => (
           <li key={c.name} className={styles.check}>

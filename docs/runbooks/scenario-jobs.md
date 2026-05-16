@@ -50,7 +50,7 @@ this at the handler level.
 Each created Demo job is reachable at:
 
 ```
-http://localhost:3001/jobs/<job_id>
+http://localhost:3010/jobs/<job_id>
 ```
 
 The job-detail page renders:
@@ -222,7 +222,7 @@ The script:
 
 After `make scenario-jobs`:
 
-1. Open <http://localhost:3001> (alt-port stack — adjust if you remap).
+1. Open <http://localhost:3010> (alt-port stack — adjust if you remap).
 2. Job list view shows all eight (or 16, if you ran the seeder twice).
    The status filter still works.
 3. Click any job → Job Detail. Confirm:
@@ -244,3 +244,114 @@ After `make scenario-jobs`:
   every scenario job intact.
 - Tiny fixtures live only inside the running process / DB rows. No
   binary blobs are added to the repo.
+
+---
+
+## Phase Demo-RO-1 — clean Romanian demo set (2026-05-16)
+
+**Operator request:** wipe every existing job, then create a clean,
+Romanian-themed demo matrix. No backup files. No DB reset. No volume
+deletion. Real video only if SadTalker actually produces an MP4.
+
+### Pre-state
+
+- `GET /api/v1/jobs` before delete: **38 jobs**.
+- Every job deleted via `DELETE /api/v1/jobs/{id}` (zero failures).
+- `GET /api/v1/jobs` after delete: **0 jobs** → confirmed.
+- **ALL EXISTING JOBS WERE DELETED FIRST.**
+
+### Input artifacts (uploaded fresh)
+
+| Kind | Origin | Artifact id | Path | Notes |
+|---|---|---|---|---|
+| `image` (small) | `ffmpeg -f lavfi -i "color=...:s=512x512"` PNG | `39ad1c97-84f4-4860-a02f-c42b68e75051` | `/storage/inputs/images/edb221ff37854663812fa93a5ea92685.png` | Solid color — passes upload validation; not face-detectable. |
+| `audio` (small WAV) | stdlib `wave` 22050 Hz mono 2 s 440 Hz sine | `5290c61b-5906-47e8-b569-3928ea99a05d` | `/storage/inputs/audio/d47e817c64e64ca1b893ce81394fc3b2.wav` | "Provided WAV test audio" (not speech). |
+| `audio` (MP3) | ffmpeg-encoded from the WAV above | `6a8883b2-9945-48d4-a366-177f35d71792` | `/storage/inputs/audio/4d31cb2f610c4a7bb9266c99a5d89d37.converted.wav` | MP3 → auto-converted to WAV server-side. `converted_to_wav=true`. |
+| `image` (real face) | thispersondoesnotexist.com (CC0 AI) JPEG 1024×1024 | `d7f999dc-98da-45d4-a30d-9c4e9799d856` | `/storage/inputs/images/...` | Used by Job 9 — face detector finds it. |
+| `audio` (longer) | `ffmpeg -f lavfi -i "sine=200:duration=5,asetrate=16000,aresample=16000"` 13.78 s WAV | `ad1d8144-5c45-4e84-b525-76fac55d39ca` | `/storage/inputs/audio/...` | Driver audio for Job 9. |
+
+Content endpoints (`GET /api/v1/artifacts/<id>/content`) verified HTTP 200
+for every artifact above.
+
+### Demo jobs
+
+All briefs start with `Demo RO —` exactly.
+
+| # | Job id | Status | Brief | script | tts | video | voice_mode | face_mode |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `8562799c-93a6-4df7-8ab4-af224339033b` | rejected | Turism în Transilvania | template | piper | sadtalker | tts | — |
+| 2 | `27ddec2c-21c8-406d-9c8c-9557d3231449` | rejected | Fabrică digitalizată cu roboți industriali | mock | piper | sadtalker | tts | — |
+| 3 | `4fab06d2-f17e-403e-be19-6fd28cf837c3` | rejected | Curs online de tehnologie | ollama / qwen3.6 | piper | sadtalker | tts | — |
+| 4 | `f0ed3df7-d70b-4c3e-811f-04a0aaa97799` | **published** | Brutărie artizanală locală | template | piper | sadtalker | provided_audio | provided_image |
+| 5 | `5fddaa7e-c65e-44ed-aad6-6df045aba615` | **published** | Conversie MP3 în WAV pentru video | template | piper | sadtalker | provided_audio (MP3→WAV) | provided_image |
+| 6 | `4dd5b4de-f519-4fc6-9b76-007076725fb4` | rejected | F5TTS-Ro voce românească | template | f5tts_ro (model=romanian) | sadtalker | tts | — |
+| 7 | `442216fa-28a0-4bcf-a8be-8d461219817c` | rejected | Furnizori personalizați metadata | custom_future_llm | custom_future_tts | custom_future_video | tts | — |
+| 8 | `1b4a965f-10bc-40ce-a859-438fb761066e` | rejected | Flux complet text audio imagine video | template | piper | sadtalker | tts | provided_image |
+| 9 | `07b26dd7-ac56-4e79-845c-eb07d3f06e65` | **published — REAL VIDEO** | Videoclip real SadTalker generat | template | piper | sadtalker | provided_audio | provided_image |
+
+UI URLs: `http://localhost:3010/jobs/<job-id>` (replace each id).
+
+### Romanian script text per job
+
+```
+1. Turism — "Descoperă farmecul Transilvaniei: cetăți medievale, sate săsești, natură spectaculoasă și povești care prind viață la fiecare pas."
+2. Fabrică — "Într-o fabrică modernă, roboții industriali, mașinile CNC și energia regenerabilă lucrează împreună pentru producție rapidă, precisă și sustenabilă."
+3. Curs    — "Învață tehnologia pas cu pas, cu explicații clare, exemple practice și exerciții care transformă teoria în rezultate reale."
+4. Brutărie — "Pâine caldă, ingrediente naturale și rețete tradiționale reinterpretate: o brutărie locală poate deveni o poveste memorabilă printr-un video scurt și autentic."
+5. MP3     — "Programările online, consultațiile eficiente și comunicarea clară dintre medic și pacient transformă experiența medicală într-un proces simplu și sigur."
+6. F5TTS-Ro — "Bună ziua! Acesta este un test de voce în limba română folosind providerul F5TTS-Ro. Scopul este verificarea fluxului text, audio și video pentru conținut românesc."
+7. Custom  — RO clinic text reused (purpose: provider_selection metadata persistence, not real generation).
+8. Full    — "Acesta este un test complet al aplicației: pornim de la text în limba română, generăm sau atașăm audio, folosim o imagine validă și pregătim fluxul pentru generarea unui videoclip."
+9. Video   — "Acesta este un test real SadTalker pe RTX 5090: textul devine narațiune, narațiunea devine video lip-sincronizat."
+```
+
+### Expected vs actual
+
+| # | Expected behavior | Actual classification | Reject reason / Real artifact |
+|---|---|---|---|
+| 1 | `tts_runtime_missing` (Piper not in light backend) | `PROCESSED_REJECTED_CLEANLY` at `voice` | piper-tts not installed |
+| 2 | same | `PROCESSED_REJECTED_CLEANLY` at `voice` | piper-tts not installed |
+| 3 | `script_provider_disabled` OR `tts_runtime_missing` | `PROCESSED_REJECTED_CLEANLY` at `voice` (ollama not configured, falls through to tts and fails there) | piper-tts not installed |
+| 4 | published with real audio + image | **PROCESSED_WITH_REAL_AUDIO+IMAGE** | audio + image + edit_plan + metadata + final_export attached |
+| 5 | published with real audio + image, audio is the MP3→WAV result | **PROCESSED_WITH_REAL_AUDIO+IMAGE** | converted audio artifact = `mime=audio/wav`, `converted_to_wav=true` |
+| 6 | `tts_runtime_missing` (F5TTS-Ro service not reachable, default backend has no torch) | `PROCESSED_REJECTED_CLEANLY` at `voice` | f5tts_ro disabled |
+| 7 | `unknown_provider` or runtime fails cleanly | `PROCESSED_REJECTED_CLEANLY` at `voice` | tts_provider_not_implemented |
+| 8 | best-effort published OR clean rejection | `PROCESSED_REJECTED_CLEANLY` at `voice` | piper-tts not installed |
+| 9 | published with real MP4 ONLY if SadTalker actually works | **PROCESSED_WITH_REAL_VIDEO** | MP4 434 KB, 512×512, 25 fps, 13.76 s, h264 + aac. Generated via `model-sadtalker` wrapper on RTX 5090 in ~120 s. |
+
+### Runtime gate results (this host, Phase Demo-RO-1)
+
+| Runtime | Status this run | What gated it |
+|---|---|---|
+| Piper TTS | `not_configured` | `piper-tts` not installed in default backend image. Build with `--build-arg INSTALL_PIPER=true` to flip to `ok`. |
+| F5TTS-Ro | `not_implemented` (no `F5TTS_RO_BASE_URL` set on backend; service not running) | Start with `make docker-tts-ro-up` + export `F5TTS_RO_BASE_URL`. |
+| Ollama | network calls disabled by default | `SCRIPTWRITER_ENABLE_NETWORK_CALLS=true` + a reachable daemon. |
+| SadTalker | `ready` | `model-sadtalker` wrapper up (Phase 10B), all 5 weights on disk, RTX 5090 + Blackwell open driver. |
+| ffmpeg / ffprobe | installed | bundled in backend image. |
+| stdlib image validation | `available` | Pillow ships in backend image. |
+
+### Real-video fix applied this phase
+
+`backend/app/api/video.py::_run_sadtalker_via_wrapper` previously created the
+per-job artifacts subdir with default umask (0755 owned by `app:app` uid 1000).
+The wrapper container (uid 10002) couldn't `shutil.move()` into it.
+
+Phase Demo-RO-1 fixes the regression: after `out_dir.mkdir(...)` the dir is
+chmod'd to 0o777 so both containers can write. Verified end-to-end with
+Job 9 (`07b26dd7-...`) — real MP4 generated + registered + content endpoint
+HTTP 200.
+
+### Persistence
+
+`docker compose stop` → `docker compose up -d postgres redis backend frontend orchestrator`
+→ `GET /api/v1/jobs` returns **9** (unchanged) and every binary artifact
+content endpoint returns HTTP 200 with the same byte count as before the
+stop. No volume was touched.
+
+### Data preservation contract honoured
+
+- Only `DELETE /api/v1/jobs/{id}` used to clear pre-state.
+- No `docker compose down -v`, no `docker volume rm`, no
+  `make docker-light-reset`, no DB / Postgres reset, no `storage/` cleanup.
+- No backup files created. (Operator explicitly requested no backup.)
+- No model weights downloaded. (Already on disk from Phase 10B.)

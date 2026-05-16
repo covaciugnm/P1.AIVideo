@@ -9,6 +9,8 @@ import {
   type SidebarState,
 } from "@/lib/settings";
 
+import { useT } from "@/lib/i18n/LanguageContext";
+
 import { LogsPanel } from "./LogsPanel";
 import { ProviderTestPanel } from "./ProviderTestPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -16,6 +18,7 @@ import { SidebarTabs } from "./SidebarTabs";
 import styles from "./RightSidebar.module.css";
 
 export function RightSidebar() {
+  const t = useT();
   const [state, setState] = useState<SidebarState>(DEFAULT_SIDEBAR_STATE);
   const [hydrated, setHydrated] = useState(false);
 
@@ -42,19 +45,19 @@ export function RightSidebar() {
   return (
     <aside
       className={`${styles.sidebar} ${collapsed ? styles.collapsed : styles.expanded}`}
-      aria-label="Activity sidebar"
+      aria-label={t("sidebar.activity")}
     >
       <div className={styles.header}>
         <button
           type="button"
           className={styles.toggle}
           onClick={toggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
+          title={collapsed ? t("sidebar.expand") : t("sidebar.collapse")}
         >
           {collapsed ? "«" : "»"}
         </button>
-        {!collapsed && <span className={styles.title}>Activity</span>}
+        {!collapsed && <span className={styles.title}>{t("sidebar.activity")}</span>}
       </div>
 
       {collapsed ? (
@@ -63,17 +66,17 @@ export function RightSidebar() {
             type="button"
             className={`${styles.railTab} ${state.activeTab === "logs" ? styles.railTabActive : ""}`}
             onClick={() => update({ collapsed: false, activeTab: "logs" })}
-            title="Logs"
+            title={t("sidebar.logs")}
           >
-            <span className={styles.railLabel}>Logs</span>
+            <span className={styles.railLabel}>{t("sidebar.logs")}</span>
           </button>
           <button
             type="button"
             className={`${styles.railTab} ${state.activeTab === "settings" ? styles.railTabActive : ""}`}
             onClick={() => update({ collapsed: false, activeTab: "settings" })}
-            title="Settings"
+            title={t("sidebar.settings")}
           >
-            <span className={styles.railLabel}>Settings</span>
+            <span className={styles.railLabel}>{t("sidebar.settings")}</span>
           </button>
           <button
             type="button"

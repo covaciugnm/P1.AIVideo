@@ -340,6 +340,7 @@ def test_artifact_type_enum_has_expected_values():
             "video",
             "metadata",
             "final_export",
+            "subtitle",  # added in Phase 11A
         ]
     )
     assert actual == expected

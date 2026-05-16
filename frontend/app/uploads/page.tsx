@@ -6,6 +6,7 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { UploadCard } from "@/components/UploadCard";
+import { useT } from "@/lib/i18n/LanguageContext";
 import { ApiError, getUiOptions, uploadText } from "@/lib/api";
 import { formatBytes, formatDate, formatDurationSec, shortHash } from "@/lib/format";
 import * as logBus from "@/lib/log-bus";
@@ -24,6 +25,7 @@ type Recent =
   | { kind: "image"; r: UploadImageResponse; createdAt: string };
 
 export default function UploadsPage() {
+  const t = useT();
   const [uiOptions, setUiOptions] = useState<UIOptions | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recent, setRecent] = useState<Recent[]>([]);
@@ -55,26 +57,22 @@ export default function UploadsPage() {
 
   if (loadError) {
     return (
-      <ErrorMessage message={loadError} title="Failed to load upload options" />
+      <ErrorMessage message={loadError} title={t("uploadsPage.failedToLoadOptions")} />
     );
   }
-  if (!uiOptions) return <LoadingState label="Loading upload options…" />;
+  if (!uiOptions) return <LoadingState label={t("common.loading")} />;
 
   return (
     <div>
       <h1>
-        Uploads
-        <HelpHint slug="page-uploads" />
+        {t("uploads.title")}
+        <HelpHint slug="uploads" />
       </h1>
-      <p className="muted">
-        Register text, audio, or image artifacts. Each upload is stored
-        locally on the backend and returns an artifact id you can reference
-        when creating a job.
-      </p>
+      <p className="muted">{t("uploads.intro")}</p>
 
       <div className={styles.grid}>
         <section className="card">
-          <h2>Text / script</h2>
+          <h2>{t("uploadsPage.sectionText")}</h2>
           <UploadTextPanel
             maxChars={uiOptions.upload_limits.script_text_max_chars}
             onUploaded={(r) =>
@@ -84,11 +82,11 @@ export default function UploadsPage() {
         </section>
 
         <section className="card">
-          <h2>Audio (WAV)</h2>
+          <h2>{t("uploadsPage.sectionAudio")}</h2>
           <UploadCard
             kind="audio"
-            title="Provided audio"
-            help="WAV file under the configured max size."
+            title={t("uploadsPage.uploadAudioTitle")}
+            help={t("uploads.audioHelp")}
             acceptExtensions={uiOptions.upload_limits.accepted_audio_extensions}
             maxBytes={uiOptions.upload_limits.audio_max_bytes}
             onUploaded={(r) =>
@@ -102,11 +100,11 @@ export default function UploadsPage() {
         </section>
 
         <section className="card">
-          <h2>Image (PNG / JPEG / WebP)</h2>
+          <h2>{t("uploadsPage.sectionImage")}</h2>
           <UploadCard
             kind="image"
-            title="Portrait image"
-            help="Synthetic-only portrait."
+            title={t("uploadsPage.uploadImageTitle")}
+            help={t("uploads.imageHelp")}
             acceptExtensions={uiOptions.upload_limits.accepted_image_extensions}
             maxBytes={uiOptions.upload_limits.image_max_bytes}
             onUploaded={(r) =>
@@ -121,9 +119,9 @@ export default function UploadsPage() {
       </div>
 
       <section className="card">
-        <h2>Recent uploads (this tab)</h2>
+        <h2>{t("uploadsPage.recentTab")}</h2>
         {recent.length === 0 ? (
-          <p className="muted">No uploads yet in this session.</p>
+          <p className="muted">{t("uploadsPage.noUploadsYet")}</p>
         ) : (
           <ul className={styles.recentList}>
             {recent.map((r, i) => (
@@ -131,11 +129,7 @@ export default function UploadsPage() {
             ))}
           </ul>
         )}
-        <p className="muted">
-          The list is local to this tab. Refreshing the page clears it.
-          Backend persistence + a global artifacts endpoint land in a later
-          phase.
-        </p>
+        <p className="muted">{t("uploadsPage.localToTab")}</p>
       </section>
     </div>
   );
@@ -148,6 +142,7 @@ function UploadTextPanel({
   readonly maxChars: number;
   readonly onUploaded: (r: UploadTextResponse) => void;
 }) {
+  const t = useT();
   const [scriptText, setScriptText] = useState("");
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -156,7 +151,7 @@ function UploadTextPanel({
   const submit = async () => {
     const body = scriptText.trim();
     if (body.length === 0) {
-      setError("Script text cannot be empty.");
+      setError(t("uploadsPage.scriptCannotBeEmpty"));
       return;
     }
     setBusy(true);
@@ -198,7 +193,7 @@ function UploadTextPanel({
   return (
     <div>
       <div className="field">
-        <label htmlFor="upload-title">Title (optional)</label>
+        <label htmlFor="upload-title">{t("uploadsPage.titleOptional")}</label>
         <input
           id="upload-title"
           value={title}
@@ -207,7 +202,7 @@ function UploadTextPanel({
         />
       </div>
       <div className="field">
-        <label htmlFor="upload-script">Script text</label>
+        <label htmlFor="upload-script">{t("uploads.scriptField")}</label>
         <textarea
           id="upload-script"
           value={scriptText}
@@ -225,13 +220,14 @@ function UploadTextPanel({
         onClick={submit}
         disabled={busy}
       >
-        {busy ? "Registering…" : "Register text"}
+        {busy ? t("uploadsPage.registering") : t("uploadsPage.registerText")}
       </button>
     </div>
   );
 }
 
 function RecentItem({ entry }: { readonly entry: Recent }) {
+  const t = useT();
   const id = entryArtifactId(entry);
   const meta = entryMetaSummary(entry);
   return (
@@ -242,7 +238,7 @@ function RecentItem({ entry }: { readonly entry: Recent }) {
       </div>
       <div className={styles.recentRow}>
         <code className={styles.recentId}>{id}</code>
-        <CopyButton text={id} label="Copy id" />
+        <CopyButton text={id} label={t("uploadsPage.copyId")} />
       </div>
       {meta && <div className={styles.recentMeta}>{meta}</div>}
     </li>

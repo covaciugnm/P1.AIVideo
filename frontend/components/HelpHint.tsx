@@ -1,24 +1,28 @@
 "use client";
 
+import { getHelpTopic } from "@/lib/help/dictionaries";
+import { useLanguage, useT } from "@/lib/i18n/LanguageContext";
+
 import { useHelp } from "./HelpContext";
-import { getArticleBySlug } from "@/lib/help/content";
 import styles from "./HelpHint.module.css";
 
-/** Inline `?` chip that opens the help overlay at a specific article. */
+/** Inline `?` chip that opens the help overlay at a specific topic. */
 export function HelpHint({
   slug,
   label,
   small,
 }: {
   readonly slug: string;
-  /** Accessible label override. Defaults to "Help: <article title>". */
+  /** Accessible label override. Defaults to "<help.open>: <topic title>". */
   readonly label?: string;
   /** Smaller variant for tight inline spots. */
   readonly small?: boolean;
 }) {
   const help = useHelp();
-  const article = getArticleBySlug(slug);
-  const title = label ?? (article ? `Help: ${article.title}` : "Help");
+  const t = useT();
+  const { language } = useLanguage();
+  const topic = getHelpTopic(language, slug);
+  const title = label ?? (topic ? `${t("help.open")}: ${topic.title}` : t("help.open"));
   return (
     <button
       type="button"
@@ -47,6 +51,7 @@ export function HelpLink({
   readonly className?: string;
 }) {
   const help = useHelp();
+  const t = useT();
   return (
     <button
       type="button"
@@ -61,7 +66,7 @@ export function HelpLink({
         font: "inherit",
       }}
     >
-      {children ?? "Help"}
+      {children ?? t("nav.help")}
     </button>
   );
 }

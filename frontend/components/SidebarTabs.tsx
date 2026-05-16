@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/LanguageContext";
 import type { SidebarTabId } from "@/lib/settings";
 
 import styles from "./SidebarTabs.module.css";
@@ -13,17 +14,17 @@ interface SidebarTabsProps {
   readonly onChange: (tab: SidebarTab) => void;
 }
 
-const _TABS: readonly { id: SidebarTab; label: string }[] = [
-  { id: "logs", label: "Logs" },
-  { id: "settings", label: "Settings" },
-  // Phase 8F-2 — operator provider diagnostics.
-  { id: "test1", label: "Test1" },
-];
-
 export function SidebarTabs({ active, onChange }: SidebarTabsProps) {
+  const t = useT();
+  const tabs: readonly { id: SidebarTab; label: string }[] = [
+    { id: "logs", label: t("sidebar.logs") },
+    { id: "settings", label: t("sidebar.settings") },
+    // Phase 8F-2 — operator provider diagnostics.
+    { id: "test1", label: t("sidebar.test1") },
+  ];
   return (
     <div className={styles.tabs} role="tablist">
-      {_TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"

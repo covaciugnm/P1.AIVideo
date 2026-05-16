@@ -47,7 +47,9 @@ router = APIRouter(prefix="/api/v1/artifacts", tags=["artifacts"])
 # 404 information about which final_export rows exist.
 # ``edit_plan`` / ``metadata`` stay out — they're JSON-only artifacts
 # operators never scrub through in the browser.
-_SERVE_ALLOWED_TYPES = frozenset({"audio", "image", "script", "video", "final_export"})
+_SERVE_ALLOWED_TYPES = frozenset(
+    {"audio", "image", "script", "video", "final_export", "subtitle"}
+)
 
 
 # Mapping from artifact mime type → safe download filename suffix. Used
@@ -65,6 +67,8 @@ _MIME_TO_DOWNLOAD_SUFFIX: dict[str, str] = {
     "image/jpeg": ".jpg",
     "image/webp": ".webp",
     "text/plain": ".txt",
+    "text/vtt": ".vtt",
+    "application/x-subrip": ".srt",
     "video/mp4": ".mp4",
     "video/webm": ".webm",
 }
@@ -89,6 +93,18 @@ def _allowed_roots() -> list[Path]:
     ):
         raw = os.environ.get(env_name, default)
         out.append(Path(raw).resolve(strict=False))
+    # Phase 11A — subtitle sidecar artifacts live under
+    # ``$ARTIFACTS_LOCAL_ROOT/subtitles/...``. The artifacts root is
+    # already added below, but we resolve again here to be explicit so
+    # the path-safety check accepts subtitle files even if a future
+    # phase moves them under a separate env var.
+    out.append(
+        Path(
+            os.environ.get("SUBTITLES_LOCAL_ROOT")
+            or os.environ.get("ARTIFACTS_LOCAL_ROOT")
+            or settings.artifacts_local_root
+        ).resolve(strict=False)
+    )
     # Phase 8A: the artifacts root, where Phase 7D's video files (and
     # Phase 8B's final-export MP4s) land. Honour the env override the
     # compose files set.

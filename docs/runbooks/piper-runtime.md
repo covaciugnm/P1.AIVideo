@@ -11,7 +11,7 @@ here installs or downloads anything automatically — Piper is opt-in.
 
 ```bash
 INSTALL_PIPER=true \
-  POSTGRES_PORT=5433 BACKEND_PORT=8001 FRONTEND_PORT=3001 \
+  POSTGRES_PORT=5433 BACKEND_PORT=8001 FRONTEND_PORT=3010 \
   NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
   docker compose -f docker/compose.dev.yml build backend
 ```

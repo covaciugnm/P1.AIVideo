@@ -1,3 +1,5 @@
+"use client";
+
 import {
   formatBytes,
   formatDate,
@@ -6,6 +8,7 @@ import {
   shortHash,
   shortId,
 } from "@/lib/format";
+import { useT } from "@/lib/i18n/LanguageContext";
 import type { ArtifactResponse } from "@/lib/types";
 
 import styles from "./ArtifactTable.module.css";
@@ -15,22 +18,23 @@ interface ArtifactTableProps {
 }
 
 export function ArtifactTable({ artifacts }: ArtifactTableProps) {
+  const t = useT();
   if (artifacts.length === 0) {
-    return <p className={styles.empty}>No artifacts produced yet.</p>;
+    return <p className={styles.empty}>{t("artifactTable.empty")}</p>;
   }
   return (
     <div className={styles.scroll}>
       <table className="simple">
         <thead>
           <tr>
-            <th>Type</th>
-            <th>ID</th>
-            <th>MIME</th>
-            <th>Size</th>
-            <th>Dim / Dur</th>
-            <th>SHA-256</th>
-            <th>Real file</th>
-            <th>Created</th>
+            <th>{t("artifactTable.header_type")}</th>
+            <th>{t("artifactTable.header_id")}</th>
+            <th>{t("artifactTable.header_mime")}</th>
+            <th>{t("artifactTable.header_size")}</th>
+            <th>{t("artifactTable.header_dim")}</th>
+            <th>{t("artifactTable.header_sha")}</th>
+            <th>{t("artifactTable.header_real")}</th>
+            <th>{t("artifactTable.header_created")}</th>
           </tr>
         </thead>
         <tbody>
@@ -48,7 +52,7 @@ export function ArtifactTable({ artifacts }: ArtifactTableProps) {
                   {shortHash(a.checksum_sha256)}
                 </code>
               </td>
-              <td title={a.uri}>{describeRealness(a)}</td>
+              <td title={a.uri}>{describeRealness(a, t)}</td>
               <td>{formatDate(a.created_at)}</td>
             </tr>
           ))}
@@ -70,16 +74,14 @@ function describeShape(a: ArtifactResponse): string {
   return "—";
 }
 
-function describeRealness(a: ArtifactResponse): string {
-  // Phase 9F — surface real-vs-metadata at-a-glance.
-  // Real file: local_path is set AND a content checksum exists.
-  // Placeholder: ``placeholder://`` URI (Phase 9B/9D editor + face).
-  // Manifest: JSON-typed metadata-only artifact (qc_report, edit_plan,
-  // final_export) — still a "real file" in DB terms but not media.
-  if (a.uri.startsWith("placeholder://")) return "metadata-only";
-  if (a.local_path && a.checksum_sha256) return "yes";
+function describeRealness(
+  a: ArtifactResponse,
+  t: (key: string) => string,
+): string {
+  if (a.uri.startsWith("placeholder://")) return t("artifactTable.real_metadata");
+  if (a.local_path && a.checksum_sha256) return t("artifactTable.real_yes");
   if (a.checksum_sha256 && (a.mime_type ?? "").startsWith("application/json")) {
-    return "manifest";
+    return t("artifactTable.real_manifest");
   }
-  return "no";
+  return t("artifactTable.real_no");
 }

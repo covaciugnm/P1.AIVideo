@@ -44,6 +44,13 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         image_ref=image_ref_dict,
         provider_selection=provider_selection_dict,
         status=JobStatus.pending_compliance,
+        # Phase 11A — persist language + subtitle metadata on the row.
+        video_language=payload.video_language,
+        subtitle_enabled=payload.subtitle_enabled,
+        subtitle_languages=payload.subtitle_languages,
+        subtitle_format=payload.subtitle_format,
+        subtitle_burn_in=payload.subtitle_burn_in,
+        transcript_language=payload.transcript_language,
     )
     session.add(job)
     await session.commit()
@@ -76,13 +83,21 @@ async def set_job_status(
 
 TERMINAL_STATUSES = {JobStatus.published, JobStatus.rejected, JobStatus.failed}
 
-# Fields that are safe to edit any time before the job is in a terminal
-# state.
+# Phase 11B — operator-recoverable terminal states. A rejected/failed
+# job is "soft terminal": the operator may still patch provider /
+# script / language fields and then call /retry to re-run the DAG.
+# ``published`` stays fully locked.
+_RECOVERABLE_TERMINAL_STATUSES = {JobStatus.rejected, JobStatus.failed}
+
+# Fields that are safe to edit any time before the job is in a hard
+# terminal state.
 _PRE_TERMINAL_FIELDS = frozenset({"brief", "target_duration_seconds"})
 
 # Fields that are only safe to edit while the job is still in
-# ``pending_compliance`` — once policy_gate has run, these have been
-# consumed by later stages.
+# ``pending_compliance`` — once policy_gate has run on a still-running
+# job, these have been consumed by later stages. Phase 11B re-enables
+# them for ``rejected`` / ``failed`` jobs (see ``_RECOVERABLE_TERMINAL_STATUSES``)
+# so the operator can fix a bad provider selection and retry.
 _PRE_COMPLIANCE_FIELDS = frozenset(
     {
         "script_text",
@@ -92,8 +107,45 @@ _PRE_COMPLIANCE_FIELDS = frozenset(
         "watermark_required",
         "c2pa_required",
         "provider_selection",
+        # Phase 11A — language + subtitle metadata is also pre-compliance:
+        # later stages may consume the values (e.g. transcript stage uses
+        # transcript_language).
+        "video_language",
+        "subtitle_enabled",
+        "subtitle_languages",
+        "subtitle_format",
+        "subtitle_burn_in",
+        "transcript_language",
     }
 )
+
+ALL_EDITABLE_FIELDS = _PRE_TERMINAL_FIELDS | _PRE_COMPLIANCE_FIELDS
+
+
+def compute_edit_policy(status: JobStatus) -> tuple[bool, bool, list[str]]:
+    """Phase 11B — return ``(can_edit, can_retry, locked_fields)`` for a job
+    at the given status. Pure function so the UI can surface the same
+    flags via JobResponse and the PATCH handler can reuse the policy.
+
+    - ``published``: fully locked — no edits, no retry.
+    - ``pending_compliance``: everything editable, retry not applicable
+      (the worker is about to pick it up anyway).
+    - ``rejected`` / ``failed``: everything editable so the operator can
+      fix a bad provider / script / language and retry; retry is the
+      only path forward.
+    - Any in-flight intermediate status (``accepted``, etc.): only
+      ``_PRE_TERMINAL_FIELDS`` can be safely changed; pre-compliance
+      fields stay locked because the running DAG may have consumed
+      them.
+    """
+    if status == JobStatus.published:
+        return False, False, sorted(ALL_EDITABLE_FIELDS)
+    if status == JobStatus.pending_compliance:
+        return True, False, []
+    if status in _RECOVERABLE_TERMINAL_STATUSES:
+        return True, True, []
+    # In-flight non-terminal — only brief/duration are safe.
+    return True, False, sorted(_PRE_COMPLIANCE_FIELDS)
 
 
 class JobEditError(Exception):
@@ -114,6 +166,10 @@ async def update_job(
 
     Returns the updated job, or None if not found. Raises :class:`JobEditError`
     on policy violations (terminal-state edit, immutable-field edit).
+
+    Phase 11B contract: rejected / failed jobs ARE editable so the
+    operator can fix the cause (bad provider, missing script, wrong
+    language) and then call /retry. Only ``published`` is fully locked.
     """
     job = await get_job(session, job_id)
     if job is None:
@@ -123,28 +179,28 @@ async def update_job(
     if not fields:
         return job  # no-op
 
-    if job.status in TERMINAL_STATUSES:
+    can_edit, _can_retry, locked = compute_edit_policy(job.status)
+    if not can_edit:
         raise JobEditError(
             status_code=409,
             detail=f"job is in terminal state {job.status.value}; no edits accepted",
         )
 
-    # If the job has moved past pending_compliance, refuse to mutate fields
-    # later stages may have already consumed.
-    if job.status != JobStatus.pending_compliance:
-        violators = sorted(_PRE_COMPLIANCE_FIELDS & fields.keys())
+    locked_set = set(locked)
+    if locked_set:
+        violators = sorted(locked_set & fields.keys())
         if violators:
             raise JobEditError(
                 status_code=409,
                 detail=(
-                    f"job is past pending_compliance ({job.status.value}); "
-                    f"fields are no longer editable: {', '.join(violators)}"
+                    f"job status {job.status.value}; fields are not "
+                    f"editable in this state: {', '.join(violators)}"
                 ),
             )
 
     # Apply the patch.
     for key, value in fields.items():
-        if key in _PRE_TERMINAL_FIELDS or key in _PRE_COMPLIANCE_FIELDS:
+        if key in ALL_EDITABLE_FIELDS:
             setattr(job, key, value)
         else:
             # Shouldn't happen — caller is the PATCH handler whose schema

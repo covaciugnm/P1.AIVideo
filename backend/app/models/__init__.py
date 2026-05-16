@@ -8,6 +8,7 @@ from app.models.artifact import Artifact
 from app.models.base import Base
 from app.models.compliance import ComplianceDecisionType, ComplianceEvent
 from app.models.job import Job, JobStatus
+from app.models.operator_settings import OperatorSettings
 from app.models.stage_run import StageRun
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "ComplianceEvent",
     "Job",
     "JobStatus",
+    "OperatorSettings",
     "StageRun",
 ]

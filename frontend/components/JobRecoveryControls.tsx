@@ -3,9 +3,11 @@
 import { useState } from "react";
 
 import { cancelJob, retryJob } from "@/lib/api";
+import { useT } from "@/lib/i18n/LanguageContext";
 import * as logBus from "@/lib/log-bus";
 import type { JobDetail } from "@/lib/types";
 
+import { HelpHint } from "./HelpHint";
 import styles from "./JobRecoveryControls.module.css";
 
 interface JobRecoveryControlsProps {
@@ -20,6 +22,7 @@ export function JobRecoveryControls({
   job,
   onMutated,
 }: JobRecoveryControlsProps) {
+  const t = useT();
   const [busy, setBusy] = useState<"cancel" | "retry" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,8 +38,8 @@ export function JobRecoveryControls({
 
   const handleCancel = async () => {
     const reason = window.prompt(
-      "Cancel this job? Optional reason:",
-      "operator cancelled",
+      t("jobDetail.cancelReason"),
+      t("jobDetail.cancelReasonPlaceholder"),
     );
     if (reason === null) return; // user closed the prompt
     setBusy("cancel");
@@ -68,11 +71,7 @@ export function JobRecoveryControls({
   };
 
   const handleRetry = async () => {
-    if (
-      !window.confirm(
-        "Mark this job for retry? The orchestrator will pick it up on the next worker pass.",
-      )
-    ) {
+    if (!window.confirm(t("recovery.retryAvailable"))) {
       return;
     }
     setBusy("retry");
@@ -105,7 +104,7 @@ export function JobRecoveryControls({
 
   return (
     <section className="card">
-      <h2>Recovery controls</h2>
+      <h2>{t("jobDetail.recoveryControls")} <HelpHint slug="recovery-controls" small /></h2>
       <div className={styles.actions}>
         <button
           type="button"
@@ -113,7 +112,7 @@ export function JobRecoveryControls({
           disabled={!canCancel || busy !== null}
           onClick={handleCancel}
         >
-          {busy === "cancel" ? "Cancelling…" : "Cancel job"}
+          {busy === "cancel" ? t("jobDetail.cancelling") : t("jobDetail.cancelJob")}
         </button>
         <button
           type="button"
@@ -121,16 +120,16 @@ export function JobRecoveryControls({
           disabled={!canRetry || busy !== null}
           onClick={handleRetry}
         >
-          {busy === "retry" ? "Requesting retry…" : "Retry job"}
+          {busy === "retry" ? t("jobDetail.retrying") : t("jobDetail.retryJob")}
         </button>
         {!canCancel && (
           <span className={styles.note}>
-            Job is in a terminal state — cancel disabled.
+            {t("recovery.terminalCancelDisabled")}
           </span>
         )}
         {!canRetry && _TERMINAL.has(job.status) && job.status !== "failed" && job.status !== "rejected" && (
           <span className={styles.note}>
-            Retry only available for failed / rejected jobs.
+            {t("recovery.terminalRetryDisabled")}
           </span>
         )}
       </div>
@@ -139,36 +138,30 @@ export function JobRecoveryControls({
         <dl className={styles.metaList}>
           {cancelledAt && (
             <>
-              <dt>Cancelled at</dt>
+              <dt>{t("recoveryHistory.cancelledAt")}</dt>
               <dd>{cancelledAt}</dd>
             </>
           )}
           {cancellationReason && (
             <>
-              <dt>Cancellation reason</dt>
+              <dt>{t("recoveryHistory.cancellationReason")}</dt>
               <dd>{cancellationReason}</dd>
             </>
           )}
           {retryRequestedAt && (
             <>
-              <dt>Retry requested at</dt>
+              <dt>{t("recoveryHistory.retryRequestedAt")}</dt>
               <dd>{retryRequestedAt}</dd>
             </>
           )}
           {retryCount > 0 && (
             <>
-              <dt>Retry count</dt>
+              <dt>{t("recoveryHistory.retryCount")}</dt>
               <dd>{retryCount}</dd>
             </>
           )}
         </dl>
       )}
-      <p className={styles.smallPrint}>
-        Phase 8D limitation: cancel marks the job rejected but cannot
-        kill a stage that is already running on a worker. Retry records
-        operator intent; the worker pipeline picks it up at the next
-        pass.
-      </p>
     </section>
   );
 }

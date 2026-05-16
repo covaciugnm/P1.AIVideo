@@ -131,7 +131,7 @@ For host-side dev (backend not in Docker), use
 Restart the backend container so the catalog reflects the new env:
 
 ```bash
-BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 \
+BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 \
   NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
   docker compose -f docker/compose.dev.yml up -d backend
 ```

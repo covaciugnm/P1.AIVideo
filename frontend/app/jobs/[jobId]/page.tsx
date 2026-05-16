@@ -9,12 +9,14 @@ import { VideoArtifactPreview } from "@/components/VideoArtifactPreview";
 import { ComplianceEvents } from "@/components/ComplianceEvents";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { FinalExportCard } from "@/components/FinalExportCard";
+import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { ProgressBar } from "@/components/ProgressBar";
 import { QcReportCard } from "@/components/QcReportCard";
 import { useSettings } from "@/components/SettingsContext";
 import { StageTimeline } from "@/components/StageTimeline";
 import { StatusBadge } from "@/components/StatusBadge";
+import { useT } from "@/lib/i18n/LanguageContext";
 import {
   ApiError,
   audioFitCheck,
@@ -60,6 +62,7 @@ export default function JobDetailPage({
 }) {
   const { jobId } = params;
   const { settings, hydrated } = useSettings();
+  const t = useT();
   const announcedRef = useRef(false);
   const lastStatusRef = useRef<string | null>(null);
   const lastPathRef = useRef<"summary" | "fallback" | null>(null);
@@ -222,15 +225,39 @@ export default function JobDetailPage({
     <div>
       <header className={styles.header}>
         <Link href="/" className="muted">
-          ← Back to jobs
+          {t("jobDetail.backToJobs")}
         </Link>
         <h1 className={styles.title}>
-          Job <code>{shortId(jobId)}</code>
+          {t("jobs.title").replace(/s$/, "")}{" "}<code>{shortId(jobId)}</code>
+          <HelpHint slug="job-detail" />
         </h1>
+        <div className={styles.headerActions}>
+          {(() => {
+            const canEdit =
+              (data?.job.can_edit ?? data?.job.status !== "published");
+            return canEdit ? (
+              <Link
+                href={`/jobs/${jobId}/edit`}
+                className="btn btn-primary"
+                aria-label={t("jobDetail.editJob")}
+              >
+                {t("jobDetail.editJob")}
+              </Link>
+            ) : (
+              <span
+                className="btn btn-ghost"
+                title={t("editJob.publishedLockedNote")}
+                aria-disabled="true"
+              >
+                {t("editJob.cannotEditThisJob")}
+              </span>
+            );
+          })()}
+        </div>
       </header>
 
-      {error && <ErrorMessage message={error.message} title="Failed to load job" />}
-      {loading && data === null && !error && <LoadingState label="Loading job…" />}
+      {error && <ErrorMessage message={error.message} title={t("jobs.failedToLoad")} />}
+      {loading && data === null && !error && <LoadingState label={t("common.loading")} />}
       {data && <JobDetail bundle={data} fit={audioFit} />}
     </div>
   );
@@ -243,6 +270,7 @@ function JobDetail({
   readonly bundle: JobDetailBundle;
   readonly fit: AudioFitCheckResponse | null;
 }) {
+  const t = useT();
   const {
     job,
     progress,
@@ -254,40 +282,68 @@ function JobDetail({
   } = bundle;
 
   const terminal = isTerminalStatus(job.status);
+  const subtitleEnabled = (job as { subtitle_enabled?: boolean }).subtitle_enabled;
+  const subtitleLangs =
+    (job as { subtitle_languages?: string[] | null }).subtitle_languages ?? [];
+  const subtitleFmt =
+    (job as { subtitle_format?: string }).subtitle_format ?? "srt";
+  const subtitleBurn =
+    (job as { subtitle_burn_in?: boolean }).subtitle_burn_in ?? false;
 
   return (
     <>
       <section className="card">
         <div className={styles.summaryHeader}>
-          <h2>Overview</h2>
+          <h2>{t("jobDetail.overview")}</h2>
           <StatusBadge status={job.status} />
         </div>
         <dl className="kv">
-          <dt>Brief</dt>
+          <dt>{t("jobDetail.briefField")}</dt>
           <dd>{job.brief}</dd>
-          <dt>Target duration</dt>
+          <dt>{t("jobDetail.targetDuration")}</dt>
           <dd>{job.target_duration_seconds} s</dd>
-          <dt>Voice mode</dt>
+          <dt>{t("jobDetail.voiceMode")}</dt>
           <dd>{job.voice_mode}</dd>
           {job.face_mode && (
             <>
-              <dt>Face mode</dt>
+              <dt>{t("jobDetail.faceMode")}</dt>
               <dd>{job.face_mode}</dd>
             </>
           )}
-          <dt>TTS backend</dt>
+          <dt>{t("jobDetail.ttsBackend")}</dt>
           <dd>{job.tts_backend}</dd>
-          <dt>Watermark required</dt>
-          <dd>{String(job.watermark_required)}</dd>
-          <dt>C2PA required</dt>
-          <dd>{String(job.c2pa_required)}</dd>
-          <dt>Created</dt>
+          <dt>{t("jobDetail.watermarkRequired")}</dt>
+          <dd>{job.watermark_required ? t("common.yes") : t("common.no")}</dd>
+          <dt>{t("jobDetail.c2paRequired")}</dt>
+          <dd>{job.c2pa_required ? t("common.yes") : t("common.no")}</dd>
+          {/* Phase 11A — language + subtitle surfaces. */}
+          <dt>{t("jobDetail.videoLanguage")}</dt>
+          <dd>
+            <code>{(job as { video_language?: string }).video_language ?? "ro"}</code>
+          </dd>
+          <dt>{t("jobDetail.subtitles")}</dt>
+          <dd>
+            {subtitleEnabled ? (
+              <>
+                {t("jobDetail.subtitlesOn")} (
+                {subtitleLangs.join(", ") || "—"}
+                ) · {t("jobDetail.subtitleFormat").toLowerCase()}{" "}
+                <code>{subtitleFmt}</code>
+                {subtitleBurn
+                  ? ` · ${t("jobDetail.burnInRequested")}`
+                  : ` · ${t("jobDetail.burnInSidecar")}`}
+              </>
+            ) : (
+              t("jobDetail.subtitlesOff")
+            )}
+          </dd>
+          <dt>{t("jobDetail.createdAt")}</dt>
           <dd>{formatDate(job.created_at)}</dd>
-          <dt>Updated</dt>
+          <dt>{t("jobDetail.updatedAt")}</dt>
           <dd>{formatDate(job.updated_at)}</dd>
           {job.rejection_reason && (
             <>
-              <dt>Rejection reason</dt>
+              <dt>{t("jobDetail.rejectionReason")}</dt>
               <dd>{job.rejection_reason}</dd>
             </>
           )}
@@ -309,18 +365,18 @@ function JobDetail({
 
       {job.script_text && (
         <section className="card">
-          <h2>Script</h2>
+          <h2>{t("qc.script")}</h2>
           <pre className={styles.script}>{job.script_text}</pre>
         </section>
       )}
 
       <section className="card">
-        <h2>Stage timeline</h2>
+        <h2>{t("jobDetail.timeline")}</h2>
         <StageTimeline stages={progress.stages} timeline={timeline} />
       </section>
 
       <section className="card">
-        <h2>Artifacts ({artifacts.length})</h2>
+        <h2>{t("jobDetail.artifacts")} ({artifacts.length})</h2>
         <ArtifactTable artifacts={artifacts} />
       </section>
 
@@ -336,7 +392,7 @@ function JobDetail({
       />
 
       <section className="card">
-        <h2>Compliance events ({complianceEvents.length})</h2>
+        <h2>{t("jobDetail.complianceEvents")} ({complianceEvents.length})</h2>
         <ComplianceEvents events={complianceEvents} />
       </section>
 

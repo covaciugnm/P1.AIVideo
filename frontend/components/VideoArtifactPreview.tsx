@@ -7,6 +7,7 @@ import {
   shortHash,
   shortId,
 } from "@/lib/format";
+import { useT } from "@/lib/i18n/LanguageContext";
 import type { ArtifactResponse } from "@/lib/types";
 
 import styles from "./VideoArtifactPreview.module.css";
@@ -16,6 +17,7 @@ interface VideoArtifactPreviewProps {
 }
 
 export function VideoArtifactPreview({ artifacts }: VideoArtifactPreviewProps) {
+  const t = useT();
   // Phase 8A: ``video`` artifacts.
   // Phase 8B: ``final_export`` artifacts when they carry the real MP4
   // variant (mime_type=video/mp4). The publisher's JSON manifest has
@@ -28,7 +30,7 @@ export function VideoArtifactPreview({ artifacts }: VideoArtifactPreviewProps) {
   if (videos.length === 0) return null;
   return (
     <section className="card">
-      <h2>Video preview ({videos.length})</h2>
+      <h2>{t("jobDetail.preview")} ({videos.length})</h2>
       <ul className={styles.list}>
         {videos.map((a) => (
           <li key={a.artifact_id} className={styles.item}>

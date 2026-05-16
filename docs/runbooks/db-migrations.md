@@ -52,7 +52,7 @@ schema-changing PR — run migrations against the live Postgres container
 instead:
 
 ```bash
-BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 \
+BACKEND_PORT=8001 FRONTEND_PORT=3010 POSTGRES_PORT=5433 REDIS_PORT=6380 \
   docker compose -f docker/compose.dev.yml up -d postgres redis backend
 
 # Run migrations inside the backend container so it sees the in-network

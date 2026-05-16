@@ -11,42 +11,90 @@ import {
 } from "react";
 
 import {
-  HELP_ARTICLES,
-  HELP_SECTIONS,
-  getArticleBySlug,
-  getArticlesBySection,
-} from "@/lib/help/content";
-import { searchHelp, type HelpSearchHit } from "@/lib/help/search";
-import type { HelpArticle, HelpBlock } from "@/lib/help/types";
+  getLocalizedHelpCorpus,
+  type HelpTopic,
+} from "@/lib/help/dictionaries";
+import type { HelpBlock } from "@/lib/help/types";
+import { useLanguage, useT } from "@/lib/i18n/LanguageContext";
 
 import { useHelp } from "./HelpContext";
 import styles from "./HelpOverlay.module.css";
 
-const SECTIONS_SORTED = [...HELP_SECTIONS].sort((a, b) => a.order - b.order);
-
 export function HelpOverlay() {
   const help = useHelp();
-  const article = useMemo(
-    () => getArticleBySlug(help.slug) ?? HELP_ARTICLES[0],
-    [help.slug]
-  );
+  const { language } = useLanguage();
+  const corpus = useMemo(() => getLocalizedHelpCorpus(language), [language]);
+  const topic: HelpTopic = useMemo(() => {
+    return (
+      corpus[help.slug] ??
+      corpus["dashboard"] ??
+      Object.values(corpus)[0]
+    );
+  }, [corpus, help.slug]);
 
   if (!help.open) return null;
-
-  return <Overlay article={article} />;
+  return <Overlay topic={topic} corpus={corpus} />;
 }
 
-function Overlay({ article }: { readonly article: HelpArticle }) {
+function Overlay({
+  topic,
+  corpus,
+}: {
+  readonly topic: HelpTopic;
+  readonly corpus: Readonly<Record<string, HelpTopic>>;
+}) {
   const help = useHelp();
+  const t = useT();
   const [query, setQuery] = useState("");
   const [resultsCursor, setResultsCursor] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  const hits: readonly HelpSearchHit[] = useMemo(
-    () => searchHelp(query, 10),
-    [query]
-  );
+  const sections = useMemo(() => {
+    const groups = new Map<string, HelpTopic[]>();
+    for (const t of Object.values(corpus)) {
+      const arr = groups.get(t.section) ?? [];
+      arr.push(t);
+      groups.set(t.section, arr);
+    }
+    return [...groups.entries()].map(([name, items]) => ({ name, items }));
+  }, [corpus]);
+
+  const hits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [] as HelpTopic[];
+    const matches: { topic: HelpTopic; score: number }[] = [];
+    for (const top of Object.values(corpus)) {
+      const haystack = (
+        top.title +
+        " " +
+        top.summary +
+        " " +
+        top.id +
+        " " +
+        top.body
+          .map((b) => {
+            if (b.type === "p" || b.type === "h") return b.text;
+            if (b.type === "kv")
+              return b.rows.map(([k, v]) => `${k} ${v}`).join(" ");
+            if (b.type === "list")
+              return b.items.map((it) => (Array.isArray(it) ? it.join(" ") : it)).join(" ");
+            if (b.type === "callout") return (b.title ?? "") + " " + b.text;
+            if (b.type === "code") return (b.caption ?? "") + " " + b.text;
+            return "";
+          })
+          .join(" ")
+      ).toLowerCase();
+      const needles = q.split(/\s+/).filter(Boolean);
+      let score = 0;
+      for (const n of needles) if (haystack.includes(n)) score += 1;
+      if (score > 0) matches.push({ topic: top, score });
+    }
+    return matches
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map((m) => m.topic);
+  }, [query, corpus]);
 
   // Focus search with `/` while overlay is open.
   useEffect(() => {
@@ -61,41 +109,16 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Scroll back to top on article change.
+  // Scroll to top on topic change.
   useEffect(() => {
-    contentRef.current?.scrollTo({ top: 0, behavior: "auto" });
-  }, [article.slug]);
-
-  // Focus trap: keep tab inside the panel.
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const focusables = () =>
-      panelRef.current?.querySelectorAll<HTMLElement>(
-        'a, button, input, textarea, [tabindex]:not([tabindex="-1"])'
-      ) ?? null;
-    const onTab = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Tab") return;
-      const list = focusables();
-      if (!list || list.length === 0) return;
-      const first = list[0];
-      const last = list[list.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onTab);
-    return () => window.removeEventListener("keydown", onTab);
-  }, []);
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [topic.id]);
 
   const onScrimClick = useCallback(
     (e: MouseEvent<HTMLDivElement>) => {
       if (e.target === e.currentTarget) help.closeHelp();
     },
-    [help]
+    [help],
   );
 
   const navigateAndClear = useCallback(
@@ -104,7 +127,7 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
       setQuery("");
       setResultsCursor(0);
     },
-    [help]
+    [help],
   );
 
   const onSearchKey = useCallback(
@@ -119,10 +142,10 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
       } else if (e.key === "Enter") {
         e.preventDefault();
         const target = hits[resultsCursor];
-        if (target) navigateAndClear(target.article.slug);
+        if (target) navigateAndClear(target.id);
       }
     },
-    [hits, resultsCursor, navigateAndClear]
+    [hits, resultsCursor, navigateAndClear],
   );
 
   return (
@@ -131,12 +154,12 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
       onClick={onScrimClick}
       role="dialog"
       aria-modal="true"
-      aria-label="Help"
+      aria-label={t("help.open")}
     >
-      <div className={styles.panel} ref={panelRef}>
+      <div className={styles.panel}>
         <div className={styles.topbar}>
           <span className={styles.title}>
-            <span className={styles.titleAccent}>?</span> P1.AIVideo Help
+            <span className={styles.titleAccent}>?</span> P1.AIVideo {t("nav.help")}
           </span>
           <div className={styles.navBtns}>
             <button
@@ -144,8 +167,8 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
               className={styles.iconBtn}
               onClick={() => help.back()}
               disabled={!help.canGoBack}
-              aria-label="Go back"
-              title="Back"
+              aria-label={t("common.back")}
+              title={t("common.back")}
             >
               ←
             </button>
@@ -154,20 +177,18 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
               className={styles.iconBtn}
               onClick={() => help.forward()}
               disabled={!help.canGoForward}
-              aria-label="Go forward"
-              title="Forward"
+              aria-label={t("common.forward")}
+              title={t("common.forward")}
             >
               →
             </button>
           </div>
           <div className={styles.search}>
-            <span className={styles.searchIcon} aria-hidden>
-              ⌕
-            </span>
+            <span className={styles.searchIcon} aria-hidden>⌕</span>
             <input
               ref={searchRef}
               type="search"
-              placeholder="Search help… (press / to focus)"
+              placeholder={t("help.searchPlaceholder")}
               className={styles.searchInput}
               value={query}
               onChange={(e) => {
@@ -175,7 +196,7 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
                 setResultsCursor(0);
               }}
               onKeyDown={onSearchKey}
-              aria-label="Search help"
+              aria-label={t("help.search")}
               spellCheck={false}
               autoComplete="off"
             />
@@ -185,30 +206,21 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
             {query.trim().length > 0 ? (
               <div className={styles.searchResults} role="listbox">
                 {hits.length === 0 ? (
-                  <div className={styles.searchEmpty}>
-                    No matches. Try a less specific query, or browse by section.
-                  </div>
+                  <div className={styles.searchEmpty}>{t("help.noResults")}</div>
                 ) : (
                   hits.map((hit, i) => (
                     <button
-                      key={hit.article.slug}
+                      key={hit.id}
                       type="button"
                       className={`${styles.searchHit} ${i === resultsCursor ? styles.searchHitActive : ""}`}
                       onMouseEnter={() => setResultsCursor(i)}
-                      onClick={() => navigateAndClear(hit.article.slug)}
+                      onClick={() => navigateAndClear(hit.id)}
                       role="option"
                       aria-selected={i === resultsCursor}
                     >
-                      <div className={styles.searchHitTitle}>
-                        {hit.article.title}
-                      </div>
-                      <div className={styles.searchHitMeta}>
-                        {sectionTitle(hit.article.section)} ·{" "}
-                        {hit.matchedIn.join(", ")} · score {hit.score}
-                      </div>
-                      <div className={styles.searchHitSummary}>
-                        {hit.article.summary}
-                      </div>
+                      <div className={styles.searchHitTitle}>{hit.title}</div>
+                      <div className={styles.searchHitMeta}>{hit.section}</div>
+                      <div className={styles.searchHitSummary}>{hit.summary}</div>
                     </button>
                   ))
                 )}
@@ -219,59 +231,49 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
             type="button"
             className={styles.close}
             onClick={() => help.closeHelp()}
-            aria-label="Close help"
+            aria-label={t("help.close")}
           >
-            Close <kbd className={styles.searchKbd}>Esc</kbd>
+            {t("common.close")} <kbd className={styles.searchKbd}>Esc</kbd>
           </button>
         </div>
 
-        <nav className={styles.nav} aria-label="Help sections">
-          {SECTIONS_SORTED.map((section) => {
-            const items = getArticlesBySection(section.id);
-            if (items.length === 0) return null;
-            return (
-              <div key={section.id} className={styles.section}>
-                <div className={styles.sectionLabel}>{section.title}</div>
-                {section.description ? (
-                  <div className={styles.sectionDescription}>
-                    {section.description}
-                  </div>
-                ) : null}
-                {items.map((a) => (
-                  <button
-                    key={a.slug}
-                    type="button"
-                    className={`${styles.articleLink} ${a.slug === article.slug ? styles.articleLinkActive : ""}`}
-                    onClick={() => help.navigate(a.slug)}
-                  >
-                    {a.title}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
+        <nav className={styles.nav} aria-label={t("help.open")}>
+          {sections.map((section) => (
+            <div key={section.name} className={styles.section}>
+              <div className={styles.sectionLabel}>{section.name}</div>
+              {section.items.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className={`${styles.articleLink} ${a.id === topic.id ? styles.articleLinkActive : ""}`}
+                  onClick={() => help.navigate(a.id)}
+                >
+                  {a.title}
+                </button>
+              ))}
+            </div>
+          ))}
         </nav>
 
         <div className={styles.content} ref={contentRef}>
           <article className={styles.article}>
-            <div className={styles.articleEyebrow}>
-              {sectionTitle(article.section)}
-            </div>
-            <h1 className={styles.articleTitle}>{article.title}</h1>
-            <div className={styles.articleSummary}>{article.summary}</div>
-            {article.body.map((block, i) => (
+            <div className={styles.articleEyebrow}>{topic.section}</div>
+            <h1 className={styles.articleTitle}>{topic.title}</h1>
+            <div className={styles.articleSummary}>{topic.summary}</div>
+            {topic.body.map((block, i) => (
               <BlockRenderer
-                key={`${article.slug}-${i}`}
+                key={`${topic.id}-${i}`}
                 block={block}
                 onNavigate={help.navigate}
+                corpus={corpus}
               />
             ))}
-            {article.related && article.related.length > 0 ? (
+            {topic.related && topic.related.length > 0 ? (
               <div className={styles.articleFooter}>
-                <div className={styles.relatedHeading}>Related</div>
+                <div className={styles.relatedHeading}>{t("help.related")}</div>
                 <div className={styles.related}>
-                  {article.related.map((slug) => {
-                    const r = getArticleBySlug(slug);
+                  {topic.related.map((slug) => {
+                    const r = corpus[slug];
                     if (!r) return null;
                     return (
                       <button
@@ -294,16 +296,14 @@ function Overlay({ article }: { readonly article: HelpArticle }) {
   );
 }
 
-function sectionTitle(id: string): string {
-  return HELP_SECTIONS.find((s) => s.id === id)?.title ?? id;
-}
-
 function BlockRenderer({
   block,
   onNavigate,
+  corpus,
 }: {
   readonly block: HelpBlock;
   readonly onNavigate: (slug: string) => void;
+  readonly corpus: Readonly<Record<string, HelpTopic>>;
 }) {
   switch (block.type) {
     case "p":
@@ -329,14 +329,10 @@ function BlockRenderer({
         <Tag className={styles.list}>
           {block.items.map((it, i) =>
             Array.isArray(it) ? (
-              <li key={i}>
-                {it.map((sub, j) => (
-                  <span key={j}>{sub}</span>
-                ))}
-              </li>
+              <li key={i}>{(it as readonly string[]).join(" ")}</li>
             ) : (
               <li key={i}>{it as string}</li>
-            )
+            ),
           )}
         </Tag>
       );
@@ -364,10 +360,10 @@ function BlockRenderer({
         block.tone === "warn"
           ? styles.calloutWarn
           : block.tone === "danger"
-          ? styles.calloutDanger
-          : block.tone === "success"
-          ? styles.calloutSuccess
-          : styles.calloutInfo;
+            ? styles.calloutDanger
+            : block.tone === "success"
+              ? styles.calloutSuccess
+              : styles.calloutInfo;
       return (
         <div className={`${styles.callout} ${toneClass}`}>
           {block.title ? (
@@ -386,7 +382,7 @@ function BlockRenderer({
         </p>
       );
     case "linkArticle": {
-      const target = getArticleBySlug(block.slug);
+      const target = corpus[block.slug];
       if (!target) return null;
       return (
         <button

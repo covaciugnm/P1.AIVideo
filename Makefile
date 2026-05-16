@@ -180,7 +180,7 @@ docker-light-start: ## Phase 8E — start the light stack on alt ports (preserve
 	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
 	@POSTGRES_PORT=$${POSTGRES_PORT:-5433} \
 		BACKEND_PORT=$${BACKEND_PORT:-8001} \
-		FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) up -d postgres redis backend orchestrator frontend
 
@@ -229,19 +229,19 @@ phase10a1-worker-test: ## Phase 10A-1 — run the orchestrator worker test file.
 
 # ----- Phase 10A-1 — optional F5TTS-Ro Romanian TTS wrapper --------------
 docker-tts-ro-build: ## Build the optional F5TTS-Ro wrapper image.
-	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) --profile tts-ro build model-tts-ro
 
 docker-tts-ro-up: ## Start the optional F5TTS-Ro wrapper. Sets F5TTS_RO_BASE_URL automatically for the backend on next restart.
-	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) --profile tts-ro up -d model-tts-ro
 
 docker-tts-ro-down: ## Stop the optional F5TTS-Ro wrapper. Does NOT delete volumes.
-	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) --profile tts-ro stop model-tts-ro
@@ -255,19 +255,19 @@ docker-tts-ro-smoke: ## Probe /health on the F5TTS-Ro wrapper without touching w
 
 # ----- Phase 10B — SadTalker GPU wrapper (heavy, opt-in, --profile sadtalker) -
 docker-sadtalker-build: ## Phase 10B — build the SadTalker GPU wrapper image (~8 GB, requires NVIDIA Container Toolkit).
-	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) --profile sadtalker build model-sadtalker
 
 docker-sadtalker-up: ## Phase 10B — start the SadTalker GPU wrapper. Set SADTALKER_BASE_URL on the backend afterwards.
-	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) --profile sadtalker up -d model-sadtalker
 
 docker-sadtalker-down: ## Phase 10B — stop the SadTalker GPU wrapper. Does NOT delete volumes.
-	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+	@BACKEND_PORT=$${BACKEND_PORT:-8001} FRONTEND_PORT=$${FRONTEND_PORT:-3010} \
 		POSTGRES_PORT=$${POSTGRES_PORT:-5433} REDIS_PORT=$${REDIS_PORT:-6380} \
 		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
 		$(COMPOSE_DEV) --profile sadtalker stop model-sadtalker

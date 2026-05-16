@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 import { BackendStatusBadge } from "@/components/BackendStatusBadge";
 import { HelpButton } from "@/components/HelpButton";
-import { HelpLink } from "@/components/HelpHint";
+import { HeaderRight, LocalizedFooter, LocalizedNav } from "@/components/LocalizedNav";
 import { Providers } from "@/components/Providers";
 import { RightSidebar } from "@/components/RightSidebar";
 
@@ -30,7 +30,7 @@ export default function RootLayout({
   readonly children: ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="ro">
       <body>
         <Providers>
           <div className="app-shell">
@@ -39,16 +39,12 @@ export default function RootLayout({
                 <Link href="/" className="brand">
                   P1.AIVideo
                 </Link>
-                <nav className="nav-links">
-                  <Link href="/">Dashboard</Link>
-                  <Link href="/jobs">Jobs</Link>
-                  <Link href="/jobs/new">New job</Link>
-                  <Link href="/uploads">Uploads</Link>
-                  <Link href="/settings">Settings</Link>
-                  <HelpLink>Help</HelpLink>
-                </nav>
+                <LocalizedNav />
               </div>
-              <BackendStatusBadge />
+              <div style={{ display: "inline-flex", gap: 12, alignItems: "center" }}>
+                <HeaderRight />
+                <BackendStatusBadge />
+              </div>
             </header>
             <div className="app-body">
               <main className="app-main">
@@ -57,11 +53,7 @@ export default function RootLayout({
               <RightSidebar />
             </div>
             <footer className="app-footer">
-              Synthetic-only pipeline. Every generated reel includes a mandatory
-              AI-content disclosure. No real-person likeness or voice cloning.
-              <span style={{ marginLeft: 12 }}>
-                <HelpLink>Need help? Open the help center →</HelpLink>
-              </span>
+              <LocalizedFooter />
             </footer>
             <HelpButton />
             <HelpOverlay />

@@ -192,9 +192,11 @@ async def test_retry_failed_job_records_metadata(app_under_test):
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    # Retry does NOT change job.status — the worker picks up the
-    # retry_requested_at marker later.
-    assert body["status"] == "failed"
+    # Phase 11B contract: Retry re-queues the job so the worker picks
+    # it up again with whatever PATCH metadata the operator applied
+    # before clicking Retry. Status flips back to pending_compliance.
+    assert body["status"] == "pending_compliance"
+    assert body["rejection_reason"] in (None, "")
     rm = body["recovery_metadata"]
     assert rm["retry_count"] == 1
     assert "retry_requested_at" in rm
@@ -219,12 +221,18 @@ async def test_retry_failed_job_records_metadata(app_under_test):
 
 
 async def test_retry_increments_counter_across_calls(app_under_test):
+    """Each /retry call increments retry_count. Phase 11B flips the job
+    back to pending_compliance, so the test must re-force the failed
+    state before each subsequent retry to satisfy the 409 contract on
+    non-terminal states."""
     job_id = await _create_job(app_under_test)
     await _force_job_status(job_id, "failed")
     r1 = await app_under_test.post(f"/api/v1/jobs/{job_id}/retry", json={})
     assert r1.json()["recovery_metadata"]["retry_count"] == 1
+    await _force_job_status(job_id, "failed")
     r2 = await app_under_test.post(f"/api/v1/jobs/{job_id}/retry", json={})
     assert r2.json()["recovery_metadata"]["retry_count"] == 2
+    await _force_job_status(job_id, "failed")
     r3 = await app_under_test.post(f"/api/v1/jobs/{job_id}/retry", json={})
     assert r3.json()["recovery_metadata"]["retry_count"] == 3
 

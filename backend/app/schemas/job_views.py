@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from common.enums import ComplianceDecisionType, JobStatus
 
@@ -48,6 +48,23 @@ class JobSummary(BaseModel):
     # endpoint so the dashboard can render the chosen providers without
     # a second round-trip per row. Nullable / optional for pre-4F jobs.
     provider_selection: dict[str, Any] | None = None
+    # Phase 11A — language + subtitle highlights on the list row.
+    video_language: str = "ro"
+    subtitle_enabled: bool = False
+    subtitle_languages: list[str] | None = None
+    # Phase 11B — editability hints. Lets the Jobs List enable/disable
+    # the Edit / Retry buttons per row.
+    can_edit: bool = True
+    can_retry: bool = False
+
+    @model_validator(mode="after")
+    def _populate_edit_policy(self) -> "JobSummary":
+        from app.services.job_service import compute_edit_policy
+
+        can_edit, can_retry, _locked = compute_edit_policy(self.status)
+        object.__setattr__(self, "can_edit", can_edit)
+        object.__setattr__(self, "can_retry", can_retry)
+        return self
 
 
 class StageProgress(BaseModel):
@@ -209,6 +226,13 @@ class JobDetail(BaseModel):
     # Phase 8D — operational recovery metadata. Optional so older
     # clients keep working.
     recovery_metadata: dict[str, Any] | None = None
+    # Phase 11A — language + subtitle metadata.
+    video_language: str = "ro"
+    subtitle_enabled: bool = False
+    subtitle_languages: list[str] | None = None
+    subtitle_format: str = "srt"
+    subtitle_burn_in: bool = False
+    transcript_language: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -219,6 +243,23 @@ class JobDetail(BaseModel):
     compliance_event_count: int = 0
     latest_qc_result: dict[str, Any] | None = None
     final_export_summary: dict[str, Any] | None = None
+
+    # Phase 11B — editability hints mirrored from JobResponse so the UI
+    # can render Edit / Retry affordances directly off the detail
+    # endpoint without an extra round-trip to PATCH-and-see-409.
+    can_edit: bool = True
+    can_retry: bool = False
+    locked_fields: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _populate_edit_policy(self) -> "JobDetail":
+        from app.services.job_service import compute_edit_policy
+
+        can_edit, can_retry, locked = compute_edit_policy(self.status)
+        object.__setattr__(self, "can_edit", can_edit)
+        object.__setattr__(self, "can_retry", can_retry)
+        object.__setattr__(self, "locked_fields", list(locked))
+        return self
 
 
 class JobFullSummary(BaseModel):

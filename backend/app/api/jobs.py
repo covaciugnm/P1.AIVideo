@@ -185,6 +185,10 @@ async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
         # dashboards can show the chosen providers without an extra
         # per-row round-trip.
         provider_selection=job.provider_selection,
+        # Phase 11A — language + subtitle snapshot on the list row.
+        video_language=job.video_language or "ro",
+        subtitle_enabled=bool(job.subtitle_enabled),
+        subtitle_languages=job.subtitle_languages,
     )
 
 
@@ -488,12 +492,16 @@ async def retry_job(
     payload: JobRetryRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> JobResponse:
-    """Mark a failed/rejected job as retry-requested.
+    """Mark a failed/rejected job for re-processing.
 
-    Phase 8D records the operator intent in ``recovery_metadata`` and
-    bumps a retry counter — actually re-running the DAG is a future
-    worker concern (Phase 8E+). History is preserved: prior stage_run
-    rows stay intact.
+    Phase 8D recorded the operator intent in ``recovery_metadata`` and
+    bumped a retry counter without changing the job status — the worker
+    therefore never picked the row up again. Phase 11B closes that gap:
+    after the operator has fixed the underlying cause (typically via
+    PATCH /jobs/{id} on provider_selection / brief / script), Retry
+    flips the status back to ``pending_compliance``, clears the stale
+    ``rejection_reason``, preserves all prior stage_run rows for audit,
+    and the worker re-runs the DAG with the patched metadata.
     """
     job = await _load_job_or_404(session, job_id)
     if job.status not in (JobStatus.failed, JobStatus.rejected):
@@ -509,11 +517,21 @@ async def retry_job(
     recovery = dict(job.recovery_metadata or {})
     recovery["retry_requested_at"] = requested_at
     recovery["retry_count"] = int(recovery.get("retry_count", 0)) + 1
+    # Keep the previous rejection reason so the audit trail survives,
+    # but stash it under a dedicated history key.
+    if job.rejection_reason:
+        history = list(recovery.get("previous_rejection_reasons", []))
+        history.append(job.rejection_reason)
+        recovery["previous_rejection_reasons"] = history
     if payload.stage_name:
         recovery["retry_stage_name"] = payload.stage_name
     if payload.reason:
         recovery["retry_reason"] = payload.reason
     job.recovery_metadata = recovery
+    # Phase 11B — re-queue the job so the orchestrator worker picks it
+    # up on the next pass with the patched metadata.
+    job.status = JobStatus.pending_compliance
+    job.rejection_reason = None
     job.updated_at = datetime.now()
     await session.commit()
     await session.refresh(job)
