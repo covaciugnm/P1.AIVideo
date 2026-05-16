@@ -122,6 +122,16 @@ services:
       ARTIFACTS_LOCAL_ROOT: /storage/artifacts
       # Hard-off: light runtime never auto-fetches model weights.
       ALLOW_MODEL_AUTODOWNLOAD: "false"
+      # Phase 10B — SadTalker opt-in flags. Default OFF so the light
+      # backend keeps returning ``provider_not_implemented`` per the
+      # Phase 7B contract. Set both to ``true``/``1`` in the shell to
+      # surface the categorised ``video_runtime_missing`` /
+      # ``video_assets_missing`` / ``video_gpu_missing`` codes; the
+      # API still refuses to write a fake MP4 — readiness probes report
+      # the exact missing files via /api/v1/video/generate metadata.
+      SADTALKER_ENABLE_REAL_INFERENCE: "${SADTALKER_ENABLE_REAL_INFERENCE:-false}"
+      RUN_REAL_SADTALKER: "${RUN_REAL_SADTALKER:-0}"
+      SADTALKER_MODELS_ROOT: "${SADTALKER_MODELS_ROOT:-/models/lipsync/sadtalker}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,6 +142,11 @@ services:
     volumes:
       - inputs_data:/storage/inputs
       - artifacts_data:/storage/artifacts
+      # Phase 10B — mount the host ``models/`` tree read-only so the
+      # SadTalker readiness probe can see operator-supplied weights at
+      # ``/models/lipsync/sadtalker/...``. Empty by default — no
+      # auto-download.
+      - ../models:/models:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 10s

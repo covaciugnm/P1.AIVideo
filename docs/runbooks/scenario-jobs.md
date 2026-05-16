@@ -99,6 +99,42 @@ To turn the demo into a real audio run:
    container.
 3. Re-run the Generate Audio flow from the Job Detail page.
 
+### Phase 10B — Real SadTalker activation attempt (audited 2026-05-16)
+
+Phase 10B attempted to activate scenario 8 ("Real video success") on this
+host. **Result: blocked.** Exact missing gates surfaced by
+`/api/v1/video/generate` with `SADTALKER_ENABLE_REAL_INFERENCE=true` +
+`RUN_REAL_SADTALKER=1`:
+
+```json
+{
+  "status": "not_configured",
+  "error_code": "video_assets_missing",
+  "message": "SadTalker weights are not on disk. Missing: ...",
+  "output_video_artifact_id": null,
+  "metadata": {
+    "sadtalker": {
+      "details": {
+        "assets": {"status": "missing", "missing": [
+          "checkpoints/mapping_00109-model.pth.tar",
+          "checkpoints/mapping_00229-model.pth.tar",
+          "checkpoints/SadTalker_V0.0.2_256.safetensors",
+          "checkpoints/SadTalker_V0.0.2_512.safetensors",
+          "gfpgan/GFPGANv1.4.pth"
+        ]},
+        "runtime": {"torch_available": false},
+        "gpu": {"available": false, "reason": "torch_missing"}
+      }
+    }
+  }
+}
+```
+
+So: no GPU on the audit host, no SadTalker weights, no torch in the
+light backend. Per Phase 9 honesty contract, **no fake MP4 was
+registered**. To unblock, follow `docs/runbooks/sadtalker-runtime.md`
+"Phase 10B operator checklist" (5 gates).
+
 ### Real-runtime opt-in for Scenario 8
 
 ```bash

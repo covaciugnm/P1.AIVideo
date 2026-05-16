@@ -1,4 +1,4 @@
-# SadTalker Runtime — Phase 7B Readiness
+# SadTalker Runtime — Phase 7B Readiness + Phase 10B Activation
 
 This runbook covers the SadTalker video provider as it lands in Phase
 7B: **hardened adapter + categorised readiness errors, no real
@@ -6,6 +6,49 @@ inference**. Real `torch.cuda` calls arrive in Phase 7D; this document
 describes what is in place today, the env vars that gate it, the
 six categorised error codes returned by `/api/v1/video/generate`, and
 the explicit no-auto-download policy.
+
+> **Phase 10B activation status (audited 2026-05-16):** real SadTalker
+> MP4 generation is **blocked** on this host because (1) `nvidia-smi`
+> reports `No devices were found`, and (2) every required SadTalker
+> weight file under `models/lipsync/sadtalker/` is missing. The backend
+> opt-in flags (`SADTALKER_ENABLE_REAL_INFERENCE=true` +
+> `RUN_REAL_SADTALKER=1`) are now wired through `docker/compose.dev.yml`
+> so that flipping them in the shell surfaces categorised error codes
+> (`video_assets_missing` / `video_runtime_missing` / `video_gpu_missing`)
+> instead of the legacy `provider_not_implemented`. No fake MP4 is
+> registered under any combination of these flags.
+
+## How to activate real SadTalker (Phase 10B operator checklist)
+
+Five gates must all pass before `/api/v1/video/generate` can produce a
+real MP4. Each gate has its own categorised error code; the API never
+guesses or fakes when a gate fails.
+
+| Gate | Verification | Failure code |
+|---|---|---|
+| 1. NVIDIA GPU visible on host | `nvidia-smi` lists at least one device | `video_gpu_missing` |
+| 2. NVIDIA Container Toolkit installed | `make docker-gpu-smoke` reports `nvidia-smi` inside container | `video_gpu_missing` |
+| 3. GPU image built with torch + SadTalker | `make docker-gpu-build` (uses `docker/agents/Dockerfile.cuda`) | `video_runtime_missing` |
+| 4. All 5 weight files under `${SADTALKER_MODELS_ROOT}` | `make docker-gpu-smoke` or `find ./models/lipsync/sadtalker/` | `video_assets_missing` |
+| 5. Operator opt-in flags set | `SADTALKER_ENABLE_REAL_INFERENCE=true RUN_REAL_SADTALKER=1` | `provider_not_implemented` (legacy) |
+
+Start command (after every gate is green):
+
+```bash
+SADTALKER_ENABLE_REAL_INFERENCE=true RUN_REAL_SADTALKER=1 \
+  SADTALKER_MODELS_ROOT=/models/lipsync/sadtalker \
+  BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 REDIS_PORT=6380 \
+  NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
+  docker compose -f docker/compose.dev.yml \
+                 -f docker/compose.gpu.yml \
+                 --profile gpu up -d agent-lipsync
+```
+
+The default light backend now mounts `./models:/models:ro` so the
+readiness probe inside the backend container can see whatever weight
+files the operator drops on the host without rebuilding.
+
+
 
 > **Phase 7B does not run real SadTalker inference.** Even with both
 > opt-in flags on (`SADTALKER_ENABLE_REAL_INFERENCE=true` +
