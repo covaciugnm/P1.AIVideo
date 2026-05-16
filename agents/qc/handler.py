@@ -110,25 +110,71 @@ def _check_total_duration(plan_dict: dict, target_seconds: float) -> QCCheck:
 
 
 def _check_reel_draft_stub(reel_draft_ref: ArtifactRef) -> QCCheck:
+    """Phase 3I structural check, widened in Phase 9D.
+
+    Three accepted shapes:
+      - real reel_draft with ``local_path`` + ``checksum_sha256`` and the
+        real_editor_output extra flag set — Phase 9D real ffmpeg output;
+      - explicit metadata-only placeholder (``placeholder://`` URI,
+        ``real_editor_output=False``) — Phase 9D when upstream lipsync
+        has no real MP4;
+      - legacy ``s3://`` stub from earlier phases.
+    Anything else is reported as a warn so the operator sees the
+    surprise but the QC report still emits."""
+    extra = reel_draft_ref.extra if isinstance(reel_draft_ref.extra, dict) else {}
+    real_flag = extra.get("real_editor_output")
+    if real_flag is True:
+        if reel_draft_ref.local_path and reel_draft_ref.checksum_sha256:
+            return QCCheck(
+                name="reel_draft_is_stub",
+                decision="pass",
+                detail=(
+                    f"reel_draft is a real editor output "
+                    f"(local_path set, checksum={reel_draft_ref.checksum_sha256[:12]}...)"
+                ),
+                metadata={"editor_mode": extra.get("editor_mode"), "real_editor_output": True},
+            )
+        return QCCheck(
+            name="reel_draft_is_stub",
+            decision="fail",
+            detail=(
+                "reel_draft claims real_editor_output=True but local_path "
+                "or checksum_sha256 is missing"
+            ),
+        )
+    if real_flag is False:
+        return QCCheck(
+            name="reel_draft_is_stub",
+            decision="pass",
+            detail=(
+                "reel_draft is a metadata-only placeholder "
+                f"(reason={extra.get('reason')!r}); no real video file expected"
+            ),
+            metadata={"editor_mode": extra.get("editor_mode"), "real_editor_output": False},
+        )
+    # Legacy / unflagged stub.
     if reel_draft_ref.local_path:
         return QCCheck(
             name="reel_draft_is_stub",
             decision="warn",
             detail=(
-                "reel_draft carries a local_path — real-media QC would "
-                "inspect the file; Phase 3I does not."
+                "reel_draft carries a local_path but no real_editor_output "
+                "flag — real-media QC would inspect the file; Phase 3I does not."
             ),
         )
-    if not reel_draft_ref.uri.startswith("s3://"):
+    if not reel_draft_ref.uri.startswith(("s3://", "placeholder://")):
         return QCCheck(
             name="reel_draft_is_stub",
             decision="warn",
-            detail=f"reel_draft URI {reel_draft_ref.uri!r} is not the expected s3:// stub",
+            detail=(
+                f"reel_draft URI {reel_draft_ref.uri!r} is not the expected "
+                "s3:// or placeholder:// stub"
+            ),
         )
     return QCCheck(
         name="reel_draft_is_stub",
         decision="pass",
-        detail="reel_draft remains a metadata stub (expected in Phase 3I)",
+        detail="reel_draft is a metadata stub (legacy or pre-Phase-9D)",
     )
 
 

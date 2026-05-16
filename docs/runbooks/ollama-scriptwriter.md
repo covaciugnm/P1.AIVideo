@@ -1,10 +1,46 @@
-# Ollama scriptwriter runtime (Phase 6C)
+# Ollama scriptwriter runtime (Phase 6C → Phase 8G real generation)
 
 Phase 5B added `/api/v1/script/generate` driving the existing
 `agents/scriptwriter` registry. The default backend is `template`
-(dependency-free, deterministic). This runbook covers what an operator
-needs to flip to **real local LLM** generation via Ollama with `qwen3.6`
-as preferred and `qwen3:8b` as fallback.
+(dependency-free, deterministic). **Phase 8G implemented the real
+`OllamaProvider.generate()` body** — this runbook covers what an
+operator needs to flip to **real local LLM** generation via Ollama with
+`qwen3.6` as preferred and `qwen3:8b` as fallback.
+
+## Phase 8G — real generation surface
+
+The provider now does a real HTTP call via stdlib `urllib.request`
+(no new pip deps). It:
+
+1. Lazy-checks the daemon at `OLLAMA_BASE_URL/api/tags` for healthcheck.
+2. POSTs to `OLLAMA_BASE_URL/api/chat` with `format: "json"` and a
+   bounded `num_predict=800`.
+3. Tries the preferred model first; on `404 model not found` retries
+   with `OLLAMA_FALLBACK_MODEL`.
+4. Parses the response as JSON; if the model ignored the JSON-mode
+   instruction, falls back to deterministic sentence/paragraph
+   segmentation so downstream stages always get a structured
+   ScriptResult.
+5. Maps daemon/network errors to categorised 503 codes
+   (`script_provider_unreachable` / `script_provider_disabled` /
+   `script_generation_failed`) — never crashes.
+
+Verified live against `qwen2.5:7b-instruct` on a host-side Ollama
+daemon — the response parsed cleanly with `json_parsed=true`.
+
+### From-Docker reachability
+
+When the backend runs in Docker (alt-port stack on `:8001`) and the
+Ollama daemon runs on the host (e.g. another stack's
+`ai-home-ollama` exposing `0.0.0.0:11434`), `OLLAMA_BASE_URL=http://localhost:11434`
+**will not work** from inside the container. Set it to the Docker
+default-bridge gateway:
+
+```
+OLLAMA_BASE_URL=http://172.17.0.1:11434
+```
+
+(On Docker Desktop / macOS / Windows, `host.docker.internal` works too.)
 
 ## Boundaries
 

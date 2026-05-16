@@ -43,6 +43,13 @@ dev = [
   "fakeredis>=2.23",
   "ruff>=0.7",
 ]
+# Phase 8G — opt-in TTS extra. Install with ``pip install -e ./backend[tts]``
+# or via the Docker build arg ``INSTALL_PIPER=true``. piper-tts pulls in
+# onnxruntime (~50 MB wheel); kept out of the default light backend so
+# operators who don't want Piper don't pay the bytes.
+tts = [
+  "piper-tts>=1.2",
+]
 
 [tool.setuptools]
 packages = ["app"]

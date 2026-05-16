@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ArtifactTable } from "@/components/ArtifactTable";
+import { JobRecoveryControls } from "@/components/JobRecoveryControls";
+import { VideoArtifactPreview } from "@/components/VideoArtifactPreview";
 import { ComplianceEvents } from "@/components/ComplianceEvents";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { FinalExportCard } from "@/components/FinalExportCard";
@@ -321,6 +323,17 @@ function JobDetail({
         <h2>Artifacts ({artifacts.length})</h2>
         <ArtifactTable artifacts={artifacts} />
       </section>
+
+      <VideoArtifactPreview artifacts={artifacts} />
+
+      <JobRecoveryControls
+        job={job}
+        onMutated={() => {
+          // Simple refresh — the next poll would catch the change too,
+          // but a full reload makes the new state immediately visible.
+          if (typeof window !== "undefined") window.location.reload();
+        }}
+      />
 
       <section className="card">
         <h2>Compliance events ({complianceEvents.length})</h2>

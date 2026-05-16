@@ -74,9 +74,15 @@ function clampPort(n: unknown, fallback: number): number {
 export const SETTINGS_STORAGE_KEY = "aivideo:settings:v1";
 export const SIDEBAR_STORAGE_KEY = "aivideo:sidebar:v1";
 
+// Phase 8F-2 — operator-diagnostics tab "Test1" added alongside Logs +
+// Settings. Persisted in the same SIDEBAR_STORAGE_KEY localStorage slot;
+// older browsers with only "logs" / "settings" stored still validate
+// because the loader rejects anything outside the union and falls back.
+export type SidebarTabId = "logs" | "settings" | "test1";
+
 export interface SidebarState {
   readonly collapsed: boolean;
-  readonly activeTab: "logs" | "settings";
+  readonly activeTab: SidebarTabId;
 }
 
 export const DEFAULT_SIDEBAR_STATE: SidebarState = {
@@ -114,7 +120,9 @@ export function loadSidebarState(): SidebarState {
     return {
       collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : DEFAULT_SIDEBAR_STATE.collapsed,
       activeTab:
-        parsed.activeTab === "logs" || parsed.activeTab === "settings"
+        parsed.activeTab === "logs"
+        || parsed.activeTab === "settings"
+        || parsed.activeTab === "test1"
           ? parsed.activeTab
           : DEFAULT_SIDEBAR_STATE.activeTab,
     };

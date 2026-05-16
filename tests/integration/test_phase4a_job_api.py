@@ -425,7 +425,12 @@ async def test_final_export_endpoint_returns_manifest(app_under_test):
     assert manifest["passed_qc"] is True
     assert manifest["status"] == "published"
     assert manifest["job_id"] == str(job_id)
-    assert manifest["export_uri"].endswith("reel_final.mp4")
+    # Phase 9D: the publisher emits a ``placeholder://`` export URI when
+    # the upstream reel_draft is itself metadata-only — no fake
+    # ``reel_final.mp4`` claim. The manifest still declares the intended
+    # mime type even when the bytes aren't there yet.
+    assert manifest["export_uri"].startswith("placeholder://")
+    assert not manifest["export_uri"].endswith(".mp4")
     assert manifest["mime_type"] == "video/mp4"
 
 

@@ -311,6 +311,15 @@ async def test_lipsync_ready_path_translates_failure_to_stage_rejection(
 
     monkeypatch.setenv("SADTALKER_ENABLE_REAL_INFERENCE", "true")
     monkeypatch.setenv("RUN_REAL_SADTALKER", "1")
+    # Phase 8G fix — the lipsync handler builds an artifact-output dir
+    # from ``ARTIFACTS_LOCAL_ROOT``. Without an env override (and when
+    # the host shell loaded .env with the production default
+    # ``/storage/artifacts``), the test tries to mkdir under a
+    # root-owned path and fails with PermissionError. Isolate it.
+    monkeypatch.setenv("ARTIFACTS_LOCAL_ROOT", str(tmp_path / "artifacts"))
+    monkeypatch.setenv("UPLOAD_AUDIO_ROOT", str(tmp_path / "audio"))
+    monkeypatch.setenv("UPLOAD_IMAGE_ROOT", str(tmp_path / "images"))
+    monkeypatch.setenv("UPLOAD_TEXT_ROOT", str(tmp_path / "text"))
 
     img = tmp_path / "face.png"
     img.write_bytes(b"\x00")

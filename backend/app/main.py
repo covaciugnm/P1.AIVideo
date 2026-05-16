@@ -14,9 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     artifacts,
     audio_fit,
+    export,
     healthz,
     jobs,
     providers,
+    qc,
     script,
     system,
     tts,
@@ -70,6 +72,10 @@ def create_app() -> FastAPI:
     app.include_router(audio_fit.router)
     # Phase 6A: /api/v1/video/generate contract endpoint (metadata-only).
     app.include_router(video.router)
+    # Phase 8B: /api/v1/export/finalize — real ffmpeg final export.
+    app.include_router(export.router)
+    # Phase 8C: /api/v1/qc/inspect — on-demand real media QC.
+    app.include_router(qc.router)
     return app
 
 

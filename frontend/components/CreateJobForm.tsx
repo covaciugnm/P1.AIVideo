@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import * as api from "@/lib/api";
-import { ApiError } from "@/lib/api";
+import { ApiError, humanizeApiDetail } from "@/lib/api";
 import * as logBus from "@/lib/log-bus";
 import type {
   CreateJobFromInputsBody,
@@ -55,6 +55,18 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsStatus, setTtsStatus] = useState<string | null>(null);
+  // Phase 8G-2 — capture the generated TTS artifact so we can render
+  // an inline preview after a successful Generate Audio click.
+  const [ttsArtifact, setTtsArtifact] = useState<{
+    readonly artifact_id: string;
+    readonly provider_id: string;
+    readonly voice_id: string;
+    readonly mime_type: string;
+    readonly size_bytes: number;
+    readonly duration_seconds: number;
+    readonly sample_rate: number;
+    readonly channels: number;
+  } | null>(null);
   const ttsAbortRef = useRef<AbortController | null>(null);
   // Phase 5B — script generation preview.
   const [scriptBusy, setScriptBusy] = useState(false);
@@ -180,11 +192,24 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     );
     setTtsBusy(false);
     if (!res.ok) {
-      const niceMsg =
-        res.error.code === "tts_provider_not_configured"
-          ? `Provider "${res.error.provider_id}" is not configured. Install the runtime + place voice assets, then enable in Settings.`
-          : res.error.message;
+      // Phase 8G-2 — operator-friendly copy for every categorised
+      // 503 the backend can return (the Test1 panel uses the same map).
+      const _NICE: Record<string, string> = {
+        tts_runtime_missing:
+          "Piper runtime is not installed in this image. Rebuild the backend with --build-arg INSTALL_PIPER=true (see docs/runbooks/piper-runtime.md).",
+        tts_assets_missing:
+          "Piper voice files (.onnx + .onnx.json) are missing under PIPER_MODELS_ROOT. Place them manually — no auto-download.",
+        tts_provider_not_configured: `Provider "${res.error.provider_id}" is not configured. Set PIPER_MODELS_ROOT and place the voice files, then retry.`,
+        tts_provider_not_implemented:
+          "TTS provider is a catalog stub — no real synthesis path wired yet.",
+        tts_generation_failed:
+          "The synthesise call ran but threw an error. Check the backend logs for the truncated reason.",
+        tts_provider_disabled:
+          "This TTS provider is disabled. Enable it via env / Settings before retrying.",
+      };
+      const niceMsg = _NICE[res.error.code] ?? res.error.message;
       setTtsStatus(niceMsg);
+      setTtsArtifact(null);
       logBus.emit({
         source: "frontend",
         level: res.httpStatus === 503 ? "warning" : "error",
@@ -192,11 +217,30 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
         meta: { code: res.error.code, status: res.httpStatus },
       });
     } else {
-      setTtsStatus("Generated.");
+      const v = res.value;
+      // Phase 8G-2 — capture the generated artifact + render preview.
+      setTtsArtifact({
+        artifact_id: v.artifact_id,
+        provider_id: v.provider_id,
+        voice_id: v.voice_id,
+        mime_type: v.mime_type,
+        size_bytes: v.size_bytes,
+        duration_seconds: v.duration_seconds,
+        sample_rate: v.sample_rate,
+        channels: v.channels,
+      });
+      setTtsStatus(
+        `Generated · ${v.duration_seconds.toFixed(2)}s · ${v.sample_rate} Hz · ${v.channels}ch · ${(v.size_bytes / 1024).toFixed(1)} KB`,
+      );
       logBus.emit({
         source: "frontend",
         level: "success",
         message: "tts-generate succeeded",
+        meta: {
+          artifact_id: v.artifact_id,
+          provider_id: v.provider_id,
+          duration_seconds: v.duration_seconds,
+        },
       });
     }
   };
@@ -304,13 +348,14 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       });
       router.push(`/jobs/${job.id}`);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.detail : String(err);
+      const raw = err instanceof ApiError ? err.detail : String(err);
+      const msg = humanizeApiDetail(raw);
       setError(msg);
       logBus.emit({
         source: "frontend",
         level: "error",
         message: "create-job failed",
-        meta: { error: msg },
+        meta: { error: msg, raw },
       });
       setSubmitting(false);
     }
@@ -410,6 +455,12 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                 <span className={styles.ttsStatus}>{ttsStatus}</span>
               )}
             </div>
+            {ttsArtifact && (
+              <AudioPreview
+                src={{ kind: "artifact", artifactId: ttsArtifact.artifact_id }}
+                label={`Generated TTS preview (${ttsArtifact.provider_id} · ${ttsArtifact.voice_id})`}
+              />
+            )}
           </div>
         ) : (
           <>
@@ -481,18 +532,21 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           value={llmProvider}
           onChange={setLlmProvider}
           providers={providers?.llm ?? []}
+          defaultFromSettings={settings.defaultLlmProvider}
         />
         <ProviderField
           label="TTS"
           value={ttsProvider}
           onChange={setTtsProvider}
           providers={providers?.tts ?? []}
+          defaultFromSettings={settings.defaultTtsProvider}
         />
         <ProviderField
           label="Video generator"
           value={videoProvider}
           onChange={setVideoProvider}
           providers={providers?.video_generator ?? []}
+          defaultFromSettings={settings.defaultVideoProvider}
         />
         <ProviderField
           label="Audio processor"
@@ -615,12 +669,22 @@ interface ProviderFieldProps {
   readonly value: string | null;
   readonly onChange: (v: string | null) => void;
   readonly providers: readonly ProviderInfo[];
+  readonly defaultFromSettings?: string | null;
 }
 
-function ProviderField({ label, value, onChange, providers }: ProviderFieldProps) {
+function ProviderField({
+  label,
+  value,
+  onChange,
+  providers,
+  defaultFromSettings,
+}: ProviderFieldProps) {
   const selected = providers.find((p) => p.provider_id === value);
   const warn =
     selected && selected.status !== "available" && selected.status !== "configured";
+  const defaultLabel = defaultFromSettings
+    ? `Use default from Settings — ${defaultFromSettings}`
+    : "Use default from Settings";
   return (
     <div className="field">
       <label>{label}</label>
@@ -629,7 +693,7 @@ function ProviderField({ label, value, onChange, providers }: ProviderFieldProps
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
       >
-        <option value="">— default —</option>
+        <option value="">{defaultLabel}</option>
         {providers.map((p) => (
           <option key={p.provider_id} value={p.provider_id}>
             {p.label} ({p.status.replace(/_/g, " ")})
@@ -665,7 +729,12 @@ function ProviderField({ label, value, onChange, providers }: ProviderFieldProps
       )}
       {warn && (
         <span className={styles.providerWarn}>
-          {selected.notes || `${selected.provider_id} is ${selected.status.replace(/_/g, " ")}.`}
+          ⚠ This job can be created, but{" "}
+          <strong>{selected.label}</strong> is{" "}
+          <code>{selected.status.replace(/_/g, " ")}</code>
+          {selected.notes ? ` — ${selected.notes}` : "."} The stage that
+          uses this provider will return a clean error until it is
+          configured.
         </span>
       )}
     </div>

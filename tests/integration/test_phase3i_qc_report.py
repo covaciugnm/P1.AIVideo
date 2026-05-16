@@ -454,7 +454,11 @@ async def test_dag_promotes_qc_report_artifact_as_metadata(app_under_test):
     # Back-references resolve.
     assert report["script_artifact_uri"].endswith("script.json")
     assert report["edit_plan_artifact_uri"].endswith("edit_plan.json")
-    assert report["reel_draft_artifact_uri"].endswith("reel_draft.mp4")
+    # Phase 9D — the DAG editor emits a metadata-only placeholder
+    # reel_draft (no fake ``reel_draft.mp4``) when upstream lipsync is
+    # itself metadata-only. The QC report echoes that placeholder URI.
+    assert report["reel_draft_artifact_uri"].startswith("placeholder://")
+    assert not report["reel_draft_artifact_uri"].endswith(".mp4")
     assert (row.metadata_json or {}).get("qc_passed") is True
 
 

@@ -590,6 +590,9 @@ async def create_job_from_inputs(
             audio_ref=audio_ref,
             face_mode=payload.face_mode,
             image_ref=image_ref,
+            # Phase 8E — forward provider_selection so the upload-intake
+            # path persists the same operator choices the /jobs path does.
+            provider_selection=payload.provider_selection,
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

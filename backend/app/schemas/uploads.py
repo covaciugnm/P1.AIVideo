@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from common.schemas import FaceMode, VoiceMode
 
+from app.schemas.providers import ProviderSelection
+
 
 # ---------------------------------------------------------------------------
 # Text upload
@@ -121,6 +123,12 @@ class JobFromInputsRequest(BaseModel):
     image_artifact_id: uuid.UUID | None = None
     image_consent_confirmed: bool = False
     image_synthetic_person_confirmed: bool = False
+
+    # Phase 8E — accept provider_selection on the upload-intake path too
+    # (Phase 6D already accepts it on POST /api/v1/jobs). The frontend's
+    # CreateJobForm always sends this field; without it ``extra=forbid``
+    # rejected legitimate requests.
+    provider_selection: ProviderSelection | None = None
 
     @model_validator(mode="after")
     def _validate_combinations(self) -> "JobFromInputsRequest":

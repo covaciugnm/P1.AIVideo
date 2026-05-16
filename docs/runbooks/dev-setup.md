@@ -98,6 +98,155 @@ Base URL** is the **runtime** override stored in localStorage and applied
 on every API call (use this when Docker publishes the backend on a
 non-default port without a rebuild).
 
+### Phase 8G: real local generation — Ollama scriptwriter + Piper TTS opt-in
+
+Ollama scriptwriter now actually generates. Piper TTS install is now
+a one-flag opt-in.
+
+```bash
+# Ollama — needs a daemon reachable from the backend container.
+# From the alt-port Docker stack, that's the Docker bridge gateway:
+docker exec aivideo-backend-1 sh -c '
+  SCRIPTWRITER_ENABLE_NETWORK_CALLS=true \
+  OLLAMA_BASE_URL=http://172.17.0.1:11434 \
+  OLLAMA_MODEL=qwen2.5:7b-instruct \
+  python -c "import asyncio,uuid;
+from agents.scriptwriter.providers.ollama.provider import OllamaProvider
+from agents.scriptwriter.core.provider import ScriptRequest
+async def m():
+  p=OllamaProvider()
+  r=await p.generate(ScriptRequest(job_id=uuid.uuid4(), brief=\"reel about local bakery\", target_duration_seconds=30, language=\"en\"))
+  print(r.hook); print(r.body); print(r.cta)
+asyncio.run(m())"
+'
+
+# Piper — opt in at build time.
+INSTALL_PIPER=true \
+  BACKEND_PORT=8001 FRONTEND_PORT=3001 POSTGRES_PORT=5433 \
+  NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
+  docker compose -f docker/compose.dev.yml build backend
+
+# Place voice .onnx + .onnx.json under host:
+#   ./models/tts/piper/en_US-amy-medium.onnx
+#   ./models/tts/piper/en_US-amy-medium.onnx.json
+# (operator-managed; no auto-download)
+
+make phase8g-test                # 21 mocked tests (14 Ollama + 7 Piper) + 2 opt-in skips
+```
+
+See [`ollama-scriptwriter.md`](ollama-scriptwriter.md) and
+[`piper-runtime.md`](piper-runtime.md) for the full setup matrix.
+
+### Phase 8F-2: Test1 right-sidebar provider diagnostics
+
+Operator-facing diagnostics surface. Open the right sidebar (visible on
+every page) → click **Test1**. The panel groups all five Phase 6D
+provider categories into sections, lists every provider with status +
+metadata + flags, and exposes a **Test** button per row. The buttons
+hit only the safe / preview / readiness endpoints — video providers
+stay metadata-only, with a footnote stating "Real video generation is
+not run from Test1".
+
+```
+Status dot colour:
+  green   → available / configured / ready
+  yellow  → not_configured / disabled
+  red     → runtime_missing / gpu_missing / assets_missing / error
+  grey    → not_implemented (registry placeholder)
+```
+
+Every Test action emits a log-bus entry. Tests don't change DB rows.
+Frontend-only feature.
+
+See [`provider-registry.md`](provider-registry.md) for the underlying
+catalog. No new backend tests — the Phase 6D / 7B / 7D suites already
+pin the endpoints Test1 hits.
+
+### Phase 8E: operator runtime + scenario job seeding
+
+Fixes the browser `extra_forbidden` regression on Create Job; adds
+JSON / TXT log export buttons to the right-sidebar logs; cleans
+provider labels; humanises Pydantic validation errors. Scenario
+seeder seeds 8 realistic jobs against the running stack:
+
+```bash
+# Seed 8 scenario jobs (idempotent — appends each run)
+make scenario-jobs
+
+# Confirm they appear in the job list
+make scenario-jobs-check
+
+# Stop / start preserving every volume
+make docker-light-stop
+make docker-light-start
+
+# If you carry an old Postgres volume from before Phase 6B, stamp the
+# initial migration once and upgrade:
+docker exec -w /app/backend aivideo-backend-1 alembic stamp 0001_initial
+docker exec -w /app/backend aivideo-backend-1 alembic upgrade head
+
+make phase8e-test                # 6 regression tests for the contract
+```
+
+See [`scenario-jobs.md`](scenario-jobs.md) for the scenario matrix.
+
+### Phase 8D: retry / cancel / failure recovery
+
+New operator endpoints `POST /api/v1/jobs/{id}/cancel` and
+`POST /api/v1/jobs/{id}/retry`, backed by a new `jobs.recovery_metadata`
+JSON column (Alembic migration `0002_phase8d_recovery_metadata`).
+
+```bash
+make phase8d-test                # 15 invariants
+```
+
+See [`failure-recovery.md`](failure-recovery.md) for the endpoint
+contracts, recovery-metadata fields, audit-event mapping, and the
+known limitations (no OS process kill yet).
+
+### Phase 8C: real media QC
+
+New operator endpoint `POST /api/v1/qc/inspect` runs deterministic
+file checks + ffprobe inspection on a video / final_export artifact.
+Returns a structured report (checks list, warnings, failures) without
+mutating the Phase 3I DAG QC manifest. No ML / sync metrics yet.
+
+```bash
+make phase8c-test                # 17 invariants (real-success paths need ffmpeg+ffprobe)
+```
+
+See [`final-export.md`](final-export.md) and the request body shape in
+`backend/app/api/qc.py`.
+
+### Phase 8B: real ffmpeg final export
+
+New operator endpoint `POST /api/v1/export/finalize` packages a job's
+video artifact into a clean MP4 `final_export` row. No GPU, no model
+weights, no watermark burn-in, no C2PA signing — those statuses are
+recorded as `pending` in the result metadata.
+
+```bash
+make phase8b-test                # 12 invariants (real-export path needs ffmpeg+ffprobe)
+```
+
+See [`final-export.md`](final-export.md) for the categorised error
+table, safety contract, and the `audio_artifact_id` mux path.
+
+### Phase 8A: video artifact preview + safe content serving
+
+Generated MP4s are operator-facing in the browser. The Job Detail page
+gets a Video preview card with HTML5 ``<video controls>``, live
+metadata, and a Download button. ``/api/v1/artifacts/{id}/content``
+now serves ``artifact_type=video`` and accepts ``?download=true`` for
+the attachment Content-Disposition.
+
+```bash
+make phase8a-test                # 12 invariants
+```
+
+The Phase 8B / 8C final-export + real-media-QC phases reuse the
+bounded ffprobe helper at ``backend/app/services/video_inspection.py``.
+
 ### Phase 7E: lipsync DAG stage integration (opt-in real inference still gated)
 
 The DAG's lipsync stage handler is now provider-aware:

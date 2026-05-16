@@ -182,7 +182,13 @@ async def test_artifact_content_404_on_unknown(app_under_test):
 
 
 async def test_artifact_content_rejects_non_serveable_type(app_under_test):
-    """Register an artifact with a type outside the serve allow-list."""
+    """Register an artifact with a type outside the serve allow-list.
+
+    Phase 8A promoted ``video`` into the allow-list, so we now pin
+    ``edit_plan`` as the canonical non-serveable example. The gate
+    itself (415 on unknown types) is what we're testing — not the
+    specific type.
+    """
     client, _, _, _ = app_under_test
     from app.core.db import get_sessionmaker
     from app.services import artifact_service
@@ -191,10 +197,10 @@ async def test_artifact_content_rejects_non_serveable_type(app_under_test):
     async with sm() as session:
         art = await artifact_service.register_artifact(
             session,
-            artifact_type="video",
-            uri="file:///tmp/non-serveable.bin",
-            local_path="/tmp/non-serveable.bin",
-            mime_type="video/mp4",
+            artifact_type="edit_plan",
+            uri="file:///tmp/non-serveable.json",
+            local_path="/tmp/non-serveable.json",
+            mime_type="application/json",
         )
         await session.commit()
         artifact_id = art.id

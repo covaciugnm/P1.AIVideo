@@ -134,6 +134,10 @@ class JobResponse(BaseModel):
     # Phase 4F per-job provider selection.
     provider_selection: dict[str, Any] | None = None
     rejection_reason: str | None = None
+    # Phase 8D: operational recovery metadata (cancel timestamps, retry
+    # counter, last categorised error). Optional so older clients keep
+    # working without code changes.
+    recovery_metadata: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 

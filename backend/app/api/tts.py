@@ -174,12 +174,17 @@ async def tts_generate(
     dest = root / out_name
     voice_id = payload.tts_model or provider._voice  # type: ignore[attr-defined]
 
+    # Phase 8G fix — VoiceRequest requires ``job_id`` and accepts
+    # ``output_path`` as a ``str``. The /api/v1/tts/generate preview
+    # is unattached to a real job (Phase 5A "preview-only" pattern),
+    # so we mint a synthetic UUID for traceability.
     try:
         result = await provider.synthesize(
             VoiceRequest(
+                job_id=uuid.uuid4(),
                 voice_id=voice_id,
                 text=payload.script_text,
-                output_path=dest,
+                output_path=str(dest),
             )
         )
     except MissingAssetsError as exc:

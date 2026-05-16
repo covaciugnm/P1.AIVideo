@@ -36,6 +36,7 @@ import type {
   SystemStatus,
   TTSGenerateError,
   TTSGenerateRequest,
+  TTSGenerateResponse,
   UIOptions,
   UploadAudioResponse,
   UploadImageResponse,
@@ -53,6 +54,61 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+  }
+}
+
+
+/**
+ * Phase 8E — turn a FastAPI / Pydantic validation error blob into a
+ * human-readable sentence the operator can act on.
+ *
+ * Input shapes we handle:
+ *   1. Plain string (already human-readable).
+ *   2. ``{"detail": "..."}``
+ *   3. ``{"detail": [{"type": "...", "loc": [...], "msg": "...", "input": ...}]}``
+ *      — the canonical Pydantic v2 shape.
+ *   4. Anything else → ``JSON.stringify`` (last resort, so the operator
+ *      sees *something*).
+ */
+export function humanizeApiDetail(raw: unknown): string {
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return humanizeApiDetail(parsed);
+    } catch {
+      return raw;
+    }
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const detail = obj["detail"];
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      const lines: string[] = [];
+      for (const item of detail) {
+        if (item && typeof item === "object") {
+          const it = item as Record<string, unknown>;
+          const loc = Array.isArray(it["loc"])
+            ? (it["loc"] as unknown[]).map(String).join(".")
+            : "";
+          const msg = typeof it["msg"] === "string" ? (it["msg"] as string) : "";
+          const type = typeof it["type"] === "string" ? (it["type"] as string) : "";
+          lines.push(
+            type === "extra_forbidden"
+              ? `Field "${loc}" is not accepted by this endpoint (backend/frontend contract mismatch).`
+              : msg
+                ? `${loc ? `${loc}: ` : ""}${msg}`
+                : `Validation error at ${loc || "?"}.`,
+          );
+        }
+      }
+      if (lines.length > 0) return lines.join("; ");
+    }
+  }
+  try {
+    return JSON.stringify(raw);
+  } catch {
+    return String(raw);
   }
 }
 
@@ -353,6 +409,44 @@ export function deleteJob(jobId: string, signal?: AbortSignal): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 8D — operational controls.
+// ---------------------------------------------------------------------------
+
+export function cancelJob(
+  jobId: string,
+  body: { readonly reason?: string | null } = {},
+  signal?: AbortSignal,
+): Promise<JobResponse> {
+  return request<JobResponse>(`/api/v1/jobs/${jobId}/cancel`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ reason: body.reason ?? null }),
+    signal,
+    logLabel: "/api/v1/jobs/:id/cancel",
+  });
+}
+
+export function retryJob(
+  jobId: string,
+  body: {
+    readonly stage_name?: string | null;
+    readonly reason?: string | null;
+  } = {},
+  signal?: AbortSignal,
+): Promise<JobResponse> {
+  return request<JobResponse>(`/api/v1/jobs/${jobId}/retry`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({
+      stage_name: body.stage_name ?? null,
+      reason: body.reason ?? null,
+    }),
+    signal,
+    logLabel: "/api/v1/jobs/:id/retry",
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Uploads
 // ---------------------------------------------------------------------------
 
@@ -428,35 +522,29 @@ export function getProvidersForCategory(
   return request<ProviderInfo[]>(`/api/v1/providers/${slug}`, { signal });
 }
 
-export interface TTSGenerateResult {
-  readonly ok: false;
-  readonly error: TTSGenerateError;
-  readonly httpStatus: number;
-}
+// Phase 8F-2 — widen the result type so callers (e.g. the Test1
+// diagnostics panel) can pattern-match the success branch the backend
+// has shipped since Phase 5A.
+export type TTSGenerateResult =
+  | { readonly ok: true; readonly value: TTSGenerateResponse }
+  | {
+      readonly ok: false;
+      readonly error: TTSGenerateError;
+      readonly httpStatus: number;
+    };
 
 export async function generateTts(
   body: TTSGenerateRequest,
   signal?: AbortSignal,
 ): Promise<TTSGenerateResult> {
   try {
-    await request<unknown>("/api/v1/tts/generate", {
+    const value = await request<TTSGenerateResponse>("/api/v1/tts/generate", {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify(body),
       signal,
     });
-    // No real provider is implemented in Phase 4F — every call should
-    // result in the 503 branch below. Reaching here means a future phase
-    // wired generation and the caller should be updated to handle it.
-    return {
-      ok: false,
-      httpStatus: 200,
-      error: {
-        code: "tts_provider_not_implemented",
-        message: "TTS generation succeeded but the result schema is not yet wired.",
-        provider_id: body.tts_provider_id,
-      },
-    };
+    return { ok: true, value };
   } catch (err) {
     if (err instanceof ApiError) {
       // The 503 body is JSON-stringified by the request wrapper if not a
@@ -482,8 +570,12 @@ export async function generateTts(
   }
 }
 
-export function artifactContentUrl(artifactId: string): string {
-  return `${getActiveApiBaseUrl()}/api/v1/artifacts/${artifactId}/content`;
+export function artifactContentUrl(
+  artifactId: string,
+  options?: { readonly download?: boolean },
+): string {
+  const base = `${getActiveApiBaseUrl()}/api/v1/artifacts/${artifactId}/content`;
+  return options?.download ? `${base}?download=true` : base;
 }
 
 // ---------------------------------------------------------------------------

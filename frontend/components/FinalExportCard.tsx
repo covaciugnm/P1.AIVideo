@@ -10,6 +10,13 @@ interface FinalExportCardProps {
 
 export function FinalExportCard({ response }: FinalExportCardProps) {
   const m = response.final_export;
+  // Phase 9D — the publisher emits a placeholder export URI when the
+  // upstream reel_draft is metadata-only. Distinguish that here so the
+  // operator doesn't think a real MP4 was produced.
+  const exportIsPlaceholder = m.export_uri.startsWith("placeholder://");
+  const reelDraftIsPlaceholder = m.source_reel_draft_uri.startsWith(
+    "placeholder://",
+  );
   return (
     <div className={styles.wrapper}>
       <div className={styles.header}>
@@ -19,6 +26,14 @@ export function FinalExportCard({ response }: FinalExportCardProps) {
         <StatusBadge
           status={m.disclosure_status}
           title="AI-content disclosure status"
+        />
+        <StatusBadge
+          status={exportIsPlaceholder ? "manifest-only" : "real-mp4"}
+          title={
+            exportIsPlaceholder
+              ? "No real MP4 was encoded — manifest only"
+              : "Real MP4 export claimed"
+          }
         />
       </div>
       <dl className="kv">
@@ -48,9 +63,21 @@ export function FinalExportCard({ response }: FinalExportCardProps) {
         <dd>{formatDate(response.created_at)}</dd>
       </dl>
       <p className={styles.note}>
-        Phase 4B: no real video is written and nothing is uploaded externally.
-        This manifest is the metadata-only operator-visible export decision.
+        This is the metadata-only export-decision manifest (Phase 3J / 4B).
+        A real packaged MP4 lives as a separate <code>final_export</code> artifact
+        when the operator triggers <code>POST /api/v1/export/finalize</code>
+        (Phase 8B); the Video preview card below renders that MP4 if present.
+        Watermark + C2PA signing remain pending.
       </p>
+      {(exportIsPlaceholder || reelDraftIsPlaceholder) && (
+        <p className={styles.note} role="note">
+          <strong>No real video was encoded.</strong>{" "}
+          The upstream reel draft is metadata-only — either no real video
+          provider ran (e.g. SadTalker not configured) or the operator
+          uploaded no media. Configure a video provider or upload audio +
+          image to produce a real MP4.
+        </p>
+      )}
     </div>
   );
 }

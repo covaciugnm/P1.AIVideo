@@ -49,6 +49,11 @@ class Job(Base):
     # with a whitelisted shape (see app.schemas.providers.ProviderSelection).
     # Nullable so every pre-4F test keeps passing.
     provider_selection: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 8D: operational recovery metadata — cancellation timestamps,
+    # retry counters, last categorised error, etc. Plain JSON so the
+    # shape can evolve without schema migrations for every new field.
+    # Nullable so every pre-8D test keeps passing.
+    recovery_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False

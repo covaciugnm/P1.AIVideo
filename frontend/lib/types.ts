@@ -43,6 +43,8 @@ export interface JobSummary {
   // type-check.
   readonly qc_passed?: boolean | null;
   readonly final_export_available?: boolean;
+  // Phase 8F-1: per-job provider selection on each list row.
+  readonly provider_selection?: ProviderSelection | null;
 }
 
 export interface JobResponse {
@@ -60,6 +62,11 @@ export interface JobResponse {
   readonly image_ref: Record<string, unknown> | null;
   readonly provider_selection: ProviderSelection | null;
   readonly rejection_reason: string | null;
+  /**
+   * Phase 8D operational recovery state. Optional / nullable so older
+   * backends that don't return the field still typecheck.
+   */
+  readonly recovery_metadata?: Record<string, unknown> | null;
   readonly created_at: string;
   readonly updated_at: string;
 }
@@ -406,6 +413,23 @@ export interface TTSGenerateError {
   readonly provider_id: string;
 }
 
+// Phase 8F-2 — success-branch type for the TTS preview endpoint
+// (Phase 5A shipped this on the backend but the frontend never widened
+// the union). Used by ProviderTestPanel to play back the artifact.
+export interface TTSGenerateResponse {
+  readonly status: "generated";
+  readonly provider_id: string;
+  readonly voice_id: string;
+  readonly artifact_id: string;
+  readonly uri: string;
+  readonly mime_type: string;
+  readonly checksum_sha256: string;
+  readonly size_bytes: number;
+  readonly duration_seconds: number;
+  readonly sample_rate: number;
+  readonly channels: number;
+}
+
 // Phase 5B — script generation.
 
 export interface ScriptGenerateRequest {
@@ -438,7 +462,10 @@ export interface ScriptGenerateError {
     | "script_provider_disabled"
     | "script_provider_unreachable"
     | "script_provider_not_implemented"
-    | "script_generation_failed";
+    | "script_generation_failed"
+    // Phase 8G-2 — distinct from unreachable. Daemon answered, but the
+    // selected model isn't pulled.
+    | "script_model_missing";
   readonly message: string;
   readonly provider_id: string;
 }

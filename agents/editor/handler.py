@@ -1,7 +1,7 @@
-"""Editor — Phase 3H: deterministic edit plan from the structured script.
+"""Editor — Phase 3H edit_plan + Phase 9D real / metadata-only reel_draft.
 
 Reads the structured script artifact produced by the scriptwriter stage
-(Phase 3G) and emits a deterministic ``EditPlan`` artifact:
+and emits a deterministic ``EditPlan`` artifact (Phase 3H semantics):
 
 - Splits the target duration across ``hook`` (20%), ``body`` (65%),
   ``cta`` (15%) of ``target_duration_seconds``.
@@ -10,25 +10,198 @@ Reads the structured script artifact produced by the scriptwriter stage
 - Carries the script text per segment and a reference to the source
   script (uri + checksum) so downstream stages can audit provenance.
 
-Phase 3H stays metadata-only. The existing ``reel_draft.mp4`` stub stays
-in the editor's output so the downstream QC stage continues to pass; the
-edit plan is an additional first-class artifact, NOT a replacement.
+Phase 9D — real reel_draft when upstream video is real:
 
-No video compositing, no ffmpeg, no moviepy. Real rendering lands in a
-later phase.
+- If the lipsync stage produced a real ``talking_head`` ArtifactRef
+  (``local_path`` set, ``checksum_sha256`` set, ``mime_type=video/mp4``,
+  file on disk, size > 0), the editor runs a single ``ffmpeg`` subprocess
+  to remux the source into a controlled output path. The output is
+  validated (file exists, size > 0, sha256 computed) and returned as a
+  real ``ArtifactRef`` with ``extra.real_editor_output=True``,
+  ``extra.editor_mode="ffmpeg_remux"``.
+- If ffmpeg is not on PATH and a real upstream exists, the stage raises
+  ``StageRejection("editor_ffmpeg_missing")`` — no phantom MP4 is
+  registered. Cleanup of any partial output happens before we raise.
+- If the upstream is metadata-only (the Phase 9B placeholder face stub
+  or a Phase 7B no-op lipsync), the editor emits a clearly-labelled
+  *metadata-only* reel_draft placeholder: ``placeholder://`` URI, no
+  ``.mp4``, no ``local_path``, no ``checksum``,
+  ``extra.real_editor_output=False``,
+  ``extra.editor_mode="metadata_only"``,
+  ``extra.reason="no_real_video_artifact"``.
+
+No moviepy / OpenCV / numpy. ffmpeg is invoked via ``subprocess`` with
+an arg list (no ``shell=True``), a timeout, and partial-output cleanup.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
 
 from common.enums import ArtifactType, StageName
 from common.exceptions import StageRejection
 from common.schemas import ArtifactRef, DagState, EditPlan, EditSegment, StageOutput
 
 
+_FFMPEG_TIMEOUT_SECONDS = 60
+_REEL_DRAFT_SIZE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB belt-and-braces
+
+
 def _stub_uri(job_id: str, filename: str) -> str:
     return f"s3://aivideo-jobs/{job_id}/{filename}"
+
+
+def _placeholder_reel_draft_uri(job_id: str) -> str:
+    return f"placeholder://editor/{job_id}/no-real-video-artifact"
+
+
+def _artifacts_video_dir(job_id: str) -> Path:
+    base_root = os.environ.get("ARTIFACTS_LOCAL_ROOT") or tempfile.gettempdir()
+    out_dir = Path(base_root) / "video" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
+
+
+def _sha256_of_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(64 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _has_real_upstream_video(talking_head: ArtifactRef | None) -> bool:
+    if talking_head is None:
+        return False
+    if not talking_head.local_path or not talking_head.checksum_sha256:
+        return False
+    if talking_head.mime_type and talking_head.mime_type != "video/mp4":
+        return False
+    p = Path(talking_head.local_path)
+    if not p.is_file():
+        return False
+    try:
+        return 0 < p.stat().st_size <= _REEL_DRAFT_SIZE_LIMIT_BYTES
+    except OSError:
+        return False
+
+
+def _safe_cleanup(p: Path) -> None:
+    try:
+        if p.is_file():
+            p.unlink()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _ffmpeg_remux(src: Path, dst: Path) -> None:
+    """Stream-copy remux of ``src`` to ``dst``. No re-encoding."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise StageRejection(
+            StageName.editor.value,
+            (
+                "editor_ffmpeg_missing: real reel_draft composition requires "
+                "ffmpeg on PATH; install ffmpeg or fall back to the "
+                "metadata-only editor mode by clearing the upstream "
+                "talking_head local_path."
+            ),
+        )
+    cmd = [ffmpeg, "-y", "-i", str(src), "-c", "copy", str(dst)]
+    try:
+        proc = subprocess.run(  # noqa: S603 — arg list, no shell
+            cmd,
+            capture_output=True,
+            timeout=_FFMPEG_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        _safe_cleanup(dst)
+        raise StageRejection(
+            StageName.editor.value,
+            f"editor_ffmpeg_timeout: ffmpeg exceeded {_FFMPEG_TIMEOUT_SECONDS}s",
+        ) from exc
+    if proc.returncode != 0:
+        _safe_cleanup(dst)
+        tail = proc.stderr.decode("utf-8", errors="replace")[-500:]
+        raise StageRejection(
+            StageName.editor.value,
+            f"editor_ffmpeg_failed: returncode={proc.returncode}; stderr_tail={tail!r}",
+        )
+    if not dst.is_file() or dst.stat().st_size == 0:
+        _safe_cleanup(dst)
+        raise StageRejection(
+            StageName.editor.value,
+            "editor_ffmpeg_failed: ffmpeg returned 0 but output is missing/empty",
+        )
+
+
+def _build_real_reel_draft(
+    *,
+    job_id: str,
+    talking_head: ArtifactRef,
+    edit_plan_uri: str,
+    edit_plan_checksum: str,
+) -> ArtifactRef:
+    src = Path(talking_head.local_path or "")
+    out_dir = _artifacts_video_dir(job_id)
+    out_path = out_dir / f"reel_draft_{uuid.uuid4().hex}.mp4"
+    _ffmpeg_remux(src, out_path)
+    size_bytes = out_path.stat().st_size
+    checksum = _sha256_of_file(out_path)
+    return ArtifactRef(
+        artifact_type=ArtifactType.video.value,
+        uri=out_path.as_uri(),
+        local_path=str(out_path),
+        mime_type="video/mp4",
+        checksum_sha256=checksum,
+        size_bytes=size_bytes,
+        duration_seconds=talking_head.duration_seconds,
+        width=talking_head.width,
+        height=talking_head.height,
+        extra={
+            "phase": "phase9d_real_editor_remux",
+            "real_editor_output": True,
+            "editor_mode": "ffmpeg_remux",
+            "input_video_uri": talking_head.uri,
+            "input_video_checksum": talking_head.checksum_sha256,
+            "input_video_local_path": talking_head.local_path,
+            "edit_plan_uri": edit_plan_uri,
+            "edit_plan_checksum": edit_plan_checksum,
+            "watermark_burned_in": False,
+        },
+    )
+
+
+def _build_metadata_only_reel_draft(
+    *,
+    job_id: str,
+    edit_plan_uri: str,
+    edit_plan_checksum: str,
+    reason: str,
+    upstream_uri: str | None,
+) -> ArtifactRef:
+    return ArtifactRef(
+        artifact_type=ArtifactType.video.value,
+        uri=_placeholder_reel_draft_uri(job_id),
+        extra={
+            "phase": "phase9d_metadata_only",
+            "real_editor_output": False,
+            "editor_mode": "metadata_only",
+            "reason": reason,
+            "is_placeholder": True,
+            "edit_plan_uri": edit_plan_uri,
+            "edit_plan_checksum": edit_plan_checksum,
+            "upstream_talking_head_uri": upstream_uri,
+            "watermark_burned_in": False,
+        },
+    )
 
 
 def _allocate_timings_ms(target_seconds: float) -> tuple[int, int, int]:
@@ -203,27 +376,41 @@ async def run(state: DagState) -> StageOutput:
         },
     )
 
-    # Existing reel_draft stub — kept so the downstream QC stage's
-    # "upstream editor missing reel_draft" check stays satisfied. Real
-    # compositing lands in a later phase.
-    reel_draft_ref = ArtifactRef(
-        artifact_type=ArtifactType.video.value,
-        uri=_stub_uri(str(state.job_id), "reel_draft.mp4"),
-        extra={
-            "width": 1080,
-            "height": 1920,
-            "watermark_burned_in": False,
-            "edit_plan_uri": edit_plan_ref.uri,
-            "edit_plan_checksum": plan_sha,
-            "phase": "phase3h_stub",
-        },
-    )
+    # Phase 9D: branch on whether the upstream lipsync stage handed us a
+    # real ``talking_head`` MP4 (local_path + checksum + on-disk file).
+    # Yes → ffmpeg remux to a controlled output and emit a real
+    # reel_draft. No → emit a clearly-labelled metadata-only placeholder
+    # so the downstream QC stage still has the ``reel_draft`` key it
+    # needs but cannot mistake it for a real video.
+    talking_head_ref = talking_head_output.artifacts["talking_head"]
+    real_video_upstream = _has_real_upstream_video(talking_head_ref)
+    if real_video_upstream:
+        reel_draft_ref = _build_real_reel_draft(
+            job_id=str(state.job_id),
+            talking_head=talking_head_ref,
+            edit_plan_uri=edit_plan_ref.uri,
+            edit_plan_checksum=plan_sha,
+        )
+        notes = (
+            "editor produced deterministic edit_plan and ffmpeg-remuxed a "
+            "real reel_draft from the upstream lipsync MP4"
+        )
+    else:
+        reel_draft_ref = _build_metadata_only_reel_draft(
+            job_id=str(state.job_id),
+            edit_plan_uri=edit_plan_ref.uri,
+            edit_plan_checksum=plan_sha,
+            reason="no_real_video_artifact",
+            upstream_uri=talking_head_ref.uri if talking_head_ref else None,
+        )
+        notes = (
+            "editor produced deterministic edit_plan; upstream lipsync is "
+            "metadata-only so reel_draft is a metadata-only placeholder "
+            "(no real video file emitted)"
+        )
 
     return StageOutput(
         noop=False,
-        notes=(
-            "editor produced deterministic edit_plan from scriptwriter output; "
-            "reel_draft remains a stub (no real compositing in Phase 3H)."
-        ),
+        notes=notes,
         artifacts={"edit_plan": edit_plan_ref, "reel_draft": reel_draft_ref},
     )

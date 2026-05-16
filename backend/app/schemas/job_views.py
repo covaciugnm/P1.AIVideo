@@ -44,6 +44,10 @@ class JobSummary(BaseModel):
     # publisher's final_export artifact lands.
     qc_passed: bool | None = None
     final_export_available: bool = False
+    # Phase 8F-1 — per-job provider selection, surfaced on the list
+    # endpoint so the dashboard can render the chosen providers without
+    # a second round-trip per row. Nullable / optional for pre-4F jobs.
+    provider_selection: dict[str, Any] | None = None
 
 
 class StageProgress(BaseModel):
@@ -202,6 +206,9 @@ class JobDetail(BaseModel):
     image_ref: dict[str, Any] | None = None
     provider_selection: dict[str, Any] | None = None
     rejection_reason: str | None = None
+    # Phase 8D — operational recovery metadata. Optional so older
+    # clients keep working.
+    recovery_metadata: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 

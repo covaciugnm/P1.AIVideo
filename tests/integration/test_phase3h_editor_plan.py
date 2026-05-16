@@ -237,6 +237,10 @@ async def test_editor_emits_edit_plan_artifact_with_correct_timing():
 
 
 async def test_editor_preserves_reel_draft_stub_for_qc():
+    """Phase 9D: when the upstream lipsync output has no real MP4 on disk
+    (the Phase 2/3 stub or any metadata-only path), the editor emits a
+    metadata-only placeholder reel_draft — not a fake ``.mp4``. The
+    downstream QC stage's ``reel_draft must exist`` check still passes."""
     from agents.editor.handler import run as editor_run
 
     job_id = uuid.uuid4()
@@ -245,9 +249,16 @@ async def test_editor_preserves_reel_draft_stub_for_qc():
 
     assert "reel_draft" in output.artifacts
     reel = output.artifacts["reel_draft"]
-    assert reel.uri.startswith("s3://")
-    assert reel.uri.endswith("reel_draft.mp4")
-    # The reel_draft cross-references the edit_plan.
+    # No phantom .mp4 — Phase 9D uses a placeholder URI when upstream
+    # video is metadata-only.
+    assert not reel.uri.endswith(".mp4")
+    assert reel.uri.startswith("placeholder://")
+    assert reel.local_path is None
+    assert reel.checksum_sha256 is None
+    assert reel.extra["real_editor_output"] is False
+    assert reel.extra["editor_mode"] == "metadata_only"
+    assert reel.extra["reason"] == "no_real_video_artifact"
+    # The reel_draft still cross-references the edit_plan.
     assert reel.extra.get("edit_plan_checksum")
     assert reel.extra.get("edit_plan_uri")
 

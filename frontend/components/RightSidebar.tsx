@@ -10,6 +10,7 @@ import {
 } from "@/lib/settings";
 
 import { LogsPanel } from "./LogsPanel";
+import { ProviderTestPanel } from "./ProviderTestPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { SidebarTabs } from "./SidebarTabs";
 import styles from "./RightSidebar.module.css";
@@ -74,6 +75,14 @@ export function RightSidebar() {
           >
             <span className={styles.railLabel}>Settings</span>
           </button>
+          <button
+            type="button"
+            className={`${styles.railTab} ${state.activeTab === "test1" ? styles.railTabActive : ""}`}
+            onClick={() => update({ collapsed: false, activeTab: "test1" })}
+            title="Test1 — provider diagnostics"
+          >
+            <span className={styles.railLabel}>Test1</span>
+          </button>
         </div>
       ) : (
         <>
@@ -84,6 +93,7 @@ export function RightSidebar() {
           <div className={styles.body}>
             {hydrated && state.activeTab === "logs" && <LogsPanel />}
             {hydrated && state.activeTab === "settings" && <SettingsPanel />}
+            {hydrated && state.activeTab === "test1" && <ProviderTestPanel />}
           </div>
         </>
       )}

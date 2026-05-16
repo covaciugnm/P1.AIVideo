@@ -368,9 +368,14 @@ async def test_dag_promotes_final_export_artifact(app_under_test):
     assert manifest["status"] == "published"
     assert manifest["job_id"] == str(job_id)
     # Back-references resolve.
-    assert manifest["source_reel_draft_uri"].endswith("reel_draft.mp4")
+    # Phase 9D: when upstream lipsync is metadata-only (Phase 2/3 stub)
+    # the editor emits a placeholder reel_draft and the publisher
+    # mirrors that with a placeholder export URI — no fake ``.mp4``.
+    assert manifest["source_reel_draft_uri"].startswith("placeholder://")
+    assert not manifest["source_reel_draft_uri"].endswith(".mp4")
     assert manifest["qc_report_uri"].endswith("qc_report.json")
-    assert manifest["export_uri"].endswith("reel_final.mp4")
+    assert manifest["export_uri"].startswith("placeholder://")
+    assert not manifest["export_uri"].endswith(".mp4")
 
 
 # ---------------------------------------------------------------------------

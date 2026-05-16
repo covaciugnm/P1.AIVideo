@@ -111,8 +111,21 @@ async def run(state: DagState) -> StageOutput:
         )
     reel_draft_ref = editor_output.artifacts["reel_draft"]
 
-    # Compose the would-be export URI (still a stub in Phase 3J).
-    export_uri = _stub_uri(str(state.job_id), "reel_final.mp4")
+    # Phase 9D: the publisher still doesn't encode a real final MP4 in
+    # Phase 3J semantics (real C2PA + final export lands in a later
+    # phase). When the upstream reel_draft is itself a metadata-only
+    # placeholder, surface that downstream by keeping the export_uri
+    # honest (no fake ``reel_final.mp4`` claim).
+    upstream_extra = (
+        reel_draft_ref.extra if isinstance(reel_draft_ref.extra, dict) else {}
+    )
+    upstream_is_placeholder = upstream_extra.get("real_editor_output") is False
+    if upstream_is_placeholder:
+        export_uri = (
+            f"placeholder://publisher/{state.job_id}/no-real-final-export"
+        )
+    else:
+        export_uri = _stub_uri(str(state.job_id), "reel_final.mp4")
 
     manifest = _build_final_export(
         state=state,
@@ -151,7 +164,16 @@ async def run(state: DagState) -> StageOutput:
         artifact_type=ArtifactType.video.value,
         uri=export_uri,
         extra={
-            "phase": "phase3j_stub",
+            "phase": (
+                "phase9d_placeholder_no_real_final"
+                if upstream_is_placeholder
+                else "phase3j_stub"
+            ),
+            "real_final_export": False,
+            "is_placeholder": upstream_is_placeholder,
+            "upstream_reel_draft_real_editor_output": (
+                upstream_extra.get("real_editor_output")
+            ),
             "final_export_uri": final_export_ref.uri,
             "final_export_checksum": manifest_sha,
         },

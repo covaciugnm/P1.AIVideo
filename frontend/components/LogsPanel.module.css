@@ -44,6 +44,27 @@
   background: var(--border);
 }
 
+.exportBtn {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--mono-stack);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.exportBtn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.exportBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .list {
   list-style: none;
   margin: 0;

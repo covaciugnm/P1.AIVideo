@@ -271,6 +271,18 @@ adapter remains a categorised readiness surface.
   (Phase 7E).
 - C2PA signing of generated MP4s (later phase).
 
+## 6b. Phase 8A: video artifact preview + download
+
+The Job Detail page renders a Video preview card whenever a job has
+any artifact with ``artifact_type=video``. The browser fetches bytes
+from ``/api/v1/artifacts/{id}/content`` (now in the serve allow-list).
+A Download button hits the same endpoint with ``?download=true`` —
+the Content-Disposition becomes ``attachment; filename="artifact-<short-id>.mp4"``
+and the raw on-disk path is never echoed in headers.
+
+If your browser cannot decode the file, the ``<video>`` fallback
+``<p>`` points users at the same Download URL.
+
 ## 7. Frontend behavior
 
 The Settings panel + per-job form already let operators select

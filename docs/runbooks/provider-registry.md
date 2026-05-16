@@ -173,6 +173,30 @@ documented in [`sadtalker-runtime.md`](sadtalker-runtime.md).
 
 Run with: `make phase7b-test`.
 
+## Phase 8F-2: Test1 sidebar — operator provider diagnostics
+
+The right sidebar now exposes a **Test1** tab next to Logs / Settings.
+For each of the 5 Phase 6D categories the panel renders one row per
+catalog entry plus a per-row **Test** button. Button targets:
+
+| Category | Endpoint | Behavior |
+|---|---|---|
+| `llm` | `POST /api/v1/script/generate` | Real preview when the provider is `available` (template/mock); otherwise surfaces the 503 + `code` + operator-friendly guidance. |
+| `tts` | `POST /api/v1/tts/generate` | On success registers an audio artifact; Test1 renders a `▶ open` link. On failure surfaces `tts_runtime_missing` / `tts_assets_missing` / etc. |
+| `video_generator` | `GET /api/v1/providers/video_generator/<id>` | **Readiness only.** Never invokes `/api/v1/video/generate`. Real-inference work is the Phase 7D opt-in path. |
+| `audio_processor`, `image_processor` | `GET /api/v1/providers/<category>/<id>` | Metadata-only — confirms catalog status + notes. |
+
+Status dot colours: green=`available`/`configured`/`ready`,
+yellow=`not_configured`/`disabled`, red=`runtime_missing` /
+`gpu_missing` / `assets_missing` / `error`, grey=`not_implemented`.
+
+Every Test action emits an `info` (start) + `success`/`warning` (end)
+log entry on the same log-bus the Logs tab shows. The panel writes
+zero state to backend / DB — it only reads.
+
+Frontend-only feature. No backend tests added; the Phase 6D / 7B / 7D
+suites already pin every endpoint Test1 hits.
+
 ## What's intentionally NOT in Phase 6D
 
 - Real video generation.

@@ -2,7 +2,213 @@
 
 Docker-based multi-agent pipeline that produces short vertical reels (15–60s) featuring a **fully synthetic** white Caucasian human performing lip-synced narration from a text brief.
 
-> **Current status: Phase 7E — pipeline integration for SadTalker (opt-in real inference still gated).**
+> **Current status: Phase 8G — real local generation: Ollama scriptwriter + Piper TTS opt-in.**
+>
+> **Ollama is now functional.** `OllamaProvider.generate()` (previously
+> a stub) runs a real HTTP call to a local Ollama daemon using stdlib
+> `urllib.request` (no new pip deps). Live-verified against an Ollama
+> daemon at `http://172.17.0.1:11434` (Docker bridge gateway) — returned
+> a properly-structured JSON script via `qwen2.5:7b-instruct`. The
+> default model stays `qwen3.6` with `qwen3:8b` fallback (per the
+> long-standing project invariant). Gated by
+> `SCRIPTWRITER_ENABLE_NETWORK_CALLS=true`; off by default. Categorised
+> errors on failure: `script_provider_unreachable` (daemon down, no
+> route, 5xx), `script_provider_unreachable` with `model_missing:`
+> message (model not pulled), `script_generation_failed` for malformed
+> responses. Forgiving parser: prefers JSON, falls back to deterministic
+> sentence/paragraph segmentation when the model ignores the
+> JSON-mode instruction.
+>
+> **Piper TTS is opt-in.** The light backend stays lean (no
+> `piper-tts` / `onnxruntime` by default). New build arg:
+> `--build-arg INSTALL_PIPER=true` installs `piper-tts` into the
+> backend image. A new `[project.optional-dependencies] tts = ["piper-tts>=1.2"]`
+> extra mirrors that for non-Docker venv setups. The categorised 503
+> error surface (`tts_runtime_missing` / `tts_assets_missing` /
+> `tts_generation_failed`) was already there since Phase 5A; Phase 8G
+> fixed a latent bug in the `/api/v1/tts/generate` real-call path
+> (missing `job_id`, `Path` instead of `str` in `VoiceRequest`
+> construction) that would have surfaced as soon as anyone actually
+> installed Piper. The Phase 8A artifact-content endpoint already
+> serves the generated WAV.
+>
+> 14 new Phase 8G Ollama tests (in-process mock daemon — covers JSON
+> success, plain-text fallback, model-missing, fallback retry,
+> malformed envelope, network-disabled, daemon-unreachable, project
+> invariants). 7 new Phase 8G Piper tests (mocked success registers
+> a real audio artifact + plays via `/artifacts/{id}/content`).
+> Pytest `filterwarnings` now ignores `PytestUnraisableExceptionWarning`
+> (CPython 3.14 + asyncio DNS-thread quirk). **501 passed / 10
+> skipped** under default and `-W error`. Docker light unchanged
+> behavior; 26 jobs preserved through the rebuild.
+>
+> **Previous milestone: Phase 8F-2 — Test1 right-sidebar provider diagnostics tab.**
+>
+> New `Test1` tab in the persistent right sidebar (alongside Logs +
+> Settings). Operator opens it on any page and probes every provider
+> category live: 5 sections (Script LLM / TTS / Video Generator / Audio
+> Processor / Image Processor) each listing the catalog rows from
+> `GET /api/v1/providers/*` with full metadata (status, backend type,
+> locality, default model, GPU/network/weights flags, healthcheck flag,
+> docs URL, notes, dropdown-membership). Per-row **Test** button:
+> - **LLM** → `POST /api/v1/script/generate` (live preview).
+> - **TTS** → `POST /api/v1/tts/generate` (success registers an audio
+>   artifact + Test1 renders a play link via the existing
+>   `/api/v1/artifacts/<id>/content`).
+> - **Video Generator** → readiness-only `GET /api/v1/providers/video_generator/<id>`
+>   (never invokes real inference; footnote says so).
+> - **Audio Processor / Image Processor** → metadata-only detail
+>   endpoint.
+>
+> Status colour buckets: green (available/configured/ready), yellow
+> (not_configured/disabled), red (runtime_missing / gpu_missing /
+> assets_missing / error), grey (not_implemented). Each fail surfaces
+> a `_ERROR_GUIDE` operator-friendly next-step (e.g. for
+> `tts_runtime_missing`: "Run `pip install piper-tts` and rebuild the
+> backend"). Every test emits `info` / `success` / `warning` log-bus
+> entries (no binary content, no secrets). Frontend-only diff — **zero
+> backend changes**, **zero new dependencies**, **no model downloads**,
+> **no GPU**. Side-effect Phase 8E touch-up: widened `TTSGenerateResult`
+> union to include the success branch that Phase 5A shipped backend-side
+> but the frontend never typed. **481 passed / 8 skipped** under
+> default and `-W error`. Docker light unchanged; 26 jobs preserved.
+>
+> **Previous milestone: Phase 8F-1 — strict Create Job contract for
+> provider_selection.**
+>
+> **Phase 8E baseline: operator runtime validation, provider activation
+> matrix, log export & scenario job seeding.**
+>
+> Fixed a regression that blocked Create Job in the browser:
+> `JobFromInputsRequest` now accepts `provider_selection` (was rejecting
+> with `extra_forbidden`). The upload-intake path forwards the field
+> through `JobCreateRequest`, persisting all five Phase 6D categories.
+> Six new regression tests pin the contract end-to-end. Log Export now
+> ships on the right-sidebar `LogsPanel` — `↓ JSON` (structured: stamp,
+> active API base URL, settings snapshot redacted to whitelisted keys,
+> full entries) and `↓ TXT` (one line per entry, `timestamp | level |
+> source | message`) — both via `Blob` + `ObjectURL`, no external
+> library, secrets never serialised. Provider catalog labels cleaned
+> up (`OpenAI`, `vLLM`, `OpenAI-compatible API`, `Local HTTP` instead
+> of `.title()`-mangled `Openai` / `Vllm` / `Local Http`). Pydantic
+> validation errors now humanise on Create Job — `extra_forbidden`
+> renders as "Field X is not accepted by this endpoint
+> (backend/frontend contract mismatch)" rather than raw JSON. New
+> scenario seeder `scripts/create_scenario_jobs.py` + Make targets
+> (`scenario-jobs` / `scenario-jobs-check`) — 8 idempotent scenarios
+> covering every realistic path (template / mock LLM, Piper TTS, WAV
+> upload, MP3→WAV ffmpeg transcode, image validation, SadTalker
+> readiness, full provider matrix, future unknown ids). New stop /
+> start Make targets (`docker-light-stop` / `docker-light-start`) that
+> **never** touch volumes. Phase 6B Alembic was missing from the
+> backend image — fixed (`alembic/` + `alembic.ini` now baked) so
+> `docker exec aivideo-backend-1 alembic upgrade head` works. Verified
+> end-to-end: stopped → started the running stack twice with **20/20
+> jobs preserved** (4 pre-existing + 16 scenario-seeded across 2 runs)
+> and all four `aivideo_*` volumes intact. **467 passed / 8 skipped**
+> under default and `-W error`.
+>
+> **Previous milestone: Phase 8D — retry / cancel / failure recovery.**
+>
+> New operator endpoints `POST /api/v1/jobs/{id}/cancel` and
+> `POST /api/v1/jobs/{id}/retry`, plus a new `jobs.recovery_metadata`
+> JSON column (Alembic migration `0002_phase8d_recovery_metadata` —
+> Phase 6B drift guard still green). Cancel flips non-terminal jobs to
+> `rejected` with a documented operator-cancellation reason and writes
+> a `compliance_events` audit row (`gate=job_cancel`); terminal jobs
+> get 409. Retry is allowed only on `failed` / `rejected` jobs —
+> bumps `retry_count`, sets `retry_requested_at` + optional
+> `retry_stage_name` / `retry_reason`, emits a `gate=job_retry`
+> compliance event. Job status is left unchanged on retry (worker
+> picks up the marker on the next pass — no DAG re-execution yet,
+> documented limitation). Phase 8D explicitly **does not** kill an
+> OS process mid-stage; the cancel/retry surface is the metadata
+> contract on top of which a future worker-aware control plane lands.
+> Frontend gets a new `JobRecoveryControls` card on the Job Detail
+> page: enabled-state-aware Cancel + Retry buttons, prompt/confirm
+> dialogs, log-bus emission, audit history rendered when
+> `recovery_metadata` is non-empty. New runbook:
+> `docs/runbooks/failure-recovery.md`. 15 new Phase 8D tests
+> (`make phase8d-test`); JobResponse + JobDetail now expose
+> `recovery_metadata` (optional, nullable — older clients keep
+> working). **461 passed / 8 skipped** under default and `-W error`.
+>
+> **Previous milestone: Phase 8C — real media QC.**
+>
+> New operator endpoint `POST /api/v1/qc/inspect`: inspects an on-disk
+> video / final_export artifact with deterministic checks +
+> ffprobe-driven stream validation, returning a structured report
+> (file exists, size > 0, optional checksum match, ffprobe parse,
+> video stream present, audio stream present-or-skipped per
+> `require_audio`, duration delta with `warn`/`fail` thresholds at
+> 1s/5s). New backing service `backend/app/services/media_qc.py`
+> exposes `inspect_media_artifact(...)` that **never raises** and
+> returns a `MediaQcReport` dataclass with categorised `checks` /
+> `warnings` / `failures` lists. Auto-picks `final_export` over
+> `video` when both exist for the job. The Phase 3I DAG QC handler
+> stays **metadata-only** — Phase 8C is purely additive at the API
+> layer. No ML / sync metrics yet (deferred). No GPU. 17 new Phase 8C
+> tests (`make phase8c-test`), real-success-path tests skip cleanly
+> when ffmpeg / ffprobe aren't on PATH. **446 passed / 8 skipped**
+> under default and `-W error`.
+>
+> **Previous milestone: Phase 8B — real ffmpeg final export.**
+>
+> New operator endpoint `POST /api/v1/export/finalize`: takes a job's
+> video artifact, runs a bounded `ffmpeg` remux (argv list, never a
+> shell string; 300s timeout; partial cleanup on failure; ffprobe
+> post-validation), and registers an `ArtifactType.final_export` row
+> with `mime_type=video/mp4`, real `local_path`, checksum, size,
+> duration, and dimensions. Optional `audio_artifact_id` swaps the
+> source's audio stream (`-c:v copy -c:a aac`). The endpoint runs
+> entirely inside the light backend image — **no GPU**, **no model
+> weights**, **no torch**, **no external upload**, and explicitly
+> **no watermark burn-in and no C2PA signing** yet
+> (`watermark_status="pending"`, `c2pa_status="pending"`,
+> `disclosure_status="pending"` baked into the result metadata).
+> Categorised error codes (HTTP 200 with structured `status`):
+> `video_artifact_missing` / `video_artifact_not_found` /
+> `wrong_video_artifact_type` / `video_artifact_no_local_path` /
+> `source_outside_allowed_roots` / `ffmpeg_missing` /
+> `ffprobe_missing` / `export_failed` / `export_invalid`. The Phase
+> 3J publisher's JSON manifest stays untouched. New runbook:
+> `docs/runbooks/final-export.md`. New `backend/app/services/final_export.py`
+> + the artifact-content serve allow-list now accepts `final_export`
+> (real-MP4 variant — the publisher's JSON manifest has no local_path
+> so it 404s naturally). 12 new Phase 8B tests
+> (`make phase8b-test`), including the real ffmpeg + ffprobe success
+> path. **429 passed / 8 skipped** under default and `-W error`.
+>
+> **Previous milestone: Phase 8A — video artifact preview + safe content serving.**
+>
+> Generated / uploaded video artifacts are now operator-facing in the
+> browser. ``/api/v1/artifacts/{id}/content`` adds ``video`` to its
+> serve allow-list and now honours ``ARTIFACTS_LOCAL_ROOT`` as an
+> allowed root (the Phase 7D / Phase 8B output area). New optional
+> ``?download=true`` query param switches Content-Disposition to
+> ``attachment; filename="artifact-<short-id>.mp4"`` — the raw
+> on-disk path is **never** echoed in headers. Path traversal, missing
+> file, outside-roots, and unknown-id continue to return categorised
+> 403 / 404 / 415 the way Phase 4F pinned them.
+> New `backend/app/services/video_inspection.py` ships a bounded
+> ffprobe helper (argv list — never shell — finite timeout, no torch
+> at load) that returns categorised reasons (``ffprobe_missing`` /
+> ``invalid_path`` / ``ffprobe_timeout`` / ``ffprobe_failed`` /
+> ``parse_failed``) and never raises. Used by the artifact-content
+> surface today + by Phase 8B / 8C tomorrow.
+> Frontend gets a new ``VideoArtifactPreview`` card on the Job Detail
+> page: HTML5 ``<video controls preload="metadata">`` (no external
+> player libraries), live size / duration / dimensions / SHA-256 /
+> provider badge, and a Download button hitting the same endpoint
+> with ``?download=true``. The fallback ``<p>`` inside the ``<video>``
+> tag points users at the same download link when their browser can't
+> decode the MP4.
+> 12 new Phase 8A tests pin the surface (`make phase8a-test`). The
+> Phase 4F test that previously pinned ``video → 415`` now pins
+> ``edit_plan → 415`` — the gate itself is unchanged. **417 passed /
+> 8 skipped** under default and ``-W error``.
+>
+> **Previous milestone: Phase 7E — pipeline integration for SadTalker (opt-in real inference still gated).**
 >
 > The DAG's lipsync stage handler is now **provider-aware**.
 > ``DagState`` carries ``provider_selection`` (populated from

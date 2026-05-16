@@ -42,6 +42,10 @@ RUN pip install --no-cache-dir -e ./common
 COPY backend/pyproject.toml ./backend/pyproject.toml
 COPY backend/README.md ./backend/README.md
 COPY backend/app/ ./backend/app/
+# Phase 6B Alembic — ship the migration tree + alembic.ini so the
+# operator can run ``alembic upgrade head`` inside the container.
+COPY backend/alembic.ini ./backend/alembic.ini
+COPY backend/alembic/ ./backend/alembic/
 # Editable install: ``aivideo-backend``'s pyproject only enumerates the top
 # level ``app`` package, which is fine for editable mode (subpackages
 # resolve from the source tree on sys.path) but would lose the subpackages
@@ -61,6 +65,23 @@ RUN pip install --no-cache-dir -e ./backend
 # Dockerfile remains the home for those installs).
 COPY agents/ ./agents/
 RUN pip install --no-cache-dir -e ./agents
+
+# Phase 8G — opt-in Piper TTS install via build arg. Default OFF keeps
+# the light backend image lean (~no onnxruntime). Operators who want
+# the Piper real-synthesis path enable it with:
+#   --build-arg INSTALL_PIPER=true
+# It installs ``piper-tts`` (which pulls ``onnxruntime``). The Python
+# import path (``agents.voice.providers.piper.provider``) already
+# detects the runtime via ``importlib.util.find_spec``, so no code
+# change is needed once the wheel is on PATH.
+ARG INSTALL_PIPER=false
+RUN if [ "$INSTALL_PIPER" = "true" ]; then \
+        echo ">> Installing piper-tts (Phase 8G opt-in)"; \
+        pip install --no-cache-dir 'piper-tts>=1.2'; \
+        python -c "import importlib.util as u; assert u.find_spec('piper'), 'piper module missing after install'"; \
+    else \
+        echo ">> Skipping piper-tts install (build with --build-arg INSTALL_PIPER=true to enable)"; \
+    fi
 
 # Storage roots for upload + artifact directories used at runtime. These will
 # typically be mounted as named volumes (see compose.dev.yml).

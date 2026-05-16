@@ -85,12 +85,16 @@ def test_alembic_current_on_fresh_db_is_empty(tmp_path):
 
 
 def test_alembic_upgrade_head_then_current_reports_head(tmp_path):
+    """Phase 8D bumped the head from 0001_initial → 0002_phase8d_recovery
+    (the recovery_metadata column). The invariant we still pin is that
+    ``alembic upgrade head`` succeeds and ``alembic current`` reports
+    *some* revision tagged ``(head)`` — not the specific revision id
+    (that drifts on every additive migration)."""
     db_url = _sqlite_url(tmp_path)
     up = _run_alembic(["upgrade", "head"], db_url)
     assert up.returncode == 0, up.stderr
     cur = _run_alembic(["current"], db_url)
     assert cur.returncode == 0, cur.stderr
-    assert "0001_initial" in cur.stdout
     assert "(head)" in cur.stdout
 
 

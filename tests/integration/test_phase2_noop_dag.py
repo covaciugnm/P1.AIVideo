@@ -417,11 +417,16 @@ async def test_redis_consumer_path_runs_full_dag(app_under_test):
     assert pre_auth.started_at < lipsync_run.started_at
 
     # --- 7. Metadata-only invariant: every artifact value carries a uri, no bytes.
+    # Phase 9B/9D widened the allowed schemes: ``placeholder://`` URIs
+    # explicitly mark metadata-only stage outputs (face/editor when no
+    # real media is configured) — they carry no .png/.mp4 extension and
+    # no local_path, so the DAG runner can't promote them to the
+    # artifacts table.
     for run in runs:
         for _key, artifact in (run.artifacts or {}).items():
             assert isinstance(artifact, dict)
             assert isinstance(artifact.get("uri"), str)
-            assert artifact["uri"].startswith("s3://")
+            assert artifact["uri"].startswith(("s3://", "placeholder://"))
 
 
 async def test_redis_consumer_path_rejects_banned_brief(app_under_test):
@@ -493,6 +498,8 @@ async def test_queue_and_stage_runs_are_metadata_only(app_under_test):
 
     # Inspect every stage_runs row: artifact values must be reference dicts
     # (containing a uri string), never binary.
+    # Phase 9B/9D widened allowed URI schemes — see the sibling assertion
+    # in test_queue_and_stage_runs_are_metadata_only for context.
     sm = get_sessionmaker()
     async with sm() as session:
         result = await session.execute(select(StageRun).where(StageRun.job_id == job_id))
@@ -500,4 +507,4 @@ async def test_queue_and_stage_runs_are_metadata_only(app_under_test):
             for _key, artifact in (row.artifacts or {}).items():
                 assert isinstance(artifact, dict)
                 assert isinstance(artifact.get("uri"), str)
-                assert artifact["uri"].startswith("s3://")
+                assert artifact["uri"].startswith(("s3://", "placeholder://"))

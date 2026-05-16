@@ -85,6 +85,11 @@ class ScriptGenerateError(BaseModel):
         "script_provider_unreachable",
         "script_provider_not_implemented",
         "script_generation_failed",
+        # Phase 8G-2 — distinct code for "daemon reachable but selected
+        # model not pulled" (Ollama 404 / model_missing path). Lets the
+        # frontend show a model-specific operator hint instead of the
+        # generic "provider unreachable" message.
+        "script_model_missing",
     ]
     message: str
     provider_id: str
@@ -182,11 +187,26 @@ async def script_generate(
     try:
         result = await provider.generate(req)
     except ProviderNotImplementedError as exc:
-        _raise_503(
-            "script_provider_unreachable" if enable_network else "script_provider_disabled",
-            provider_id,
-            str(exc),
-        )
+        # Phase 8G + 8G-2 — the Ollama provider raises
+        # ProviderNotImplementedError with a categorised prefix when the
+        # daemon / model is in a known bad state. Route to the matching
+        # ``script_*`` code so the operator sees an actionable hint.
+        msg = str(exc)
+        if msg.startswith("model_missing:"):
+            # Phase 8G-2 — distinct from unreachable. The daemon
+            # answered, just doesn't have the requested model pulled.
+            code = "script_model_missing"
+        elif msg.startswith("unreachable:"):
+            code = "script_provider_unreachable"
+        elif msg.startswith("malformed_response:"):
+            code = "script_generation_failed"
+        else:
+            code = (
+                "script_provider_unreachable"
+                if enable_network
+                else "script_provider_disabled"
+            )
+        _raise_503(code, provider_id, msg)
     except Exception as exc:
         _raise_503(
             "script_generation_failed",

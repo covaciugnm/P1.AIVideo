@@ -10,11 +10,26 @@ interface QcReportCardProps {
 
 export function QcReportCard({ report }: QcReportCardProps) {
   const r = report.qc_report;
+  // Phase 9D — distinguish a metadata-only reel_draft (placeholder URI)
+  // from a real one so the operator can tell at a glance whether the
+  // QC checks ran against real media or only against the structural
+  // metadata graph.
+  const reelDraftIsPlaceholder = r.reel_draft_artifact_uri.startsWith(
+    "placeholder://",
+  );
   return (
     <div className={styles.wrapper}>
       <div className={styles.header}>
         <h3>QC Report</h3>
         <StatusBadge status={r.passed ? "pass" : "fail"} />
+        <StatusBadge
+          status={reelDraftIsPlaceholder ? "metadata-only" : "real-media"}
+          title={
+            reelDraftIsPlaceholder
+              ? "QC inspected metadata only — no real video bytes were checked"
+              : "QC inspected real reel_draft bytes"
+          }
+        />
       </div>
       <dl className="kv">
         <dt>Target duration</dt>

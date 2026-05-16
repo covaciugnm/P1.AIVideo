@@ -7,10 +7,10 @@ COMPOSE_DEV  := docker compose -f docker/compose.dev.yml
 COMPOSE_GPU  := docker compose -f docker/compose.dev.yml -f docker/compose.gpu.yml
 
 .PHONY: help up up-gpu down logs ps test test-unit test-integration lint fmt \
-        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test phase7a-test phase7b-test phase7c-test phase7d-test phase7e-test \
+        check-env models-check phase1-test phase2-test phase3a-test phase3b-test phase3c-test phase3d-test phase3e-test phase3f-test phase3g-test phase3h-test phase3i-test phase3j-test phase4a-test phase4a2-test phase4b-test phase4d-test phase4e-test phase4f-test phase4f2-test phase4f3-test phase5a-test phase5b-test phase5c-test phase6a-test phase6b-test phase6c-test phase6d-test phase7a-test phase7b-test phase7c-test phase7d-test phase7e-test phase8a-test phase8b-test phase8c-test phase8d-test phase8e-test phase8f1-test phase8g-test phase8g2-test \
         db-migrate db-upgrade db-downgrade db-current db-history runtime-readiness-check \
         frontend-install frontend-lint frontend-build frontend-check \
-        docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check \
+        docker-config-check docker-light-build docker-light-up docker-light-down docker-light-logs docker-light-smoke docker-light-check docker-light-stop docker-light-start scenario-jobs scenario-jobs-check \
         docker-gpu-config-check docker-gpu-smoke docker-gpu-build docker-gpu-down
 
 help: ## Show this help
@@ -145,6 +145,49 @@ phase7d-test: ## Phase 7D — SadTalker real-inference gate + artifact registrat
 
 phase7e-test: ## Phase 7E — lipsync DAG stage integration (provider_selection routing, categorised StageRejection, monkey-patched real-inference hook)
 	pytest -v tests/integration/test_phase7e_pipeline_integration.py
+
+phase8a-test: ## Phase 8A — video artifact preview + safe content serving + bounded ffprobe helper
+	pytest -v tests/integration/test_phase8a_video_artifact_preview.py
+
+phase8b-test: ## Phase 8B — real ffmpeg final-export service + /api/v1/export/finalize (real success path needs ffmpeg + ffprobe on PATH)
+	pytest -v tests/integration/test_phase8b_final_export.py
+
+phase8c-test: ## Phase 8C — real media QC + /api/v1/qc/inspect (real success path needs ffmpeg + ffprobe on PATH)
+	pytest -v tests/integration/test_phase8c_real_media_qc.py
+
+phase8d-test: ## Phase 8D — job cancel + retry + recovery_metadata
+	pytest -v tests/integration/test_phase8d_job_recovery.py
+
+phase8e-test: ## Phase 8E — /jobs/from-inputs accepts provider_selection (regression: extra_forbidden bug)
+	pytest -v tests/integration/test_phase8e_provider_selection_from_inputs.py
+
+phase8f1-test: ## Phase 8F-1 — strict Create Job contract for provider_selection (all 4 routes + nested extra_forbidden + summary expose)
+	pytest -v tests/integration/test_phase8f1_create_job_provider_selection.py
+
+phase8g-test: ## Phase 8G — real Ollama generation + Piper opt-in (mocked + opt-in real smokes auto-skip)
+	pytest -v tests/integration/test_phase8g_ollama_generation.py tests/integration/test_phase8g_piper_generation.py
+
+phase8g2-test: ## Phase 8G-2 — DAG voice → real Piper + script_model_missing distinct code
+	pytest -v tests/integration/test_phase8g2_voice_stage_piper.py tests/integration/test_phase8g2_script_model_missing.py
+
+docker-light-stop: ## Phase 8E — stop containers WITHOUT removing volumes. Data safe.
+	@$(COMPOSE_DEV) stop backend orchestrator frontend postgres redis 2>&1 | tail -10
+
+docker-light-start: ## Phase 8E — start the light stack on alt ports (preserves existing volumes).
+	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
+	@POSTGRES_PORT=$${POSTGRES_PORT:-5433} \
+		BACKEND_PORT=$${BACKEND_PORT:-8001} \
+		FRONTEND_PORT=$${FRONTEND_PORT:-3001} \
+		NEXT_PUBLIC_API_BASE_URL=$${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8001} \
+		$(COMPOSE_DEV) up -d postgres redis backend orchestrator frontend
+
+scenario-jobs: ## Phase 8E — seed 8 scenario jobs against a running backend. Honours BACKEND_BASE_URL (default http://localhost:8001).
+	@BACKEND_BASE_URL=$${BACKEND_BASE_URL:-http://localhost:8001} \
+		python3 scripts/create_scenario_jobs.py
+
+scenario-jobs-check: ## Phase 8E — sanity-check that scenario jobs exist in the running backend's job list.
+	@curl -fsS $${BACKEND_BASE_URL:-http://localhost:8001}/api/v1/jobs \
+		| python3 -c "import json,sys;jobs=json.load(sys.stdin);scn=[j for j in jobs if isinstance(j.get('brief'),str) and j['brief'].startswith('Scenario ')];print(f'scenario jobs visible: {len(scn)}');[print(f'  - {j[\"brief\"][:80]}') for j in scn[:20]]"
 
 docker-gpu-config-check: ## Validate compose.dev + compose.gpu overlay (no services started)
 	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)

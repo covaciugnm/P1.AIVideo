@@ -31,6 +31,24 @@ from app.schemas.providers import ProviderInfo
 # ---------------------------------------------------------------------------
 
 
+# Phase 8E — proper-noun label overrides so the operator UI shows
+# "OpenAI" / "vLLM" / "HTTP" instead of `.title()`-mangled spellings.
+_LLM_LABEL_OVERRIDES: dict[str, str] = {
+    "openai": "OpenAI",
+    "openai_compatible": "OpenAI-compatible API",
+    "anthropic": "Anthropic",
+    "ollama": "Ollama",
+    "vllm": "vLLM",
+    "local_http": "Local HTTP",
+}
+
+
+def _proper_label(name: str) -> str:
+    if name in _LLM_LABEL_OVERRIDES:
+        return _LLM_LABEL_OVERRIDES[name]
+    return name.replace("_", " ").title()
+
+
 def _build_llm_providers() -> list[ProviderInfo]:
     try:
         from agents.scriptwriter.core.registry import known_backends
@@ -152,7 +170,7 @@ def _build_llm_providers() -> list[ProviderInfo]:
 
         _add(
             name,
-            name.replace("_", " ").title(),
+            _proper_label(name),
             backend_type=name,
             default_model=model or None,
             status=status,

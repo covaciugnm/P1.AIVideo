@@ -1,9 +1,46 @@
-# Piper TTS runtime (Phase 6C)
+# Piper TTS runtime (Phase 6C → Phase 8G opt-in install)
 
 Phase 5A wired `/api/v1/tts/generate` to a real Piper synthesis path
-gated by runtime + asset checks. This runbook covers what an operator
-needs to **enable** that path. Nothing here installs or downloads
-anything automatically — Piper is opt-in.
+gated by runtime + asset checks. **Phase 8G added a clean opt-in
+install path** so operators can enable Piper at backend-build time
+without forking the Dockerfile or installing into the host venv. This
+runbook covers what an operator needs to **enable** that path. Nothing
+here installs or downloads anything automatically — Piper is opt-in.
+
+## Phase 8G — opt-in install via Docker build arg
+
+```bash
+INSTALL_PIPER=true \
+  POSTGRES_PORT=5433 BACKEND_PORT=8001 FRONTEND_PORT=3001 \
+  NEXT_PUBLIC_API_BASE_URL=http://localhost:8001 \
+  docker compose -f docker/compose.dev.yml build backend
+```
+
+What this does:
+
+- Adds one `RUN pip install piper-tts>=1.2` step gated by the build
+  arg. Default is `false` so the light backend stays lean.
+- Pulls in `piper-tts` + its `onnxruntime` wheel (~50 MB).
+- The provider code path (`agents.voice.providers.piper.provider`) is
+  unchanged — it has always detected runtime presence via
+  `importlib.util.find_spec("piper")` and gates on assets via
+  `PIPER_MODELS_ROOT`.
+
+Operators using a non-Docker venv install can do the same via the new
+`tts` extra:
+
+```bash
+pip install -e ./backend[tts]
+```
+
+## Phase 8G fix — VoiceRequest schema
+
+A latent bug in `/api/v1/tts/generate` constructed `VoiceRequest`
+without the required `job_id` and passed a `Path` where a `str` was
+expected. That path had never been live-exercised because Piper
+isn't installed by default. Phase 8G fixed it; the new success-path
+test pins the contract by registering a real audio artifact through
+the API.
 
 ## Boundaries
 

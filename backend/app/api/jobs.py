@@ -181,6 +181,10 @@ async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
         artifact_count=artifact_count,
         qc_passed=qc_passed,
         final_export_available=final_export_available,
+        # Phase 8F-1 — expose provider_selection on the list row so
+        # dashboards can show the chosen providers without an extra
+        # per-row round-trip.
+        provider_selection=job.provider_selection,
     )
 
 
@@ -378,6 +382,155 @@ async def delete_job(
     deleted = await job_service.delete_job(session, job_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="job not found")
+
+
+# ---------------------------------------------------------------------------
+# POST /jobs/{id}/cancel + /jobs/{id}/retry  (Phase 8D)
+#
+# Metadata-only operational controls. Cancel marks a non-terminal job
+# as rejected with an operator-cancellation reason; retry records an
+# operator-requested retry on a terminal job. Neither endpoint kills an
+# already-running OS process — that's a future phase. Both endpoints
+# update ``jobs.recovery_metadata`` (Phase 8D JSON column) and emit a
+# compliance event so the audit trail captures the decision.
+# ---------------------------------------------------------------------------
+
+
+from pydantic import BaseModel, ConfigDict, Field  # noqa: E402 — kept local
+
+
+_TERMINAL_STATUSES = frozenset(
+    {JobStatus.published, JobStatus.rejected, JobStatus.failed}
+)
+
+
+class JobCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str | None = Field(default=None, max_length=500)
+
+
+class JobRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage_name: str | None = Field(default=None, max_length=80)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+async def _record_recovery_compliance_event(
+    session: AsyncSession,
+    *,
+    job_id: uuid.UUID,
+    gate: str,
+    decision: str,
+    reasons: list[str],
+    extra: dict[str, Any],
+) -> None:
+    """Phase 8D — write a compliance event for cancel / retry so the
+    audit trail picks up operator actions the same way it captures
+    policy / identity-guard decisions."""
+    from common.enums import ComplianceDecisionType
+
+    event = ComplianceEvent(
+        job_id=job_id,
+        gate=gate,
+        decision=ComplianceDecisionType(decision),
+        reasons=reasons,
+        extra=extra,
+    )
+    session.add(event)
+    await session.commit()
+
+
+@router.post("/{job_id}/cancel", response_model=JobResponse)
+async def cancel_job(
+    job_id: uuid.UUID,
+    payload: JobCancelRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> JobResponse:
+    job = await _load_job_or_404(session, job_id)
+    if job.status in _TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job is already terminal (status={job.status.value!r}); "
+                "cancel is a no-op"
+            ),
+        )
+
+    cancelled_at = datetime.now().isoformat(timespec="seconds")
+    reason = payload.reason or "cancelled by operator"
+    recovery = dict(job.recovery_metadata or {})
+    recovery["cancelled_at"] = cancelled_at
+    recovery["cancellation_reason"] = reason
+    job.recovery_metadata = recovery
+
+    job.status = JobStatus.rejected
+    job.rejection_reason = f"cancelled by operator: {reason}"
+    job.updated_at = datetime.now()
+    await session.commit()
+    await session.refresh(job)
+
+    await _record_recovery_compliance_event(
+        session,
+        job_id=job.id,
+        gate="job_cancel",
+        decision="reject",
+        reasons=[reason],
+        extra={"cancelled_at": cancelled_at},
+    )
+    return JobResponse.model_validate(job)
+
+
+@router.post("/{job_id}/retry", response_model=JobResponse)
+async def retry_job(
+    job_id: uuid.UUID,
+    payload: JobRetryRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> JobResponse:
+    """Mark a failed/rejected job as retry-requested.
+
+    Phase 8D records the operator intent in ``recovery_metadata`` and
+    bumps a retry counter — actually re-running the DAG is a future
+    worker concern (Phase 8E+). History is preserved: prior stage_run
+    rows stay intact.
+    """
+    job = await _load_job_or_404(session, job_id)
+    if job.status not in (JobStatus.failed, JobStatus.rejected):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"job is in state {job.status.value!r}; retry is only "
+                "allowed for failed or rejected jobs"
+            ),
+        )
+
+    requested_at = datetime.now().isoformat(timespec="seconds")
+    recovery = dict(job.recovery_metadata or {})
+    recovery["retry_requested_at"] = requested_at
+    recovery["retry_count"] = int(recovery.get("retry_count", 0)) + 1
+    if payload.stage_name:
+        recovery["retry_stage_name"] = payload.stage_name
+    if payload.reason:
+        recovery["retry_reason"] = payload.reason
+    job.recovery_metadata = recovery
+    job.updated_at = datetime.now()
+    await session.commit()
+    await session.refresh(job)
+
+    await _record_recovery_compliance_event(
+        session,
+        job_id=job.id,
+        gate="job_retry",
+        decision="accept",
+        reasons=[payload.reason] if payload.reason else ["operator-requested retry"],
+        extra={
+            "retry_requested_at": requested_at,
+            "retry_count": recovery["retry_count"],
+            "retry_stage_name": payload.stage_name,
+        },
+    )
+    return JobResponse.model_validate(job)
 
 
 # ---------------------------------------------------------------------------
