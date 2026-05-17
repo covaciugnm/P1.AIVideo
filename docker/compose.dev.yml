@@ -210,6 +210,15 @@ services:
       ORCHESTRATOR_MODE: "${ORCHESTRATOR_MODE:-worker}"
       ORCHESTRATOR_POLL_INTERVAL_SECONDS: "${ORCHESTRATOR_POLL_INTERVAL_SECONDS:-5}"
       ORCHESTRATOR_BATCH_SIZE: "${ORCHESTRATOR_BATCH_SIZE:-8}"
+      # Phase 11C — opt-in real SadTalker inference. The orchestrator
+      # itself is torch-free; when SADTALKER_BASE_URL is set the
+      # lipsync stage proxies to the GPU wrapper (model-sadtalker)
+      # instead of attempting in-process torch. Both flags below must
+      # be on for the wrapper-proxy path to activate.
+      SADTALKER_ENABLE_REAL_INFERENCE: "${SADTALKER_ENABLE_REAL_INFERENCE:-false}"
+      RUN_REAL_SADTALKER: "${RUN_REAL_SADTALKER:-0}"
+      SADTALKER_BASE_URL: "${SADTALKER_BASE_URL:-}"
+      SADTALKER_MODELS_ROOT: "${SADTALKER_MODELS_ROOT:-/models/lipsync/sadtalker}"
     depends_on:
       postgres:
         condition: service_healthy

@@ -312,6 +312,11 @@ class SadTalkerProvider(LipSyncProvider):
         both call this — same vocabulary, single source of truth.
 
         Order of checks (deliberate):
+        0. Phase 11C: ``SADTALKER_BASE_URL`` set + real-inference
+           flags on → proxy ``/health`` on the GPU wrapper and map the
+           wrapper's runtime/asset/gpu probes to our status vocabulary.
+           This lets the orchestrator (torch-free image) report
+           ``ready`` when the heavy work lives in the wrapper.
         1. real-inference flags off → ``not_implemented`` (the most
            common state until Phase 7D enables real generation).
         2. assets missing             → ``assets_missing``
@@ -325,6 +330,22 @@ class SadTalkerProvider(LipSyncProvider):
         whether real-inference is gated on, not whether the host happens
         to be lucky.
         """
+        # Phase 11C — wrapper-proxy path. If the operator has set
+        # ``SADTALKER_BASE_URL``, the heavy SadTalker work happens in
+        # the model-sadtalker container; our local torch / CUDA / weight
+        # probes don't reflect the true readiness. Consult the wrapper's
+        # ``/health`` instead so a torch-free orchestrator can still
+        # report ``ready``. The HTTP client lives in a sibling module
+        # to keep this file free of ``urllib.request`` (Phase 7B
+        # anti-auto-download policy).
+        base_url = os.environ.get("SADTALKER_BASE_URL", "").strip()
+        if base_url and _real_inference_enabled():
+            from .wrapper import wrapper_status
+
+            remote_status = wrapper_status(base_url)
+            if remote_status is not None:
+                return remote_status
+
         assets = self.inspect_assets()
         runtime = self.inspect_runtime()
         gpu = self.inspect_gpu() if runtime.get("torch_available") else {
@@ -434,6 +455,26 @@ class SadTalkerProvider(LipSyncProvider):
                 "message": f"input audio not found: {aud}",
                 "details": status_info["details"],
             }
+
+        # Phase 11C — wrapper-proxy path. If SADTALKER_BASE_URL is
+        # set, the readiness story belongs to the model-sadtalker
+        # service: forward the request over HTTP instead of attempting
+        # an in-process torch import (which never works in a torch-free
+        # orchestrator container). The HTTP client lives in a sibling
+        # module to keep this file free of ``urllib.request``.
+        base_url = os.environ.get("SADTALKER_BASE_URL", "").strip()
+        if base_url:
+            from .wrapper import generate_via_wrapper
+
+            return generate_via_wrapper(
+                base_url=base_url,
+                image_path=img,
+                audio_path=aud,
+                output_dir=Path(output_dir),
+                target_duration_seconds=target_duration_seconds,
+                model_id=model_id,
+                details=status_info["details"],
+            )
 
         # All seven gates satisfied. Delegate to the heavy path. This
         # is the **only** place in P1.AIVideo where real SadTalker
