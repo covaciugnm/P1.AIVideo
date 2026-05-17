@@ -116,6 +116,11 @@ _PRE_COMPLIANCE_FIELDS = frozenset(
         "subtitle_format",
         "subtitle_burn_in",
         "transcript_language",
+        # Phase 11E — face image replacement on the recovery path.
+        # The PATCH handler resolves ``image_artifact_id`` to an
+        # existing image artifact and rewrites ``job.image_ref`` in
+        # place.
+        "image_artifact_id",
     }
 )
 
@@ -197,6 +202,57 @@ async def update_job(
                     f"editable in this state: {', '.join(violators)}"
                 ),
             )
+
+    # Phase 11E — ``image_artifact_id`` is a logical patch field that
+    # rewrites ``job.image_ref`` in place after looking up the image
+    # artifact. We resolve it BEFORE the generic setattr loop and
+    # remove it from the field dict so the loop doesn't try to assign
+    # a ``image_artifact_id`` column on the Job model (it doesn't
+    # exist; the column is ``image_ref`` JSON).
+    if "image_artifact_id" in fields:
+        new_image_artifact_id = fields.pop("image_artifact_id")
+        from app.models.artifact import Artifact
+
+        result = await session.execute(
+            select(Artifact).where(Artifact.id == new_image_artifact_id)
+        )
+        image_art = result.scalar_one_or_none()
+        if image_art is None:
+            raise JobEditError(
+                status_code=404,
+                detail=(
+                    f"image_artifact_id {new_image_artifact_id} not "
+                    "found; upload the image first via "
+                    "POST /api/v1/uploads/image"
+                ),
+            )
+        if image_art.artifact_type != "image":
+            raise JobEditError(
+                status_code=422,
+                detail=(
+                    f"artifact {new_image_artifact_id} is type "
+                    f"{image_art.artifact_type!r}, expected 'image'"
+                ),
+            )
+        # Build the operator's ImageRef from the artifact metadata.
+        # Format matches what JobCreateRequest.image_ref persists, so
+        # the DAG's face stage path doesn't need a separate code path.
+        new_image_ref: dict = {
+            "type": "local_path",
+            "path": image_art.local_path,
+            "mime_type": image_art.mime_type or "image/png",
+            "checksum": image_art.checksum_sha256,
+            "consent_confirmed": True,
+            "synthetic_person_confirmed": True,
+        }
+        # Preserve the original consent flags if the job already had
+        # an image_ref — replacing the image doesn't re-attest consent
+        # (the operator already confirmed at job-create time).
+        if isinstance(job.image_ref, dict):
+            for k in ("consent_confirmed", "synthetic_person_confirmed"):
+                if k in job.image_ref:
+                    new_image_ref[k] = job.image_ref[k]
+        job.image_ref = new_image_ref
 
     # Apply the patch.
     for key, value in fields.items():

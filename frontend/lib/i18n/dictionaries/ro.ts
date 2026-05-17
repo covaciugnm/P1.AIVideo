@@ -475,6 +475,12 @@ export const DICTIONARY_RO: Dictionary = {
       "Rădăcina de modele a furnizorului video nu este setată.",
     video_provider_not_implemented:
       "Furnizorul video este un placeholder (ex. MuseTalk / Wav2Lip în acest build).",
+    video_face_landmark_missing:
+      "SadTalker nu a putut detecta reperele faciale în imaginea sursă. Încarcă un portret mai clar, frontal, cu o singură față vizibilă, lumină bună și fără ocluzii.",
+    video_face_image_too_small:
+      "Portretul furnizat este mai mic decât minimul de 256×256 cerut de SadTalker. Încarcă o imagine mai mare (recomandat ≥512px) cu o singură față frontală.",
+    video_generation_failed:
+      "SadTalker s-a închis cu un cod non-zero. Verifică panoul de diagnostic pentru detaliile complete.",
     provider_not_implemented:
       "Furnizorul este cablat dar calea grea este intenționat stub.",
     provider_not_configured:
@@ -671,6 +677,8 @@ export const DICTIONARY_RO: Dictionary = {
       "Salvează modificările înainte de reîncercare ca workerul să preia metadatele noi.",
     retryAfterEdit: "Reîncearcă după editare",
     changesSaved: "Modificările au fost salvate.",
+    currentImage: "Imaginea curentă",
+    replacementSelected: "Imagine de înlocuire selectată",
   },
   uploadsPage: {
     sectionText: "Text / scenariu",
@@ -878,5 +886,18 @@ export const DICTIONARY_RO: Dictionary = {
       "Wrapper-ul F5TTS-Ro a răspuns dar sinteza a eșuat. Verifică logurile wrapper-ului (`make docker-tts-ro-logs`).",
     provider_disabled:
       "Acest furnizor TTS este dezactivat. Activează-l prin env / Setări înainte de a reîncerca.",
+  },
+  videoRecovery: {
+    faceLandmarkMissingTitle: "Imaginea feței nu a putut fi folosită",
+    faceLandmarkMissingBody:
+      "SadTalker nu a putut detecta reperele faciale în imaginea sursă. Încarcă un portret mai clar, frontal, cu o singură față vizibilă, lumină bună și fără ocluzii — apoi reîncearcă jobul.",
+    faceImageTooSmallTitle: "Portretul este prea mic pentru SadTalker",
+    faceImageTooSmallBody:
+      "Portretul furnizat este mai mic decât minimul de 256×256 cerut de SadTalker. Încarcă o imagine mai mare (recomandat ≥512px) și reîncearcă.",
+    uploadClearPortrait: "Încarcă un portret frontal mai clar",
+    editAndReplaceImage: "Editează jobul pentru a înlocui imaginea feței",
+    retryAfterEdit: "Reîncearcă după editare",
+    portraitRequirements:
+      "Recomandat: imagine pătrată sau portret ≥512px, o singură față vizibilă, frontală, lumină bună, fără ochelari de soare sau ocluzii puternice. PNG / JPEG / WebP.",
   },
 };

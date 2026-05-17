@@ -1,8 +1,7 @@
-# F5TTS-Ro wrapper — minimal API layer.
-# Heavy deps (torch, f5-tts) are imported lazily inside the request handler;
-# the wrapper reports runtime_missing if they aren't installed. Operators can
-# rebuild this image with --build-arg INSTALL_F5TTS=true (future) or extend
-# the base layer to pin a specific torch/cuda build.
+# F5TTS-Ro wrapper API layer (always installed).
+# The heavy ML stack (torch, f5-tts) is appended in the Dockerfile when
+# the operator passes ``--build-arg INSTALL_F5TTS=true``. Phase 11F-CDOROB
+# defaults that arg to true.
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2

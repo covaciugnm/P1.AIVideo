@@ -190,15 +190,21 @@ def _make_wav() -> bytes:
 
 
 def _make_png() -> bytes:
+    """Phase 11E — bumped from 64×64 to 256×256 so the backend's
+    image-suitability precheck (Phase 11E) doesn't short-circuit these
+    tests with ``video_face_image_too_small``. The precheck refuses
+    anything below 256×256 because SadTalker's cropper cannot
+    reliably find landmarks on smaller portraits."""
     import struct
     import zlib
 
+    w, h = 256, 256
     sig = b"\x89PNG\r\n\x1a\n"
-    ihdr = b"IHDR" + struct.pack(">IIBBBBB", 64, 64, 8, 2, 0, 0, 0)
+    ihdr = b"IHDR" + struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
     ihdr_chunk = (
         struct.pack(">I", 13) + ihdr + struct.pack(">I", zlib.crc32(ihdr) & 0xFFFFFFFF)
     )
-    raw = b"".join(b"\x00" + b"\xFF\xFF\xFF" * 64 for _ in range(64))
+    raw = b"".join(b"\x00" + b"\xFF\xFF\xFF" * w for _ in range(h))
     idat = b"IDAT" + zlib.compress(raw)
     idat_chunk = (
         struct.pack(">I", len(idat) - 4)

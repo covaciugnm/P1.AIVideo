@@ -44,11 +44,23 @@ Audit performed 2026-05-16:
   licensed under the CC BY-NC 4.0 (Non-Commercial). Operators are
   responsible for license compliance.
 
+Re-audit performed 2026-05-17 (Phase 11F-CDOROB):
+
+- **`cdorob/f5-tts-romanian`** — a public Hugging Face model with a
+  **MIT license** (verified via `model_info().cardData['license']`).
+  Files: `model_last.pt` (5.4 GB), `vocab.txt` (~14 KB), `README.md`,
+  `.gitattributes`. README confirms it's an F5-TTS fine-tune trained
+  on Common Voice 17 RO (35k samples) + datadriven-company/TTS-Romanian
+  (50k samples), ~173 h total. Uses base model `F5TTS_v1_Base` with a
+  character-based tokenizer. **This is the model the project ships
+  with** as of Phase 11F-CDOROB.
+
 Integration decision: wrap upstream F5-TTS in a separate Docker service
-(`model-tts-ro`, profile `tts-ro`). The wrapper boots with `fastapi` +
-`uvicorn` only; torch + f5-tts are imported lazily inside the request
-handler so the container always serves `/health` honestly. The racai-ro
-adapter weights are loaded from a directory the operator mounts.
+(`model-tts-ro`, profile `tts-ro`). The Dockerfile defaults to
+`INSTALL_F5TTS=true` so the image actually generates Romanian audio out
+of the box; build with `--build-arg INSTALL_F5TTS=false` for a
+torch-free diagnostic-only image. The cdorob checkpoint is mounted
+read-only from `models/tts/f5tts-ro/model/`.
 
 ## Architecture
 

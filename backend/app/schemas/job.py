@@ -276,6 +276,14 @@ class JobUpdateRequest(BaseModel):
     watermark_required: bool | None = None
     c2pa_required: bool | None = None
     provider_selection: ProviderSelection | None = None
+    # Phase 11E — when SadTalker rejects a job with
+    # ``video_face_landmark_missing`` or ``video_face_image_too_small``,
+    # the operator-recovery flow needs to replace the portrait. We
+    # accept a UUID pointing at an existing ``image`` artifact rather
+    # than a full ImageRef so the UI only has to forward the upload's
+    # ``artifact_id``. The PATCH handler resolves the artifact and
+    # rewrites the persisted ``image_ref`` in place.
+    image_artifact_id: uuid.UUID | None = None
     # Phase 11A — language + subtitle patch surface. All optional.
     video_language: str | None = Field(default=None, max_length=8)
     subtitle_enabled: bool | None = None

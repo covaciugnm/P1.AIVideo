@@ -151,6 +151,10 @@ class SadTalkerGenerateResponse(BaseModel):
         "assets_missing",
         "gpu_unavailable",
         "generation_failed",
+        # Phase 11E: dedicated bucket for "image isn't usable" so the
+        # backend / DAG / UI can react with a specific recovery message
+        # instead of a generic "video_generation_failed".
+        "face_landmark_missing",
     ]
     error_code: str | None = None
     message: str | None = None
@@ -160,6 +164,73 @@ class SadTalkerGenerateResponse(BaseModel):
     height: int | None = None
     size_bytes: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# Phase 11E — patterns that mean "SadTalker couldn't find a face / crop
+# landmarks in the source portrait". Upstream raises a bare string from
+# ``src/utils/croper.py``, which Python then re-raises as
+# ``TypeError: exceptions must derive from BaseException``. We match
+# both signatures so future SadTalker versions that fix the bare-string
+# bug still classify correctly.
+_LANDMARK_FAILURE_PATTERNS = (
+    "can not detect the landmark from source image",
+    "cannot detect the landmark from source image",
+    "can not detect the landmark",
+    "cannot detect the landmark",
+    "no face detected",
+)
+
+
+def _classify_generation_failure(stdout_tail: str) -> tuple[str, str, str]:
+    """Phase 11E — turn the SadTalker subprocess tail into a categorised
+    (status, error_code, operator_message) triple.
+
+    The DAG / UI both key off ``error_code`` to pick the recovery
+    message. Anything that doesn't match a known signature stays in the
+    generic ``video_generation_failed`` bucket so we don't silently
+    mis-classify a new failure mode.
+    """
+    lowered = stdout_tail.lower()
+
+    # 1. Direct landmark / face-not-detected line from SadTalker's cropper.
+    for pat in _LANDMARK_FAILURE_PATTERNS:
+        if pat in lowered:
+            return (
+                "face_landmark_missing",
+                "video_face_landmark_missing",
+                (
+                    "SadTalker could not detect facial landmarks in the "
+                    "source image. Upload a clearer, front-facing portrait "
+                    "with one visible face, good lighting, and minimal "
+                    "occlusion."
+                ),
+            )
+
+    # 2. The "bare string raised in croper.py" path. SadTalker's
+    # ``croper.py:131`` does ``raise '...landmark...'`` which Python
+    # converts into ``TypeError: exceptions must derive from
+    # BaseException`` — so we also match the TypeError + croper/cropper
+    # combination as the same underlying problem.
+    typed_err = "typeerror: exceptions must derive from baseexception" in lowered
+    if typed_err and ("croper" in lowered or "cropper" in lowered or "preprocess" in lowered):
+        return (
+            "face_landmark_missing",
+            "video_face_landmark_missing",
+            (
+                "SadTalker could not detect facial landmarks in the "
+                "source image. Upload a clearer, front-facing portrait "
+                "with one visible face, good lighting, and minimal "
+                "occlusion."
+            ),
+        )
+
+    # 3. Catch-all — preserve the old generic bucket so existing
+    # consumers / dashboards aren't broken by a tighter classifier.
+    return (
+        "generation_failed",
+        "video_generation_failed",
+        "SadTalker exited with a non-zero status. See metadata.stdout_tail.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -348,18 +419,24 @@ def sadtalker_generate(payload: SadTalkerGenerateRequest) -> SadTalkerGenerateRe
 
     if completed.returncode != 0:
         shutil.rmtree(work_dir, ignore_errors=True)
+        # Phase 11E — pick the categorised error code BEFORE composing
+        # the message so the UI can branch on ``error_code`` and the
+        # operator sees a clean recovery instruction instead of a
+        # Python traceback as the primary line. The raw stdout_tail
+        # stays in metadata for the diagnostic-panel deep dive.
+        status, error_code, op_msg = _classify_generation_failure(stdout_tail)
         return _fail(
-            "generation_failed",
-            error_code="video_generation_failed",
-            message=(
-                f"SadTalker exited with code {completed.returncode}. "
-                f"Tail: {stdout_tail[-800:]}"
-            ),
+            status,
+            error_code=error_code,
+            message=op_msg,
             metadata={
                 **details,
                 "elapsed_seconds": elapsed,
                 "cmd": " ".join(shlex.quote(p) for p in cmd),
                 "stdout_tail": stdout_tail,
+                "exit_code": completed.returncode,
+                "raw_error_excerpt": stdout_tail[-600:],
+                "classification": error_code,
             },
         )
 

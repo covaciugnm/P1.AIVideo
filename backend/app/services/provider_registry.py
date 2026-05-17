@@ -299,9 +299,11 @@ def _build_tts_providers() -> list[ProviderInfo]:
             healthcheck_available=bool(f5_base),
             notes=f5_notes,
             warning=(
-                "Romanian voice cloning requires operator-supplied "
-                "reference audio + transcript — racai-ro publishes "
-                "samples only, not the adapter weights."
+                "Romanian TTS via cdorob/f5-tts-romanian (MIT). Operator "
+                "must mount the cdorob checkpoint at "
+                "models/tts/f5tts-ro/model/model_last.pt + vocab.txt, "
+                "plus a synthetic reference WAV + matching transcript at "
+                "models/tts/f5tts-ro/reference/."
             ),
             docs_url="/docs/runbooks/f5tts-ro-runtime.md",
         )
@@ -345,12 +347,12 @@ def _build_tts_providers() -> list[ProviderInfo]:
 # ---------------------------------------------------------------------------
 
 
-def _sadtalker_dynamic_notes() -> tuple[str, str]:
-    """Build a live notes string + docs_url for the SadTalker catalog row.
+def _sadtalker_dynamic_status() -> tuple[str, str, str]:
+    """Return ``(catalog_status, notes, docs_url)`` for the SadTalker row.
 
-    The catalog ``status`` stays ``not_implemented`` until Phase 7D wires
-    real inference, but the ``notes`` field describes the current
-    readiness state so operators can see what is (and isn't) in place.
+    Phase 7D wired the real torch.cuda call and Phase 11C added the
+    GPU-wrapper proxy, so the catalog row must reflect the live
+    ``inspect_status()`` rather than a hardcoded ``not_implemented``.
     Importing the provider here is cheap — it does not load torch.
     """
     try:
@@ -359,41 +361,59 @@ def _sadtalker_dynamic_notes() -> tuple[str, str]:
         status_info = SadTalkerProvider().inspect_status()
     except Exception as exc:  # pragma: no cover — defensive
         return (
-            "Phase 7B stub. Readiness probe failed: "
-            f"{type(exc).__name__}: {exc}.",
+            "not_implemented",
+            "Readiness probe failed: " f"{type(exc).__name__}: {exc}.",
             "/docs/runbooks/sadtalker-runtime.md",
         )
 
     status = status_info["status"]
     docs_url = "/docs/runbooks/sadtalker-runtime.md"
-    base = (
-        "Phase 7B hardened. Real inference gated behind "
-        "SADTALKER_ENABLE_REAL_INFERENCE=true + RUN_REAL_SADTALKER=1; "
-        "Phase 7D wires the actual torch.cuda call. "
-    )
+    if status == "ready":
+        wrapper = status_info.get("wrapper_url", "")
+        suffix = f" Wrapper: {wrapper}." if wrapper else ""
+        return (
+            "available",
+            "Real inference available (Phase 7D torch path + Phase 11C "
+            "wrapper proxy). Gates SADTALKER_ENABLE_REAL_INFERENCE=true + "
+            "RUN_REAL_SADTALKER=1 satisfied; weights present; CUDA "
+            "visible." + suffix,
+            docs_url,
+        )
     if status == "not_implemented":
-        return base + "Default state: real-inference gate off.", docs_url
+        return (
+            "not_implemented",
+            "Real-inference gate off — set "
+            "SADTALKER_ENABLE_REAL_INFERENCE=true + RUN_REAL_SADTALKER=1 "
+            "to enable real generation.",
+            docs_url,
+        )
     if status == "not_configured":
         return (
-            base + "SADTALKER_MODELS_ROOT is unset; set it in .env.",
+            "not_implemented",
+            "SADTALKER_MODELS_ROOT is unset; set it in .env.",
             docs_url,
         )
     if status == "assets_missing":
         missing = status_info.get("details", {}).get("assets", {}).get("missing", [])
         return (
-            base
-            + f"Weights missing under SADTALKER_MODELS_ROOT: {len(missing)} file(s).",
+            "not_implemented",
+            f"Weights missing under SADTALKER_MODELS_ROOT: {len(missing)} file(s).",
             docs_url,
         )
     if status == "runtime_missing":
-        return base + "torch is not importable in this image (light backend).", docs_url
+        return (
+            "not_implemented",
+            "torch is not importable in this image and "
+            "SADTALKER_BASE_URL is not pointing at a reachable wrapper.",
+            docs_url,
+        )
     if status == "gpu_unavailable":
-        return base + "torch present but no CUDA device visible.", docs_url
-    # status == "ready"
-    return (
-        base + "All gates satisfied; awaiting Phase 7D for the real call.",
-        docs_url,
-    )
+        return (
+            "not_implemented",
+            "torch present but no CUDA device visible.",
+            docs_url,
+        )
+    return (status, f"SadTalker provider reports status={status!r}.", docs_url)
 
 
 def _build_video_providers() -> list[ProviderInfo]:
@@ -408,8 +428,9 @@ def _build_video_providers() -> list[ProviderInfo]:
     out: list[ProviderInfo] = []
     for pid, label, backend_type, model, local, gpu, note in base:
         docs_url = ""
+        status = "not_implemented"
         if pid == "sadtalker":
-            note, docs_url = _sadtalker_dynamic_notes()
+            status, note, docs_url = _sadtalker_dynamic_status()
         out.append(
             ProviderInfo(
                 category="video_generator",
@@ -419,7 +440,7 @@ def _build_video_providers() -> list[ProviderInfo]:
                 default_model=model,
                 is_local=local,
                 local_or_external="local" if local else "external",
-                status="not_implemented",
+                status=status,
                 supported_models=[model] if model else [],
                 requires_network=not local,
                 requires_gpu=gpu,

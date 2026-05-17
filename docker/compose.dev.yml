@@ -144,11 +144,30 @@ services:
       # service. Default empty → the backend reports the provider as
       # ``not_implemented`` so the UI shows clean readiness state.
       F5TTS_RO_BASE_URL: "${F5TTS_RO_BASE_URL:-}"
+      # Phase 11G — Ollama scriptwriter (external LLM daemon). The
+      # backend reads these directly from the host env; the .env file
+      # also exports them for the host shell, but compose pins them on
+      # the backend service so a clean shell can still drive the
+      # provider catalog. ``host.docker.internal`` works via the
+      # extra_hosts mapping below; on Linux ``172.17.0.1`` (default
+      # bridge) also reaches a host-side Ollama daemon.
+      SCRIPTWRITER_BACKEND: "${SCRIPTWRITER_BACKEND:-template}"
+      SCRIPTWRITER_ENABLE_NETWORK_CALLS: "${SCRIPTWRITER_ENABLE_NETWORK_CALLS:-false}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.6}"
+      OLLAMA_FALLBACK_MODEL: "${OLLAMA_FALLBACK_MODEL:-qwen3:8b}"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    extra_hosts:
+      # Phase 11G — let the backend container reach a host-side Ollama
+      # daemon via ``host.docker.internal`` even on Linux (where Docker
+      # does not auto-map it). Operators with Ollama in a sibling
+      # container can override OLLAMA_BASE_URL to that container's
+      # service name instead.
+      - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -219,6 +238,23 @@ services:
       RUN_REAL_SADTALKER: "${RUN_REAL_SADTALKER:-0}"
       SADTALKER_BASE_URL: "${SADTALKER_BASE_URL:-}"
       SADTALKER_MODELS_ROOT: "${SADTALKER_MODELS_ROOT:-/models/lipsync/sadtalker}"
+      # Phase 11F-CDOROB — when set, the voice stage proxies
+      # provider=f5tts_ro to the model-tts-ro wrapper. Unset → DAG
+      # rejects the request with tts_provider_not_configured.
+      F5TTS_RO_BASE_URL: "${F5TTS_RO_BASE_URL:-}"
+      # Phase 11G — Ollama scriptwriter env mirrored on the orchestrator
+      # so the scriptwriter stage in the DAG can reach the same daemon
+      # the backend uses for /api/v1/script/generate previews.
+      SCRIPTWRITER_BACKEND: "${SCRIPTWRITER_BACKEND:-template}"
+      SCRIPTWRITER_ENABLE_NETWORK_CALLS: "${SCRIPTWRITER_ENABLE_NETWORK_CALLS:-false}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.6}"
+      OLLAMA_FALLBACK_MODEL: "${OLLAMA_FALLBACK_MODEL:-qwen3:8b}"
+    extra_hosts:
+      # Phase 11G — same Linux host-gateway shim as the backend so the
+      # orchestrator's scriptwriter stage can reach a host-side Ollama
+      # daemon via http://host.docker.internal:11434.
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -397,15 +433,24 @@ services:
     environment:
       F5TTS_RO_HOST: "0.0.0.0"
       F5TTS_RO_PORT: "8080"
-      F5TTS_RO_MODELS_ROOT: "/models/f5tts-ro"
-      F5TTS_RO_REFERENCE_AUDIO: "${F5TTS_RO_REFERENCE_AUDIO:-/models/f5tts-ro/reference/voice.wav}"
-      F5TTS_RO_REFERENCE_TEXT: "${F5TTS_RO_REFERENCE_TEXT:-Aceasta este o voce de referinta.}"
+      # Phase 11F-CDOROB — models root + explicit checkpoint/vocab paths
+      # for cdorob/f5-tts-romanian. Host layout:
+      #   models/tts/f5tts-ro/model/model_last.pt
+      #   models/tts/f5tts-ro/model/vocab.txt
+      #   models/tts/f5tts-ro/reference/voice.wav
+      #   models/tts/f5tts-ro/reference/reference.txt
+      F5TTS_RO_MODELS_ROOT: "/models/tts/f5tts-ro"
+      F5TTS_RO_CKPT_FILE: "${F5TTS_RO_CKPT_FILE:-/models/tts/f5tts-ro/model/model_last.pt}"
+      F5TTS_RO_VOCAB_FILE: "${F5TTS_RO_VOCAB_FILE:-/models/tts/f5tts-ro/model/vocab.txt}"
+      F5TTS_RO_MODEL_NAME: "${F5TTS_RO_MODEL_NAME:-F5TTS_v1_Base}"
+      F5TTS_RO_REFERENCE_AUDIO: "${F5TTS_RO_REFERENCE_AUDIO:-/models/tts/f5tts-ro/reference/voice.wav}"
+      F5TTS_RO_REFERENCE_TEXT_FILE: "${F5TTS_RO_REFERENCE_TEXT_FILE:-/models/tts/f5tts-ro/reference/reference.txt}"
       F5TTS_RO_DEVICE: "${F5TTS_RO_DEVICE:-cpu}"
       F5TTS_RO_ALLOW_AUTO_DOWNLOAD: "${F5TTS_RO_ALLOW_AUTO_DOWNLOAD:-false}"
     ports:
       - "${TTS_RO_PORT:-8061}:8080"
     volumes:
-      - ../models/tts/f5tts-ro:/models/f5tts-ro:ro
+      - ../models:/models:ro
       - inputs_data:/storage/inputs
       - artifacts_data:/storage/artifacts
     networks: [aivideo-net]

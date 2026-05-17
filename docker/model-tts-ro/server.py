@@ -46,7 +46,33 @@ app = FastAPI(title="F5TTS-Ro wrapper", version="0.1.0")
 
 
 def _models_root() -> Path:
-    return Path(os.environ.get("F5TTS_RO_MODELS_ROOT", "/models/f5tts-ro"))
+    return Path(os.environ.get("F5TTS_RO_MODELS_ROOT", "/models/tts/f5tts-ro"))
+
+
+def _ckpt_file() -> Path:
+    """Phase 11F-CDOROB — exact checkpoint cdorob/f5-tts-romanian ships."""
+    return Path(
+        os.environ.get(
+            "F5TTS_RO_CKPT_FILE",
+            str(_models_root() / "model" / "model_last.pt"),
+        )
+    )
+
+
+def _vocab_file() -> Path:
+    return Path(
+        os.environ.get(
+            "F5TTS_RO_VOCAB_FILE",
+            str(_models_root() / "model" / "vocab.txt"),
+        )
+    )
+
+
+def _model_name() -> str:
+    """The cdorob README pins ``F5TTS_v1_Base`` as the base model. The
+    env var lets a future operator override if a different upstream
+    base ships."""
+    return os.environ.get("F5TTS_RO_MODEL_NAME", "F5TTS_v1_Base")
 
 
 def _reference_audio_path() -> Path:
@@ -58,7 +84,28 @@ def _reference_audio_path() -> Path:
     )
 
 
+def _reference_text_path() -> Path:
+    return Path(
+        os.environ.get(
+            "F5TTS_RO_REFERENCE_TEXT_FILE",
+            str(_models_root() / "reference" / "reference.txt"),
+        )
+    )
+
+
 def _reference_text() -> str:
+    """Phase 11F-CDOROB — prefer the reference.txt file because F5-TTS
+    needs an exact transcript of the reference audio. Fall back to the
+    legacy ``F5TTS_RO_REFERENCE_TEXT`` env var only if the file is
+    absent / unreadable."""
+    p = _reference_text_path()
+    if p.is_file():
+        try:
+            text = p.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+        except OSError:
+            pass
     return os.environ.get(
         "F5TTS_RO_REFERENCE_TEXT", "Aceasta este o voce de referinta."
     )
@@ -79,18 +126,26 @@ def _check_runtime() -> dict[str, Any]:
 
 def _check_assets() -> dict[str, Any]:
     root = _models_root()
+    ckpt = _ckpt_file()
+    vocab = _vocab_file()
     ref = _reference_audio_path()
-    candidates: list[Path] = []
-    if root.is_dir():
-        for ext in ("*.pt", "*.safetensors", "*.bin", "*.ckpt"):
-            candidates.extend(root.rglob(ext))
+    ref_text_path = _reference_text_path()
+    ref_text_val = _reference_text()
     return {
         "models_root": str(root),
         "models_root_exists": root.is_dir(),
-        "weight_files_found": len(candidates),
+        "ckpt_file": str(ckpt),
+        "ckpt_file_exists": ckpt.is_file(),
+        "ckpt_size_bytes": ckpt.stat().st_size if ckpt.is_file() else None,
+        "vocab_file": str(vocab),
+        "vocab_file_exists": vocab.is_file(),
+        "vocab_size_bytes": vocab.stat().st_size if vocab.is_file() else None,
         "reference_audio": str(ref),
         "reference_audio_exists": ref.is_file(),
-        "reference_text_chars": len(_reference_text()),
+        "reference_text_file": str(ref_text_path),
+        "reference_text_file_exists": ref_text_path.is_file(),
+        "reference_text_chars": len(ref_text_val),
+        "model_name": _model_name(),
     }
 
 
@@ -99,9 +154,17 @@ def _readiness() -> tuple[str, dict[str, Any]]:
     assets = _check_assets()
     if not rt["torch_available"] or not rt["f5_tts_available"]:
         return "runtime_missing", {"runtime": rt, "assets": assets}
-    if not assets["models_root_exists"] or assets["weight_files_found"] == 0:
+    if not assets["models_root_exists"]:
+        return "assets_missing", {"runtime": rt, "assets": assets}
+    # Phase 11F-CDOROB — the cdorob repo ships ``model_last.pt`` +
+    # ``vocab.txt``. Both must be on disk.
+    if not assets["ckpt_file_exists"] or not assets["vocab_file_exists"]:
         return "assets_missing", {"runtime": rt, "assets": assets}
     if not assets["reference_audio_exists"]:
+        return "assets_missing", {"runtime": rt, "assets": assets}
+    if assets["reference_text_chars"] < 4:
+        # Empty / missing transcript is a hard block — F5-TTS needs the
+        # reference text to map landmarks onto the voice.
         return "assets_missing", {"runtime": rt, "assets": assets}
     return "ready", {"runtime": rt, "assets": assets}
 
@@ -270,14 +333,19 @@ def tts_generate(payload: TTSGenerateRequest) -> TTSGenerateResponse:
     device = os.environ.get("F5TTS_RO_DEVICE", "cpu")
 
     try:
-        # F5-TTS exposes an ``F5TTS`` class with an ``infer`` method that
-        # writes the synthesized WAV. The exact signature varies between
-        # versions; the wrapper passes positional + keyword args that
-        # work with v0.5+ and falls back to keyword-only for older API.
-        tts = f5_api.F5TTS(device=device)
+        # Phase 11F-CDOROB — instantiate F5TTS with cdorob's exact
+        # checkpoint + vocab. The cdorob README pins ``F5TTS_v1_Base``
+        # as the upstream base architecture so we pass the model name
+        # explicitly. ``infer`` writes the WAV at ``file_wave``.
+        tts = f5_api.F5TTS(
+            model=_model_name(),
+            ckpt_file=str(_ckpt_file()),
+            vocab_file=str(_vocab_file()),
+            device=device,
+        )
         result = tts.infer(  # type: ignore[no-any-return]
             gen_text=payload.text,
-            ref_audio=ref_audio,
+            ref_file=ref_audio,
             ref_text=ref_text,
             file_wave=str(out_path),
             remove_silence=True,
@@ -343,7 +411,10 @@ def tts_generate(payload: TTSGenerateRequest) -> TTSGenerateResponse:
         channels=ch,
         metadata={
             "device": device,
-            "voice_id": payload.voice_id or "racai-ro/Ro-F5TTS",
+            "voice_id": payload.voice_id or "cdorob/f5-tts-romanian",
+            "model_name": _model_name(),
+            "ckpt_file": str(_ckpt_file()),
+            "vocab_file": str(_vocab_file()),
             "reference_audio": ref_audio,
             "reference_text_chars": len(ref_text),
             "torch_version": getattr(torch, "__version__", "unknown"),

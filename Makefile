@@ -486,3 +486,38 @@ check-env: ## Verify .env exists
 models-check: ## Reminder; real check lands when providers ship in Phase 3
 	@echo "Phase 1 does not load any model weights. Phase 3 will add a real check"
 	@echo "via each provider's required_assets() under agents/lipsync/providers/*."
+
+# ---------------------------------------------------------------------------
+# Phase 11G — Ollama operator helpers.
+# Safe by default: nothing here pulls a model or starts the daemon.
+# ---------------------------------------------------------------------------
+
+OLLAMA_BASE_URL ?= http://localhost:11434
+
+.PHONY: ollama-status ollama-models ollama-smoke
+
+ollama-status: ## Check whether the Ollama daemon is reachable (no pull).
+	@echo "Probing $(OLLAMA_BASE_URL)/api/tags ..."
+	@curl -fsS --connect-timeout 3 "$(OLLAMA_BASE_URL)/api/tags" >/dev/null \
+		&& echo "OK: Ollama daemon reachable at $(OLLAMA_BASE_URL)" \
+		|| (echo "FAIL: Ollama daemon NOT reachable at $(OLLAMA_BASE_URL)"; \
+		    echo "  install / start Ollama and re-run; see docs/runbooks/ollama-scriptwriter.md"; \
+		    exit 1)
+
+ollama-models: ## List models pulled on the reachable Ollama daemon (no pull).
+	@curl -fsS --connect-timeout 3 "$(OLLAMA_BASE_URL)/api/tags" \
+		| python3 -c "import json,sys; d=json.load(sys.stdin); \
+			print('Models on '+'$(OLLAMA_BASE_URL)'+':'); \
+			[print(f'  {m[\"name\"]:<30} size={m.get(\"size\",0)//1024//1024} MB') for m in d.get('models',[])]" \
+		|| (echo "FAIL: could not read /api/tags from $(OLLAMA_BASE_URL)"; exit 1)
+
+ollama-smoke: ## Local smoke against the configured model; FAILS if model not pulled (operator must pull manually).
+	@MODEL=$${OLLAMA_MODEL:-qwen3.6}; \
+		echo "Smoke: $(OLLAMA_BASE_URL) model=$$MODEL"; \
+		curl -fsS --connect-timeout 3 --max-time 60 \
+			-H 'Content-Type: application/json' \
+			-d "$$(printf '{\"model\":\"%s\",\"prompt\":\"Salut, scrie un cuvant in romana\",\"stream\":false}' $$MODEL)" \
+			"$(OLLAMA_BASE_URL)/api/generate" \
+			| python3 -c "import json,sys; d=json.load(sys.stdin); \
+				print('OK: model responded — first 80 chars: '+(d.get('response','') or '')[:80])" \
+		|| (echo "FAIL: smoke against $$MODEL failed — confirm 'ollama pull $$MODEL' has run on $(OLLAMA_BASE_URL)"; exit 1)

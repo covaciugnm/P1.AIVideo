@@ -110,6 +110,13 @@ export interface JobUpdateBody {
   readonly subtitle_format?: "srt" | "vtt";
   readonly subtitle_burn_in?: boolean;
   readonly transcript_language?: string | null;
+  /**
+   * Phase 11E — image_artifact_id rewrites the persisted image_ref on
+   * a recoverable job (rejected / failed). The backend resolves the
+   * artifact and writes ImageRef in place; PATCH refuses the id on a
+   * published job.
+   */
+  readonly image_artifact_id?: string;
 }
 
 /**

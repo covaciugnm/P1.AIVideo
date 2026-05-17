@@ -156,7 +156,18 @@ export interface Dictionary {
     string
   >>;
   readonly errors: Readonly<Record<
-    | "script_provider_disabled" | "script_model_missing" | "script_provider_unreachable" | "script_generation_failed" | "tts_runtime_missing" | "tts_assets_missing" | "tts_generation_failed" | "tts_provider_not_configured" | "tts_provider_not_implemented" | "video_assets_missing" | "video_gpu_missing" | "video_runtime_missing" | "video_provider_not_configured" | "video_provider_not_implemented" | "provider_not_implemented" | "provider_not_configured" | "artifact_not_found" | "upload_failed" | "validation_error" | "unknown",
+    | "script_provider_disabled" | "script_model_missing" | "script_provider_unreachable" | "script_generation_failed" | "tts_runtime_missing" | "tts_assets_missing" | "tts_generation_failed" | "tts_provider_not_configured" | "tts_provider_not_implemented" | "video_assets_missing" | "video_gpu_missing" | "video_runtime_missing" | "video_provider_not_configured" | "video_provider_not_implemented" | "video_face_landmark_missing" | "video_face_image_too_small" | "video_generation_failed" | "provider_not_implemented" | "provider_not_configured" | "artifact_not_found" | "upload_failed" | "validation_error" | "unknown",
+    string
+  >>;
+  readonly videoRecovery: Readonly<Record<
+    | "faceLandmarkMissingTitle"
+    | "faceLandmarkMissingBody"
+    | "faceImageTooSmallTitle"
+    | "faceImageTooSmallBody"
+    | "uploadClearPortrait"
+    | "editAndReplaceImage"
+    | "retryAfterEdit"
+    | "portraitRequirements",
     string
   >>;
   readonly sidebar: Readonly<Record<
@@ -200,7 +211,7 @@ export interface Dictionary {
     string
   >>;
   readonly editJob: Readonly<Record<
-    | "title" | "failedToLoad" | "updateRejected" | "editable" | "noChanges" | "saving" | "saveChanges" | "savingDone" | "lockedAfterCompliance" | "lockedTerminal" | "backToJob" | "readOnly" | "terminalNote" | "complianceLockedNote" | "briefLabel" | "targetDurationLabel" | "scriptTextLabel" | "loadingJob" | "publishedLockedNote" | "cannotEditCurrent" | "cannotEditThisJob" | "someFieldsLocked" | "providerChangeableBeforeRetry" | "providerEditIntro" | "saveBeforeRetry" | "retryAfterEdit" | "changesSaved",
+    | "title" | "failedToLoad" | "updateRejected" | "editable" | "noChanges" | "saving" | "saveChanges" | "savingDone" | "lockedAfterCompliance" | "lockedTerminal" | "backToJob" | "readOnly" | "terminalNote" | "complianceLockedNote" | "briefLabel" | "targetDurationLabel" | "scriptTextLabel" | "loadingJob" | "publishedLockedNote" | "cannotEditCurrent" | "cannotEditThisJob" | "someFieldsLocked" | "providerChangeableBeforeRetry" | "providerEditIntro" | "saveBeforeRetry" | "retryAfterEdit" | "changesSaved" | "currentImage" | "replacementSelected",
     string
   >>;
   readonly uploadsPage: Readonly<Record<

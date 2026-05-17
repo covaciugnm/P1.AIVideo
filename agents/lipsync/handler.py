@@ -237,13 +237,19 @@ async def _attempt_lipsync_inference(
     if result.get("status") != "completed":
         # The provider already cleaned up partial files; we just
         # translate the categorised failure into a StageRejection.
+        #
+        # Phase 11E — format the reason as
+        # ``<error_code>: <operator_message>`` so the frontend can
+        # branch on the leading code (e.g. ``video_face_landmark_missing``)
+        # and render a localized recovery message. The raw subprocess
+        # tail lives in the provider's ``details`` metadata for the
+        # diagnostics panel; the operator-visible ``rejection_reason``
+        # stays short and human.
+        error_code = result.get("error_code") or "video_generation_failed"
+        op_msg = result.get("message") or "<no message>"
         raise StageRejection(
             StageName.lipsync.value,
-            (
-                f"sadtalker generation returned status={result.get('status')!r}, "
-                f"error_code={result.get('error_code')!r}: "
-                f"{result.get('message', '<no message>')}"
-            ),
+            f"{error_code}: {op_msg}",
         )
 
     output_path = Path(result["output_path"])

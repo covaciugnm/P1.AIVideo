@@ -476,6 +476,12 @@ export const DICTIONARY_EN: Dictionary = {
       "The video provider's models root is unset.",
     video_provider_not_implemented:
       "The video provider is a placeholder (e.g. MuseTalk / Wav2Lip in this build).",
+    video_face_landmark_missing:
+      "SadTalker could not detect facial landmarks in the source image. Upload a clearer, front-facing portrait with one visible face, good lighting, and minimal occlusion.",
+    video_face_image_too_small:
+      "The supplied portrait is smaller than the 256×256 minimum SadTalker needs. Upload a larger image (recommended ≥512px) with a single front-facing face.",
+    video_generation_failed:
+      "SadTalker exited with a non-zero status. Check the diagnostics panel for the full subprocess tail.",
     provider_not_implemented:
       "The provider is wired but the heavy path is deliberately stubbed.",
     provider_not_configured:
@@ -672,6 +678,8 @@ export const DICTIONARY_EN: Dictionary = {
       "Save your changes before retrying so the worker picks up the new metadata.",
     retryAfterEdit: "Retry after editing",
     changesSaved: "Changes saved.",
+    currentImage: "Current image",
+    replacementSelected: "Replacement image selected",
   },
   uploadsPage: {
     sectionText: "Text / script",
@@ -879,5 +887,18 @@ export const DICTIONARY_EN: Dictionary = {
       "F5TTS-Ro wrapper responded but synthesis failed. Check the wrapper logs (`make docker-tts-ro-logs`).",
     provider_disabled:
       "This TTS provider is disabled. Enable it via env / Settings before retrying.",
+  },
+  videoRecovery: {
+    faceLandmarkMissingTitle: "Face image could not be used",
+    faceLandmarkMissingBody:
+      "SadTalker could not detect facial landmarks in the source image. Upload a clearer, front-facing portrait with one visible face, good lighting, and minimal occlusion — then retry the job.",
+    faceImageTooSmallTitle: "Portrait too small for SadTalker",
+    faceImageTooSmallBody:
+      "The supplied portrait is smaller than the 256×256 minimum SadTalker needs. Upload a larger image (≥512px recommended) and retry.",
+    uploadClearPortrait: "Upload a clearer front-facing portrait",
+    editAndReplaceImage: "Edit job to replace the face image",
+    retryAfterEdit: "Retry after editing",
+    portraitRequirements:
+      "Recommended: square or portrait image ≥512px, one visible face, front-facing, good lighting, no sunglasses or strong occlusion. PNG / JPEG / WebP.",
   },
 };

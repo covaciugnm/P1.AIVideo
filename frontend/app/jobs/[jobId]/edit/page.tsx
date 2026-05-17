@@ -8,10 +8,12 @@ import { ErrorMessage } from "@/components/ErrorMessage";
 import { HelpHint } from "@/components/HelpHint";
 import { LoadingState } from "@/components/LoadingState";
 import { StatusBadge } from "@/components/StatusBadge";
+import { UploadCard } from "@/components/UploadCard";
 import { useT } from "@/lib/i18n/LanguageContext";
 import { localizeApiDetail } from "@/lib/i18n/formatters";
 import {
   ApiError,
+  artifactContentUrl,
   getJob,
   getProviders,
   retryJob,
@@ -108,6 +110,15 @@ export default function EditJobPage({
   const [subtitleLanguagesRaw, setSubtitleLanguagesRaw] = useState("");
   const [subtitleFormat, setSubtitleFormat] = useState<"srt" | "vtt">("srt");
   const [subtitleBurnIn, setSubtitleBurnIn] = useState(false);
+  // Phase 11E — operator-recovery: replace the portrait that
+  // SadTalker rejected. ``replacementImageId`` becomes the
+  // ``image_artifact_id`` field on the PATCH body when set.
+  const [replacementImageId, setReplacementImageId] = useState<string | null>(null);
+  const [replacementImageMeta, setReplacementImageMeta] = useState<{
+    readonly width: number | null;
+    readonly height: number | null;
+    readonly mime_type: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!announcedRef.current) {
@@ -199,6 +210,13 @@ export default function EditJobPage({
   const subtitleBurnInChanged =
     subtitleBurnIn !== Boolean(job.subtitle_burn_in);
 
+  // Phase 11E — image replacement is its own change axis. Operators
+  // can swap the portrait on a rejected job and PATCH it through.
+  const imageReplacementChanged = replacementImageId !== null;
+  const showImageReplacement =
+    job.face_mode === "provided_image" &&
+    (status === "pending_compliance" || RECOVERABLE.has(status));
+
   const hasChanges =
     briefChanged ||
     durationChanged ||
@@ -209,7 +227,8 @@ export default function EditJobPage({
     subtitleEnabledChanged ||
     subtitleLangsChanged ||
     subtitleFormatChanged ||
-    subtitleBurnInChanged;
+    subtitleBurnInChanged ||
+    imageReplacementChanged;
   const canSubmit = hasChanges && !submitting && canEdit;
 
   const updateProvider = (
@@ -265,6 +284,7 @@ export default function EditJobPage({
     }
     if (subtitleFormatChanged) patch.subtitle_format = subtitleFormat;
     if (subtitleBurnInChanged) patch.subtitle_burn_in = subtitleBurnIn;
+    if (replacementImageId) patch.image_artifact_id = replacementImageId;
 
     logBus.emit({
       source: "frontend",
@@ -533,6 +553,75 @@ export default function EditJobPage({
             </>
           )}
         </section>
+
+        {showImageReplacement && (
+          <section className="card">
+            <h2>
+              {t("createJob.sectionFace")}
+              <HelpHint slug="sadtalker-video" small />
+            </h2>
+            <p className="muted">{t("videoRecovery.portraitRequirements")}</p>
+            {(() => {
+              const ref = (job.image_ref ?? {}) as Record<string, unknown>;
+              const path = typeof ref["path"] === "string" ? (ref["path"] as string) : "";
+              const checksum =
+                typeof ref["checksum"] === "string" ? (ref["checksum"] as string) : "";
+              if (!path || replacementImageId) return null;
+              return (
+                <div className={styles.field}>
+                  <p>
+                    <strong>{t("editJob.currentImage")}:</strong>{" "}
+                    <code>{path.split("/").pop()}</code>
+                  </p>
+                  {checksum && (
+                    <p className={styles.muted}>
+                      SHA-256: <code>{checksum.slice(0, 16)}…</code>
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+            <UploadCard
+              kind="image"
+              title={t("videoRecovery.editAndReplaceImage")}
+              help={t("videoRecovery.portraitRequirements")}
+              acceptExtensions={[".png", ".jpg", ".jpeg", ".webp"]}
+              maxBytes={10 * 1024 * 1024}
+              onUploaded={(result) => {
+                if ("artifact_id" in result) {
+                  setReplacementImageId(result.artifact_id);
+                  setReplacementImageMeta({
+                    width: (result as { width?: number | null }).width ?? null,
+                    height: (result as { height?: number | null }).height ?? null,
+                    mime_type:
+                      (result as { mime_type?: string | null }).mime_type ?? null,
+                  });
+                }
+              }}
+              currentArtifactId={replacementImageId}
+            />
+            {replacementImageId && (
+              <div className={styles.field}>
+                <p>
+                  <strong>{t("editJob.replacementSelected")}:</strong>
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={artifactContentUrl(replacementImageId)}
+                  alt={t("badges.uploadedImagePreview")}
+                  style={{ maxWidth: "200px", maxHeight: "200px", border: "1px solid #ccc" }}
+                />
+                {replacementImageMeta?.width !== null &&
+                  replacementImageMeta?.height !== null && (
+                  <p className={styles.muted}>
+                    {replacementImageMeta?.width}×{replacementImageMeta?.height} ·{" "}
+                    {replacementImageMeta?.mime_type}
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="card">
           <h2>{t("editJob.readOnly")}</h2>

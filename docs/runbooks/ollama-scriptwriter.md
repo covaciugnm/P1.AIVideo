@@ -106,6 +106,25 @@ ollama pull qwen3:8b     # fallback — smaller, faster, lower quality
 > absent from production code (see
 > `test_phase3g_scriptwriter_contracts.py::test_qwen36_7b_is_not_hardcoded_anywhere`).
 
+### Phase 11G — lightweight alternative: `qwen2.5:7b`
+
+If `qwen3.6` (~24 GB) is too heavy for your hardware or you want a
+much faster turnaround during development, override `OLLAMA_MODEL`
+to a lighter Qwen variant. The application has no built-in
+preference — it uses whatever `OLLAMA_MODEL` resolves to on the
+operator-controlled daemon.
+
+```bash
+ollama pull qwen2.5:7b-instruct   # ~4.6 GB, instruction-tuned
+export OLLAMA_MODEL=qwen2.5:7b-instruct
+```
+
+> **The application never auto-pulls.** Every `ollama pull` must be
+> explicitly run by the operator on the Ollama host. The Makefile
+> intentionally exposes `make ollama-status` / `make ollama-models`
+> for diagnostics, but no `make ollama-pull-*` target runs without
+> a confirmed argument.
+
 Verify availability:
 
 ```bash
@@ -185,7 +204,9 @@ fired:
 | Code | Fix |
 |---|---|
 | `script_provider_disabled` | Set `SCRIPTWRITER_ENABLE_NETWORK_CALLS=true` in `.env` and restart |
-| `script_provider_unreachable` | Ollama daemon not running, or `OLLAMA_BASE_URL` wrong, or `OLLAMA_MODEL` not pulled. `curl $OLLAMA_BASE_URL/api/tags` to debug. |
+| `script_provider_unreachable` | Ollama daemon not running, or `OLLAMA_BASE_URL` wrong. `curl $OLLAMA_BASE_URL/api/tags` to debug. |
+| `script_model_missing` | Daemon is reachable but the configured `OLLAMA_MODEL` is not pulled. Run `ollama pull <model>` on the Ollama host (Phase 8G-2 split this out from `script_provider_unreachable` so the UI can give a precise recovery instruction). |
+| `script_generation_failed` | Daemon responded but the body was malformed. Check the daemon's logs. |
 | `script_provider_not_configured` | `provider_id` is a typo |
 
 ## 6. Use Generate Script in the UI
@@ -207,7 +228,8 @@ The Logs sidebar tab records `script-generate start` → `succeeded` /
 |---|---|
 | "Generate script — fill in the brief first." | Local validation, no network call yet |
 | "script_provider_disabled: …" | `SCRIPTWRITER_ENABLE_NETWORK_CALLS=false` |
-| "script_provider_unreachable: …" | Network calls on but Ollama / model not reachable |
+| "script_provider_unreachable: …" | Network calls on but the Ollama daemon is not reachable |
+| "script_model_missing: …" | Daemon is reachable but the requested model is not pulled — run `ollama pull <model>` |
 | "script_provider_not_configured: …" | Bad `provider_id` |
 | "script_provider_not_implemented: …" | Provider exists but stub never wired (Ollama's current state until network is enabled) |
 | "script_generation_failed: …" | Defensive — provider raised mid-call. Check backend logs. |

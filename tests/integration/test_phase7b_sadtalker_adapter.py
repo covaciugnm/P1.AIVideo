@@ -281,7 +281,8 @@ def _make_wav() -> bytes:
     return buf.getvalue()
 
 
-def _make_png(w: int = 64, h: int = 64) -> bytes:
+def _make_png(w: int = 256, h: int = 256) -> bytes:
+    # Phase 11E — image suitability precheck refuses <256x256.
     import struct
     import zlib
 
@@ -448,11 +449,23 @@ async def test_catalog_sadtalker_row_has_docs_url_and_readiness_notes(app_under_
     sad = by_id["sadtalker"]
     assert sad["requires_gpu"] is True
     assert sad["requires_model_files"] is True
-    assert sad["status"] == "not_implemented"  # Phase 6A invariant
-    # docs_url must point to the new runbook.
+    # Phase 11H — when the real-inference gate is off (the unit-test
+    # default, no env vars set in this fixture), status is
+    # ``not_implemented``. When the gate flips on AND the wrapper /
+    # local torch reports ``ready``, status becomes ``available``.
+    assert sad["status"] in ("not_implemented", "available")
+    # docs_url must point to the runbook.
     assert "sadtalker-runtime" in sad["docs_url"]
-    # The notes field describes the live readiness state.
-    assert "Phase 7B" in sad["notes"]
+    # The notes field must describe the live readiness state — phrasing
+    # is no longer pinned word-for-word (Phase 11H rewrote the strings)
+    # but it must reference the operator-controlled gates so an
+    # operator knows what to flip when status=not_implemented.
+    notes = sad["notes"]
+    if sad["status"] == "not_implemented":
+        assert "SADTALKER_ENABLE_REAL_INFERENCE" in notes
+        assert "RUN_REAL_SADTALKER" in notes
+    else:
+        assert "Phase 7D" in notes or "Phase 11C" in notes
     # healthcheck_available now true (we have inspect_status).
     assert sad["healthcheck_available"] is True
 

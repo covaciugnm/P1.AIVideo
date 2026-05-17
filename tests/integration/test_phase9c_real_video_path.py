@@ -42,7 +42,12 @@ def _make_wav() -> bytes:
     return buf.getvalue()
 
 
-def _make_png(width: int = 64, height: int = 64) -> bytes:
+def _make_png(width: int = 256, height: int = 256) -> bytes:
+    # Phase 11E — bumped default from 64×64 to 256×256 so the
+    # backend's image-suitability precheck (Phase 11E) doesn't
+    # short-circuit these tests with ``video_face_image_too_small``.
+    # The precheck refuses anything below 256×256 because SadTalker's
+    # cropper cannot reliably find landmarks on smaller portraits.
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr = b"IHDR" + struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     ihdr_chunk = (

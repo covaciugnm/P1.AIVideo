@@ -197,15 +197,23 @@ async def _run_tts(state: DagState) -> StageOutput:
         )
 
     provider_id = _resolve_tts_provider_id(state)
+    if provider_id == "f5tts_ro":
+        # Phase 11F-CDOROB — route to the model-tts-ro wrapper over
+        # HTTP. The orchestrator stays torch-free; all heavy ML work
+        # happens in the wrapper container with the cdorob checkpoint.
+        return await _run_tts_via_f5tts_ro_wrapper(state)
+
     if provider_id != "piper":
-        # Phase 6D catalog has many TTS entries, but only Piper is
-        # wired into the DAG. Other providers (xtts, coqui, external
-        # APIs) stay catalog-only until they ship their own adapters.
+        # Phase 6D catalog has many TTS entries, but only Piper +
+        # F5TTS-Ro (Phase 11F-CDOROB) are wired into the DAG. Other
+        # providers (xtts, coqui, external APIs) stay catalog-only
+        # until they ship their own adapters.
         raise StageRejection(
             StageName.voice.value,
             (
-                f"tts_provider_not_configured: only 'piper' is wired in this "
-                f"DAG; selected provider {provider_id!r} has no DAG adapter."
+                f"tts_provider_not_configured: only 'piper' and 'f5tts_ro' are "
+                f"wired in this DAG; selected provider {provider_id!r} has no "
+                f"DAG adapter."
             ),
         )
 
@@ -366,6 +374,162 @@ async def _run_tts(state: DagState) -> StageOutput:
         notes=(
             f"voice tts via piper: synthesised {audio_meta.size_bytes} bytes "
             f"at {actual_path}"
+        ),
+        artifacts={"narration": narration_ref, "phonemes": phonemes_ref},
+    )
+
+
+async def _run_tts_via_f5tts_ro_wrapper(state: DagState) -> StageOutput:
+    """Phase 11F-CDOROB — F5TTS-Ro DAG handler.
+
+    Routes the TTS request to the optional ``model-tts-ro`` Docker
+    service via ``F5TTS_RO_BASE_URL``. The wrapper runs the cdorob
+    f5-tts-romanian checkpoint and writes a real WAV onto the shared
+    ``/storage/inputs/audio`` volume. The orchestrator container
+    itself never imports torch / f5_tts — all heavy ML stays in the
+    wrapper.
+    """
+    import json as _json
+    import os as _os
+    import urllib.error as _ue
+    import urllib.request as _ur
+
+    base_url = _os.environ.get("F5TTS_RO_BASE_URL", "").strip()
+    if not base_url:
+        raise StageRejection(
+            StageName.voice.value,
+            (
+                "tts_provider_not_configured: provider_selection asked for "
+                "f5tts_ro but F5TTS_RO_BASE_URL is unset on the orchestrator. "
+                "Start the optional model-tts-ro service: "
+                "`make docker-tts-ro-build && make docker-tts-ro-up` "
+                "(see docs/runbooks/f5tts-ro-runtime.md)."
+            ),
+        )
+
+    audio_root = Path(
+        _os.environ.get("UPLOAD_AUDIO_ROOT", "/storage/inputs/audio")
+    )
+    # Per-job subdirectory + 0o777 so the wrapper (uid 10001) can
+    # write the output WAV into a path the orchestrator (uid 1000)
+    # later checksums / registers.
+    out_dir = audio_root / str(state.job_id)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir.chmod(0o777)
+    except OSError:
+        pass
+    out_path = out_dir / f"narration_{uuid.uuid4().hex}.wav"
+
+    body = {
+        "text": state.script_text,
+        "output_path": str(out_path),
+        "output_format": "wav",
+        "language": "ro",
+    }
+    url = base_url.rstrip("/") + "/tts/generate"
+    req = _ur.Request(
+        url,
+        data=_json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+
+    timeout = int(_os.environ.get("F5TTS_RO_HTTP_TIMEOUT", "1200"))
+    try:
+        with _ur.urlopen(req, timeout=timeout) as resp:
+            wrapper_payload = _json.loads(resp.read().decode("utf-8"))
+    except _ue.HTTPError as exc:
+        err_text = exc.read().decode("utf-8", errors="replace")[:300]
+        raise StageRejection(
+            StageName.voice.value,
+            f"tts_generation_failed: F5TTS-Ro wrapper HTTP {exc.code}: {err_text}",
+        ) from exc
+    except (_ue.URLError, OSError) as exc:
+        raise StageRejection(
+            StageName.voice.value,
+            (
+                "tts_provider_unreachable: F5TTS-Ro wrapper at "
+                f"{base_url} not reachable: {type(exc).__name__}: {exc}"
+            ),
+        ) from exc
+
+    wrapper_state = wrapper_payload.get("status", "unknown")
+    if wrapper_state != "generated":
+        code = wrapper_payload.get("error_code") or "tts_generation_failed"
+        msg = wrapper_payload.get("message") or "wrapper returned non-generated status"
+        # Normalize wrapper codes to the DAG vocabulary the UI knows.
+        prefix_map = {
+            "runtime_missing": "tts_runtime_missing",
+            "assets_missing": "tts_assets_missing",
+            "config_missing": "tts_provider_not_configured",
+            "generation_failed": "tts_generation_failed",
+        }
+        normalized = prefix_map.get(code, code if code.startswith("tts_") else "tts_generation_failed")
+        raise StageRejection(
+            StageName.voice.value, f"{normalized}: {msg}"
+        )
+
+    # The wrapper writes to out_path. Verify + inspect.
+    if not out_path.is_file():
+        raise StageRejection(
+            StageName.voice.value,
+            (
+                "tts_generation_failed: F5TTS-Ro wrapper reported success "
+                f"but {out_path} is missing on the shared volume."
+            ),
+        )
+    try:
+        audio_meta = validate_and_inspect_wav(
+            str(out_path),
+            mime_type="audio/wav",
+            max_size_bytes=_get_max_size_bytes(),
+        )
+    except ValueError as exc:
+        _safe_cleanup(out_path)
+        raise StageRejection(
+            StageName.voice.value,
+            f"tts_generation_failed: F5TTS-Ro WAV failed validation: {exc}",
+        ) from exc
+
+    narration_ref = ArtifactRef(
+        artifact_type=ArtifactType.audio.value,
+        uri=out_path.as_uri(),
+        local_path=str(out_path),
+        mime_type="audio/wav",
+        checksum_sha256=audio_meta.checksum_sha256,
+        size_bytes=audio_meta.size_bytes,
+        duration_seconds=audio_meta.duration_seconds,
+        sample_rate=audio_meta.sample_rate,
+        channels=audio_meta.channels,
+        extra={
+            "source": "tts",
+            "provider_id": "f5tts_ro",
+            "real_tts": True,
+            "voice_id": wrapper_payload.get("metadata", {}).get(
+                "voice_id", "cdorob/f5-tts-romanian"
+            ),
+            "model_name": wrapper_payload.get("metadata", {}).get(
+                "model_name", "F5TTS_v1_Base"
+            ),
+            "wrapper_url": base_url,
+            "phase": "phase11f_cdorob_f5tts_ro",
+        },
+    )
+    phonemes_ref = ArtifactRef(
+        artifact_type=ArtifactType.metadata.value,
+        uri=_stub_uri(str(state.job_id), "phonemes.json"),
+        extra={
+            "source": "tts",
+            "real_tts": True,
+            "phase": "phase11f_cdorob_f5tts_ro",
+        },
+    )
+    return StageOutput(
+        noop=False,
+        notes=(
+            f"voice tts via f5tts_ro (cdorob): {audio_meta.size_bytes} bytes "
+            f"at {out_path}"
         ),
         artifacts={"narration": narration_ref, "phonemes": phonemes_ref},
     )

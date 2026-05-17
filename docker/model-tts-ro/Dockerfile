@@ -29,7 +29,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     F5TTS_RO_HOST=0.0.0.0 \
     F5TTS_RO_PORT=8080 \
-    F5TTS_RO_MODELS_ROOT=/models/f5tts-ro \
+    F5TTS_RO_MODELS_ROOT=/models/tts/f5tts-ro \
     F5TTS_RO_DEVICE=cpu \
     F5TTS_RO_ALLOW_AUTO_DOWNLOAD=false
 
@@ -52,6 +52,25 @@ WORKDIR /app
 COPY docker/model-tts-ro/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip \
     && pip install -r /app/requirements.txt
+
+# Phase 11F-CDOROB — opt-in heavy ML layer. Default ON so the wrapper
+# image actually generates Romanian audio with cdorob/f5-tts-romanian
+# out of the box. Operators who want a torch-free `/health`-only
+# wrapper for diagnostics can rebuild with --build-arg INSTALL_F5TTS=false.
+#
+# torch is the CPU build by default; rebuild on a CUDA host (with a
+# CUDA-enabled base image) to get GPU acceleration. F5-TTS itself
+# brings transformers, einops, librosa, vocos, etc. as a transitive
+# closure (~2 GB image growth).
+ARG INSTALL_F5TTS=true
+RUN if [ "$INSTALL_F5TTS" = "true" ]; then \
+        echo ">> Installing torch + f5-tts (Phase 11F-CDOROB heavy ML layer)"; \
+        pip install --index-url https://download.pytorch.org/whl/cpu \
+            'torch>=2.4,<3' 'torchaudio>=2.4,<3'; \
+        pip install 'f5-tts>=0.7' soundfile; \
+    else \
+        echo ">> Skipping f5-tts install — /health will report runtime_missing"; \
+    fi
 
 COPY docker/model-tts-ro/server.py /app/server.py
 COPY docker/model-tts-ro/README.md /app/README.md

@@ -59,7 +59,8 @@ def _make_wav() -> bytes:
     return buf.getvalue()
 
 
-def _make_png(w: int = 64, h: int = 64) -> bytes:
+def _make_png(w: int = 256, h: int = 256) -> bytes:
+    # Phase 11E — image suitability precheck refuses <256x256.
     import struct
     import zlib
 

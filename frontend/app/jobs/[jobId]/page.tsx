@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArtifactTable } from "@/components/ArtifactTable";
 import { JobRecoveryControls } from "@/components/JobRecoveryControls";
 import { VideoArtifactPreview } from "@/components/VideoArtifactPreview";
+import { VideoRecoveryHint } from "@/components/VideoRecoveryHint";
 import { ComplianceEvents } from "@/components/ComplianceEvents";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { FinalExportCard } from "@/components/FinalExportCard";
@@ -367,6 +368,18 @@ function JobDetail({
           <p className="muted">{t("stageTimeline.terminalPollingStopped")}</p>
         )}
       </section>
+
+      {/* Phase 11E — surface a clean recovery card when SadTalker
+          rejected the lipsync stage with a categorised video_face_*
+          code. The card sits above the timeline so the operator sees
+          the action (Edit → replace image → Retry) before the raw
+          rejection_reason. */}
+      <VideoRecoveryHint
+        jobId={job.id}
+        rejectionReason={job.rejection_reason}
+        canEdit={job.can_edit ?? job.status !== "published"}
+        canRetry={job.can_retry ?? false}
+      />
 
       {job.script_text && (
         <section className="card">

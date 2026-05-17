@@ -72,6 +72,48 @@ _VIDEO_ERROR_CODES = (
 )
 
 
+def _precheck_face_image(
+    img: Artifact, payload: "VideoGenerationRequest"
+) -> "VideoGenerationResult | None":
+    """Phase 11E — refuse images SadTalker has zero chance of using
+    (too small for the face cropper / no local file). Called only when
+    the operator picked SadTalker as the video provider so the prior
+    error-code path (``video_provider_not_configured`` etc.) keeps its
+    priority on misconfigured providers.
+
+    Returns a ``VideoGenerationResult`` describing the failure when the
+    image is unsuitable, or ``None`` when the image passes the
+    precheck and we should proceed to invoke the provider.
+    """
+    if img.width is None or img.height is None or img.width < 256 or img.height < 256:
+        return VideoGenerationResult(
+            status="missing_inputs",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="video_face_image_too_small",
+            message=(
+                f"image is {img.width}x{img.height}; SadTalker requires "
+                "at least 256x256 with a visible front-facing portrait. "
+                "Upload a larger, clearer face image."
+            ),
+        )
+    if img.local_path is None or not Path(img.local_path).is_file():
+        return VideoGenerationResult(
+            status="missing_inputs",
+            provider_id=payload.provider_id,
+            model_id=payload.model_id,
+            job_id=payload.job_id,
+            error_code="image_artifact_missing_file",
+            message=(
+                f"image artifact {payload.image_artifact_id} has no readable "
+                "local_path — the file must live on the shared artifacts "
+                "volume."
+            ),
+        )
+    return None
+
+
 def _sadtalker_result_from_status(
     status: str,
     details: dict,
@@ -336,6 +378,17 @@ async def video_generate(
         from agents.lipsync.providers.sadtalker.provider import SadTalkerProvider
 
         provider = SadTalkerProvider()
+
+        # Phase 11E — image suitability precheck. Once we KNOW
+        # SadTalker is the chosen provider, catch obvious-bad inputs
+        # (too small for the face cropper, broken header, missing
+        # local_path) BEFORE spending GPU cycles. The heavy face-
+        # landmark check still happens inside SadTalker; we just
+        # short-circuit the inputs we know have zero chance of
+        # producing a valid talking head.
+        precheck = _precheck_face_image(img, payload)
+        if precheck is not None:
+            return precheck
 
         # Phase 10B — when SADTALKER_BASE_URL is set, the light backend
         # proxies the heavy call to the model-sadtalker GPU wrapper over

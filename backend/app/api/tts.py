@@ -311,6 +311,18 @@ async def _generate_via_f5tts_ro(
     out_name = upload_service.safe_unique_filename(".wav")
     dest = root / out_name
 
+    # Phase 11F-CDOROB — cross-uid permissions. The backend runs as
+    # uid 1000 but the model-tts-ro wrapper runs as uid 10001 to keep
+    # the heavy ML container non-root. The audio-upload dir on the
+    # shared inputs volume was created by the backend (mode 0755), so
+    # F5-TTS inside the wrapper cannot write the output WAV unless we
+    # loosen the perms first. Mirrors the SadTalker per-job-dir trick.
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        root.chmod(0o777)
+    except OSError:
+        pass
+
     req_body = {
         "text": payload.script_text,
         "voice_id": voice_id,
