@@ -145,6 +145,11 @@ class JobFromInputsRequest(BaseModel):
     subtitle_burn_in: bool = False
     transcript_language: str | None = Field(default=None, max_length=8)
 
+    # Phase 12 — optional persona binding. The job_service snapshots the
+    # character's profile_json onto ``jobs.character_snapshot`` at
+    # submit time so subsequent edits/deletes never rewrite history.
+    character_id: uuid.UUID | None = None
+
     @field_validator("video_language", "transcript_language")
     @classmethod
     def _check_language(cls, v: str | None) -> str | None:

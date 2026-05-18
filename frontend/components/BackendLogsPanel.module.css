@@ -1,0 +1,154 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Phase 13B — clamp the panel to the sidebar viewport so the body
+     scrolls internally instead of dragging the whole page when new
+     log entries arrive. */
+  height: 100%;
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
+  color: var(--text);
+}
+
+.diagBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.78em;
+  padding: 4px 8px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  align-items: center;
+}
+
+.diagBar code {
+  background: rgba(255,255,255,0.05);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
+
+.diagOk {
+  color: #6dd896;
+  font-weight: 600;
+}
+
+.diagError {
+  color: #ff8e8e;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter {
+  flex: 1 1 180px;
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+}
+
+.button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--background);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--surface);
+}
+
+.count {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: #d6d6d6;
+}
+
+.error {
+  color: #ff8e8e;
+  font-size: 0.85em;
+  padding: 4px 8px;
+}
+
+.empty {
+  color: #c0c0c0;
+  font-style: italic;
+  padding: 12px;
+}
+
+.body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  /* Prevent the parent page from absorbing inner scroll deltas. */
+  overscroll-behavior: contain;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  line-height: 1.4;
+  padding: 4px 8px 8px;
+}
+
+/* Phase 15H — inline layout: each entry is a compact wrapping line,
+   not a 4-column grid (the sidebar is too narrow for that). */
+.entry {
+  display: block;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  word-break: break-word;
+  white-space: normal;
+}
+
+.entry > span {
+  display: inline;
+  margin-right: 6px;
+}
+
+.ts {
+  color: #c8c8c8;
+  font-size: 0.85em;
+}
+
+.level {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.85em;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+
+.levelInfo { color: #6db5ff; }
+.levelWarn { color: #ffd66b; }
+.levelError { color: #ff7878; }
+.levelDebug { color: #b0b0b0; }
+
+.logger {
+  color: #b9d8ff;
+  font-size: 0.85em;
+}
+
+.message {
+  color: #ffffff;
+}
+
+.extra {
+  display: block;
+  color: #9ad9b0;
+  margin-left: 12px;
+  font-size: 0.85em;
+  word-break: break-all;
+}

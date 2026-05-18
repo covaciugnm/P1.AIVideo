@@ -77,6 +77,14 @@ class Job(Base):
     transcript_language: Mapped[str | None] = mapped_column(
         String(8), nullable=True, default=None
     )
+    # Phase 12 — Character / Persona binding.
+    # ``character_id`` is a soft FK (not enforced at DB level) so a
+    # deleted character doesn't cascade-delete history; the
+    # ``character_snapshot`` JSON column holds a frozen copy of the
+    # profile the job was submitted with so edits/deletes never
+    # rewrite already-generated content.
+    character_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    character_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=_utcnow, onupdate=_utcnow, nullable=False

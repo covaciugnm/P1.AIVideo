@@ -26,6 +26,14 @@ x-env-defaults: &env-defaults
     - ../.env
   restart: unless-stopped
 
+# Connection strings for services that talk to postgres/redis from inside the
+# compose network. The `.env` file ships host-side ports (5433/6380) so
+# operators can reach the databases from the laptop; agents inside the
+# network must use the service names + container-internal ports instead.
+x-agent-runtime-env: &agent-runtime-env
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aivideo}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-aivideo}
+  REDIS_URL: redis://redis:6379/0
+
 networks:
   aivideo-net:
     driver: bridge
@@ -200,12 +208,23 @@ services:
       # exposing it at runtime documents intent and lets a future SSR path
       # read it from process.env without rebuilding.
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      # Phase 14B/15X — runtime override so Next.js listens on the port
+      # the operator has configured Cloudflare to talk to. Defaults to
+      # 8010 (matches the current Public Hostname service URL).
+      PORT: "8010"
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-3000}:3000"
+      - "${FRONTEND_PORT:-3010}:8010"
     networks: [aivideo-net]
+    # Override the Dockerfile healthcheck to match the runtime PORT.
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8010/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   orchestrator:
     build:
@@ -280,12 +299,30 @@ services:
   # GPU reservations live in compose.gpu.yml. Per-agent images can be split
   # later; for Phase 0 they share docker/agents/Dockerfile.
 
+  # Common storage mount block — every agent worker that picks up
+  # voice / face / lipsync / qc / publisher stages needs to see the
+  # SAME ``/storage/inputs`` + ``/storage/artifacts`` that the backend
+  # wrote to (otherwise the path validators reject "file not found").
+  # Phase 12W bugfix: the original Phase 0 agent services were
+  # storage-less and the orchestrator was the only worker with the
+  # mounts. As soon as the DAG load-balances voice across agents,
+  # they hit ``audio file not found``.
   agent-scriptwriter:
     build:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
-    depends_on: [redis]
+    environment:
+      <<: *agent-runtime-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+      - ../models:/models:ro
     networks: [aivideo-net]
 
   agent-editor:
@@ -293,7 +330,19 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
-    depends_on: [redis, minio]
+    environment:
+      <<: *agent-runtime-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+      - ../models:/models:ro
     networks: [aivideo-net]
 
   agent-qc:
@@ -301,7 +350,19 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
-    depends_on: [redis, minio]
+    environment:
+      <<: *agent-runtime-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+      - ../models:/models:ro
     networks: [aivideo-net]
 
   agent-publisher:
@@ -309,7 +370,19 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
-    depends_on: [redis, minio]
+    environment:
+      <<: *agent-runtime-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+      - ../models:/models:ro
     networks: [aivideo-net]
 
   agent-compliance:
@@ -317,7 +390,17 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile
     <<: *env-defaults
-    depends_on: [redis, postgres]
+    environment:
+      <<: *agent-runtime-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+      - ../models:/models:ro
     networks: [aivideo-net]
 
   # --- GPU-capable agents (CUDA base; reservations added in compose.gpu.yml) -
@@ -371,6 +454,384 @@ services:
     volumes:
       - ../models/llm:/models/llm:ro
     networks: [aivideo-net]
+
+  # --- Optional: SDXL GPU wrapper (Phase 12W) --------------------------------
+  # GPU-only image generation service. Build & start explicitly:
+  #   make docker-sdxl-build && make docker-sdxl-up
+  # Reachable from the backend at http://aivideo-model-sdxl-1:8080 or
+  # from the host at http://localhost:${SDXL_PORT:-8063}.
+  model-sdxl:
+    profiles: ["sdxl"]
+    build:
+      context: ..
+      dockerfile: docker/model-sdxl/Dockerfile
+    image: aivideo-model-sdxl:latest
+    environment:
+      SDXL_MODELS_ROOT: "/models/image/sdxl"
+      SDXL_DEFAULT_MODEL: "${SDXL_DEFAULT_MODEL:-sdxl-base-1.0}"
+      SDXL_RESULT_DIR: "/storage/artifacts/sdxl"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${SDXL_PORT:-8063}:8080"
+    volumes:
+      - ../models/image/sdxl:/models/image/sdxl:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: FLUX.1 GPU wrapper (Phase 12W) ------------------------------
+  # Build: make docker-flux-build  Run: make docker-flux-up
+  # Operator must accept the BFL license on Hugging Face for FLUX.1-schnell
+  # / FLUX.1-dev before download.
+  model-flux:
+    profiles: ["flux"]
+    build:
+      context: ..
+      dockerfile: docker/model-flux/Dockerfile
+    image: aivideo-model-flux:latest
+    environment:
+      FLUX_MODELS_ROOT: "/models/image/flux"
+      FLUX_DEFAULT_MODEL: "${FLUX_DEFAULT_MODEL:-flux.1-schnell}"
+      FLUX_RESULT_DIR: "/storage/artifacts/flux"
+      FLUX_ENABLE_CPU_OFFLOAD: "${FLUX_ENABLE_CPU_OFFLOAD:-true}"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${FLUX_PORT:-8064}:8080"
+    volumes:
+      - ../models/image/flux:/models/image/flux:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: SD3.5 GPU wrapper (Phase 12W) -------------------------------
+  # SD3.5 Large is GATED on HF — operator accepts the Stability AI license
+  # and uses HF_TOKEN to download.
+  model-sd35:
+    profiles: ["sd35"]
+    build:
+      context: ..
+      dockerfile: docker/model-sd35/Dockerfile
+    image: aivideo-model-sd35:latest
+    environment:
+      SD35_MODELS_ROOT: "/models/image/sd35"
+      SD35_DEFAULT_MODEL: "${SD35_DEFAULT_MODEL:-stable-diffusion-3.5-large}"
+      SD35_RESULT_DIR: "/storage/artifacts/sd35"
+      SD35_ENABLE_CPU_OFFLOAD: "${SD35_ENABLE_CPU_OFFLOAD:-true}"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${SD35_PORT:-8065}:8080"
+    volumes:
+      - ../models/image/sd35:/models/image/sd35:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: AUTOMATIC1111 WebUI GPU wrapper (Phase 12W) -----------------
+  # Python 3.10 + pre-populated repositories/ to work around the
+  # archived Stability-AI/stablediffusion upstream + cu128 torch for
+  # RTX 5090 Blackwell. See docker/model-a1111/Dockerfile rationale.
+  model-a1111:
+    profiles: ["a1111"]
+    build:
+      context: ..
+      dockerfile: docker/model-a1111/Dockerfile
+    image: aivideo-model-a1111:latest
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${A1111_PORT:-7860}:7860"
+    volumes:
+      # Mount SDXL weights from the shared models tree — operator drops
+      # the .safetensors once and every wrapper sees it.
+      - ../models/image/sdxl/sdxl-base-1.0/sd_xl_base_1.0.safetensors:/a1111/models/Stable-diffusion/sd_xl_base_1.0.safetensors:ro
+      - artifacts_data:/a1111/outputs
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: ComfyUI GPU wrapper (Phase 12W) -----------------------------
+  # Mirror of model-sdxl/model-flux/model-sd35: keeps ComfyUI off the host
+  # so it's stop-able like every other GPU service. Models + custom_nodes
+  # mount read-only/rw from the host so operators can share weights.
+  model-comfyui:
+    profiles: ["comfyui"]
+    build:
+      context: ..
+      dockerfile: docker/model-comfyui/Dockerfile
+    image: aivideo-model-comfyui:latest
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${COMFYUI_PORT:-8066}:8188"
+    volumes:
+      # Share image-generator models with the other wrappers — operator
+      # can drop sd_xl_base_1.0.safetensors etc. once and every backend
+      # sees it.
+      - ../models/image/sdxl/sdxl-base-1.0:/comfyui/models/checkpoints/sdxl-base-1.0:ro
+      - ../models/image/flux:/comfyui/models/flux:ro
+      - ../models/image/sd35:/comfyui/models/sd35:ro
+      # ComfyUI scratchpad for outputs + custom workflows the operator
+      # might place.
+      - artifacts_data:/comfyui/output
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: Wav2Lip GPU wrapper (Phase 12Y) -----------------------------
+  model-wav2lip:
+    profiles: ["wav2lip"]
+    build:
+      context: ..
+      dockerfile: docker/model-wav2lip/Dockerfile
+    image: aivideo-model-wav2lip:latest
+    environment:
+      WAV2LIP_CHECKPOINTS_DIR: "/models/lipsync/wav2lip"
+      WAV2LIP_RESULT_DIR: "/storage/artifacts/wav2lip"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${WAV2LIP_PORT:-8068}:8080"
+    volumes:
+      - ../models/lipsync/wav2lip:/models/lipsync/wav2lip:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: MuseTalk GPU wrapper (Phase 12Y) ----------------------------
+  model-musetalk:
+    profiles: ["musetalk"]
+    build:
+      context: ..
+      dockerfile: docker/model-musetalk/Dockerfile
+    image: aivideo-model-musetalk:latest
+    environment:
+      MUSETALK_MODELS_ROOT: "/models/lipsync/musetalk"
+      MUSETALK_RESULT_DIR: "/storage/artifacts/musetalk"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${MUSETALK_PORT:-8069}:8080"
+    volumes:
+      - ../models/lipsync/musetalk:/models/lipsync/musetalk:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: LivePortrait GPU wrapper (Phase 12Y) ------------------------
+  model-liveportrait:
+    profiles: ["liveportrait"]
+    build:
+      context: ..
+      dockerfile: docker/model-liveportrait/Dockerfile
+    image: aivideo-model-liveportrait:latest
+    environment:
+      LIVEPORTRAIT_MODELS_ROOT: "/models/lipsync/liveportrait"
+      LIVEPORTRAIT_RESULT_DIR: "/storage/artifacts/liveportrait"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${LIVEPORTRAIT_PORT:-8070}:8080"
+    volumes:
+      - ../models/lipsync/liveportrait:/models/lipsync/liveportrait:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: SVD img→vid (Phase 12V) -------------------------------------
+  model-svd:
+    profiles: ["svd"]
+    build: {context: .., dockerfile: docker/model-svd/Dockerfile}
+    image: aivideo-model-svd:latest
+    environment:
+      SVD_MODELS_ROOT: "/models/video/svd"
+      SVD_RESULT_DIR: "/storage/artifacts/svd"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${SVD_PORT:-8071}:8080"]
+    volumes:
+      - ../models/video/svd:/models/video/svd:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: AnimateDiff txt→vid (Phase 12V) -----------------------------
+  model-animatediff:
+    profiles: ["animatediff"]
+    build: {context: .., dockerfile: docker/model-animatediff/Dockerfile}
+    image: aivideo-model-animatediff:latest
+    environment:
+      ANIMATEDIFF_ADAPTER_ROOT: "/models/video/animatediff/motion_adapter"
+      ANIMATEDIFF_BASE_MODEL_ROOT: "/models/image/sdxl/sdxl-base-1.0"
+      ANIMATEDIFF_RESULT_DIR: "/storage/artifacts/animatediff"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${ANIMATEDIFF_PORT:-8072}:8080"]
+    volumes:
+      - ../models/video/animatediff:/models/video/animatediff:ro
+      - ../models/image/sdxl/sdxl-base-1.0:/models/image/sdxl/sdxl-base-1.0:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: LTX-Video txt→vid real-time (Phase 12V) ---------------------
+  model-ltx:
+    profiles: ["ltx"]
+    build: {context: .., dockerfile: docker/model-ltx/Dockerfile}
+    image: aivideo-model-ltx:latest
+    environment:
+      LTX_MODELS_ROOT: "/models/video/ltx"
+      LTX_RESULT_DIR: "/storage/artifacts/ltx"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${LTX_PORT:-8073}:8080"]
+    volumes:
+      - ../models/video/ltx:/models/video/ltx:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: EchoMimic-V2 lipsync+gestures (Phase 12V) -------------------
+  model-echomimic:
+    profiles: ["echomimic"]
+    build: {context: .., dockerfile: docker/model-echomimic/Dockerfile}
+    image: aivideo-model-echomimic:latest
+    environment:
+      ECHOMIMIC_MODELS_ROOT: "/models/lipsync/echomimic"
+      ECHOMIMIC_RESULT_DIR: "/storage/artifacts/echomimic"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${ECHOMIMIC_PORT:-8074}:8080"]
+    volumes:
+      - ../models/lipsync/echomimic:/models/lipsync/echomimic:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: Hallo2 HD/4K lipsync (Phase 12V) ----------------------------
+  model-hallo:
+    profiles: ["hallo"]
+    build: {context: .., dockerfile: docker/model-hallo/Dockerfile}
+    image: aivideo-model-hallo:latest
+    environment:
+      HALLO_MODELS_ROOT: "/models/lipsync/hallo"
+      HALLO_RESULT_DIR: "/storage/artifacts/hallo"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${HALLO_PORT:-8075}:8080"]
+    volumes:
+      - ../models/lipsync/hallo:/models/lipsync/hallo:ro
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: HunyuanVideo txt→vid SOTA (Phase 12V, BIG) ------------------
+  # Default config: 4-bit BNB (HUNYUAN_QUANTIZE=int4) to fit on 24GB.
+  # Operator with 80GB+ GPU can set HUNYUAN_QUANTIZE='' for full precision.
+  model-hunyuanvideo:
+    profiles: ["hunyuan"]
+    build: {context: .., dockerfile: docker/model-hunyuanvideo/Dockerfile}
+    image: aivideo-model-hunyuanvideo:latest
+    environment:
+      HUNYUAN_MODELS_ROOT: "/models/video/hunyuan"
+      HUNYUAN_RESULT_DIR: "/storage/artifacts/hunyuan"
+      HUNYUAN_QUANTIZE: "${HUNYUAN_QUANTIZE:-int4}"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${HUNYUAN_PORT:-8076}:8080"]
+    volumes:
+      - ../models/video/hunyuan:/models/video/hunyuan:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
+
+  # --- Optional: Mochi-1 txt→vid (Phase 12V, BIG) ----------------------------
+  model-mochi:
+    profiles: ["mochi"]
+    build: {context: .., dockerfile: docker/model-mochi/Dockerfile}
+    image: aivideo-model-mochi:latest
+    environment:
+      MOCHI_MODELS_ROOT: "/models/video/mochi"
+      MOCHI_RESULT_DIR: "/storage/artifacts/mochi"
+      MOCHI_QUANTIZE: "${MOCHI_QUANTIZE:-int4}"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy: {resources: {reservations: {devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]}}}
+    ports: ["${MOCHI_PORT:-8077}:8080"]
+    volumes:
+      - ../models/video/mochi:/models/video/mochi:ro
+      - artifacts_data:/storage/artifacts
+    networks: [aivideo-net]
+    restart: unless-stopped
 
   # --- Optional: SadTalker GPU wrapper (Phase 10B) ---------------------------
   # GPU-only service. Build & start explicitly:
@@ -461,3 +922,35 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  # =========================================================================
+  # Phase 14 — Cloudflare named tunnel.
+  #
+  # Connects this stack to the public hostname configured in the
+  # Cloudflare Zero Trust dashboard for tunnel id
+  # ``ca9fd866-7d3d-46bb-9e0c-e83293f03bc2`` (route published as
+  # AIV.alba-vision.ro). Routes (hostname → http://aivideo-frontend-1:3000
+  # etc.) live on the dashboard side; this container only needs the
+  # tunnel token to authenticate.
+  #
+  # ``--no-autoupdate`` pins the cloudflared binary to the image tag so
+  # operator restarts are predictable; bump the image tag manually when
+  # a new cloudflared release ships.
+  # =========================================================================
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: aivideo-cloudflared-1
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN}
+    networks: [aivideo-net]
+    depends_on:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "cloudflared", "--version"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

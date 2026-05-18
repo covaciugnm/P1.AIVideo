@@ -19,12 +19,15 @@ default light backend will never reach the real path.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -271,9 +274,15 @@ async def video_generate(
     payload: VideoGenerationRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> VideoGenerationResult:
+    logger.info(
+        "video.generate.start job_id=%s provider=%s model=%s image_artifact=%s audio_artifact=%s target_dur=%s",
+        payload.job_id, payload.provider_id, payload.model_id,
+        payload.image_artifact_id, payload.audio_artifact_id, payload.target_duration_seconds,
+    )
     # 1. Job exists.
     job_row = await session.execute(select(Job).where(Job.id == payload.job_id))
     if job_row.scalar_one_or_none() is None:
+        logger.warning("video.generate.not_found job_id=%s", payload.job_id)
         raise HTTPException(status_code=404, detail="job not found")
 
     # 2. Image artifact exists + correct type.

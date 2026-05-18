@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
@@ -23,9 +23,14 @@ import { localizeApiDetail } from "@/lib/i18n/formatters";
 import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
 import { HelpHint } from "./HelpHint";
+import { ProviderStatusBadge } from "./ProviderStatusBadge";
 import { useSettings } from "./SettingsContext";
 import { UploadCard } from "./UploadCard";
 import styles from "./CreateJobForm.module.css";
+import {
+  type CharacterSummary,
+  listCharacters,
+} from "@/lib/characters";
 
 interface CreateJobFormProps {
   readonly uiOptions: UIOptions;
@@ -84,6 +89,55 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     recommendation: string;
     audio_duration_seconds: number | null;
   } | null>(null);
+  // Phase 12 — character binding for this job. Dropdown sourced
+  // dynamically from /api/v1/characters (no hardcoded array).
+  const [characters, setCharacters] = useState<readonly CharacterSummary[]>([]);
+  const [characterId, setCharacterId] = useState<string>("");
+  const [characterListError, setCharacterListError] = useState<string | null>(null);
+  const reloadCharacters = async () => {
+    try {
+      const r = await listCharacters();
+      setCharacters(r.items.filter((c) => c.status === "active"));
+      setCharacterListError(null);
+    } catch (err) {
+      setCharacterListError((err as Error).message);
+    }
+  };
+  useEffect(() => {
+    void reloadCharacters();
+  }, []);
+  const selectedCharacter = characters.find((c) => c.id === characterId) ?? null;
+
+  // Phase 17 — prefill from URL query params:
+  //   ?character_id=...&brief=... → pre-populate the form when the user
+  //   clicks "Generate video with this image" from the character image
+  //   library. Runs once at mount, only when fields are empty so we
+  //   don't clobber operator edits.
+  const searchParams = useSearchParams();
+  const prefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (prefillAppliedRef.current) return;
+    if (!searchParams) return;
+    const cid = searchParams.get("character_id");
+    const brf = searchParams.get("brief");
+    let did = false;
+    if (cid && !characterId) {
+      setCharacterId(cid);
+      did = true;
+    }
+    if (brf && !brief) {
+      setBrief(brf);
+      did = true;
+    }
+    if (did) {
+      prefillAppliedRef.current = true;
+      logBus.emit({
+        source: "frontend", level: "info",
+        message: `create-job prefilled from URL (character=${cid}, brief=${brf?.slice(0, 60)})`,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -294,6 +348,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
 
   const canSubmit =
     brief.trim().length > 0 &&
+    // Phase 17 — character REQUIRED. Videos must be linked to a character;
+    // anonymous generation is no longer allowed from the dashboard.
+    characterId.length > 0 &&
     duration >= durMin &&
     duration <= durMax &&
     syntheticPerson &&
@@ -357,6 +414,8 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
         : null,
       subtitle_format: subtitleFormat,
       subtitle_burn_in: subtitleBurnIn,
+      // Phase 12 — optional persona binding.
+      character_id: characterId || null,
     };
 
     logBus.emit({
@@ -395,6 +454,66 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
+      <section
+        className="card"
+        data-testid="character-section"
+        style={{
+          borderColor: characterId ? undefined : "var(--danger, #f06a6a)",
+          borderWidth: 2, borderStyle: "solid",
+        }}
+      >
+        <h2>
+          {t("videoCharacter.sectionTitle")} <HelpHint slug="video-character" small />
+          {!characterId && (
+            <span style={{ marginLeft: 8, color: "var(--danger, #f06a6a)", fontSize: "0.7em" }}>
+              ⚠ {t("videoCharacter.requiredBadge")}
+            </span>
+          )}
+        </h2>
+        <p className="muted" style={{ fontSize: 12 }}>{t("videoCharacter.helpHint")}</p>
+        <div className="field">
+          <select
+            value={characterId}
+            onChange={(e) => setCharacterId(e.target.value)}
+            data-testid="character-dropdown"
+            required
+          >
+            <option value="">— {t("videoCharacter.pickRequired")} —</option>
+            {characters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {(c.display_name || c.name)} · {c.default_language ?? "—"}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void reloadCharacters()}
+            style={{ marginLeft: 8 }}
+          >
+            {t("videoCharacter.refreshList")}
+          </button>
+          {characterListError && (
+            <p style={{ color: "var(--danger)", fontSize: 12 }}>
+              {t("videoCharacter.loadFailed", { detail: characterListError })}
+            </p>
+          )}
+        </div>
+        {selectedCharacter && (
+          <div className="card" style={{ marginTop: 8, padding: 8 }}>
+            <strong>{t("characters.summary.title")}: {selectedCharacter.display_name || selectedCharacter.name}</strong>
+            <div className="muted" style={{ fontSize: 12 }}>
+              {t("characters.summary.language")}: {selectedCharacter.default_language ?? t("characters.summary.none")}
+              {" · "}
+              {t("characters.summary.voiceProvider")}: {selectedCharacter.default_voice_provider_id ?? t("characters.summary.none")}
+              {" · "}
+              {t("characters.summary.imageProvider")}: {selectedCharacter.default_image_provider_id ?? t("characters.summary.none")}
+              {" · "}
+              {t("characters.summary.reference")}: {selectedCharacter.main_reference_image_id ? "✓" : t("characters.summary.none")}
+            </div>
+          </div>
+        )}
+      </section>
       <section className="card">
         <h2>1. {t("createJob.sectionBrief").replace(/^\d+\.\s*/, "")} <HelpHint slug="create-job" small /></h2>
         <div className="field">

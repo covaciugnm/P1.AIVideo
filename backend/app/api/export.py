@@ -35,12 +35,15 @@ Phase 6A / 7B / 7D shape):
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -169,9 +172,14 @@ async def export_finalize(
     payload: FinalizeExportRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> FinalizeExportResult:
+    logger.info(
+        "export.finalize.start job_id=%s video_artifact=%s",
+        payload.job_id, payload.video_artifact_id,
+    )
     # 1. Job exists.
     job_row = await session.execute(select(Job).where(Job.id == payload.job_id))
     if job_row.scalar_one_or_none() is None:
+        logger.warning("export.finalize.not_found job_id=%s", payload.job_id)
         raise HTTPException(status_code=404, detail="job not found")
 
     # 2. Locate source video artifact.

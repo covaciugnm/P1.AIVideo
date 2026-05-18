@@ -18,10 +18,13 @@ from ffprobe on the converted PCM WAV).
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,6 +106,10 @@ async def audio_fit_check(
     payload: FitCheckRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> FitCheckResponse:
+    logger.info(
+        "audio.fit_check.start job_id=%s audio_artifact=%s target_dur=%s",
+        payload.job_id, payload.audio_artifact_id, payload.target_duration_seconds,
+    )
     # Resolve target duration.
     target = payload.target_duration_seconds
     job_id: uuid.UUID | None = payload.job_id

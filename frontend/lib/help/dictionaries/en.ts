@@ -652,6 +652,367 @@ export const HELP_TOPICS_EN: Readonly<Record<string, HelpTopic>> = {
     ],
     related: ["settings", "errors-glossary"],
   },
+  // -----------------------------------------------------------------
+  // Phase 12 — Characters / Personas
+  // -----------------------------------------------------------------
+  characters: {
+    id: "characters",
+    section: "Characters",
+    title: "Characters tab",
+    summary:
+      "Reusable personas with identity, appearance, personality, voice + image library.",
+    body: [
+      p(
+        "The Characters tab manages reusable personas you can attach to videos. Each character carries a structured profile (identity, appearance, education, personality, voice, script behaviour) that the scriptwriter, image generator and TTS providers read at job-submit time.",
+      ),
+      h(3, "Edit & delete behaviour"),
+      list([
+        "Characters are editable — each save increments the version number and appends a row to character_versions for the snapshot trail.",
+        "Delete is a SOFT delete (sets deleted_at) so jobs that referenced the character still resolve.",
+        "Old generated videos preserve a frozen snapshot on jobs.character_snapshot — edits / deletes never rewrite history.",
+        "Future generations always use the current edited version.",
+      ]),
+      h(3, "Standardised dropdowns"),
+      p(
+        "Every standardised field (gender, marital status, education level, archetype, communication style, tone, etc.) pulls its options from /api/v1/characters/lookups. Labels are translatable through the existing useT() hook, so RO / EN follow the global UI language with no rebuild.",
+      ),
+      callout(
+        "info",
+        "When a new provider lands (Ollama / F5-TTS / FLUX / SD3.5), it appears automatically in the relevant dropdowns — no frontend code change. Status badges (green / yellow / red) reflect /api/v1/providers in real time.",
+        "Dynamic provider registry",
+      ),
+    ],
+    related: ["character-image-library", "character-image-provider", "video-character"],
+  },
+  "character-image-library": {
+    id: "character-image-library",
+    section: "Characters",
+    title: "Character image library",
+    summary:
+      "Generate / accept / reference workflow per character.",
+    body: [
+      p(
+        "Each character has its own image library. You generate from a prompt, accept the result, then promote one accepted image to MAIN reference. After a main reference exists, providers that support image-to-image (FLUX BFL, Stability ultra, Replicate FLUX, fal.ai, Midjourney proxy, Recraft) can use it to keep the persona consistent across generations.",
+      ),
+      h(3, "Statuses"),
+      kv([
+        ["draft", "Fresh from generation — not yet curated."],
+        ["accepted", "Operator approved — eligible to become the main reference."],
+        ["rejected", "Operator marked as bad — kept for history, not used."],
+        ["reference", "Promoted as the main reference (only one per character)."],
+        ["archived", "Hidden from default views; not deleted."],
+      ]),
+    ],
+    related: ["character-image-provider", "characters", "character-main-reference"],
+  },
+  "character-image-provider": {
+    id: "character-image-provider",
+    section: "Characters",
+    title: "Image generation providers",
+    summary:
+      "FLUX local (default) + FLUX BFL API + SD3.5 + 13 other backends with status indicators.",
+    body: [
+      p(
+        "The image_generator category lists 16 backends. Only the mock provider runs without operator setup — everything else surfaces a categorised `provider_not_configured` / `runtime_missing` error until you wire the env vars or build the wrapper container.",
+      ),
+      h(3, "Local GPU wrappers (mirror model-sadtalker)"),
+      kv([
+        ["flux_local", "FLUX.1-schnell / dev. Set FLUX_LOCAL_BASE_URL + FLUX_LOCAL_MODELS_ROOT."],
+        ["sd35_local", "Stable Diffusion 3.5 Large. SD35_LOCAL_BASE_URL + SD35_LOCAL_MODELS_ROOT."],
+        ["sdxl_local", "Lighter VRAM alternative. SDXL_LOCAL_BASE_URL."],
+        ["comfyui_local", "Bring-your-own workflow JSON. COMFYUI_BASE_URL."],
+        ["a1111_local", "AUTOMATIC1111 webui /sdapi/v1. A1111_BASE_URL."],
+      ]),
+      h(3, "Hosted APIs (env API key only)"),
+      kv([
+        ["flux_bfl_api", "Black Forest Labs cloud. FLUX_BFL_API_KEY."],
+        ["stability_api", "SD3.5 hosted. STABILITY_API_KEY."],
+        ["replicate_api", "Multi-model. REPLICATE_API_TOKEN."],
+        ["fal_api", "Low-latency hosting. FAL_KEY."],
+        ["together_api", "FLUX + community. TOGETHER_API_KEY."],
+        ["openai_dalle3", "DALL·E 3. Reuses OPENAI_API_KEY."],
+        ["ideogram_api", "IDEOGRAM_API_KEY."],
+        ["recraft_api", "RECRAFT_API_KEY."],
+        ["vertex_imagen3", "Google Imagen 3. VERTEX_AI_PROJECT_ID + GOOGLE_APPLICATION_CREDENTIALS."],
+        ["midjourney_unofficial", "Fragile Discord-bot proxy. MIDJOURNEY_PROXY_URL + MIDJOURNEY_PROXY_TOKEN."],
+      ]),
+      callout(
+        "warn",
+        "Outbound API calls require IMAGE_GENERATOR_ENABLE_NETWORK_CALLS=true. Credentials alone are NOT enough to bill an API automatically.",
+        "Network gate",
+      ),
+    ],
+    related: ["character-image-library", "providers-overview"],
+  },
+  "character-main-reference": {
+    id: "character-main-reference",
+    section: "Characters",
+    title: "Main reference image",
+    summary:
+      "One curated image per character that downstream generations can re-use for image-to-image conditioning.",
+    body: [
+      p(
+        "Promote any accepted image with `Set as main reference`. Providers that advertise reference_image=true in their capabilities can then receive the file path on subsequent generate calls.",
+      ),
+    ],
+    related: ["character-image-library", "character-image-provider"],
+  },
+  "video-character": {
+    id: "video-character",
+    section: "Create job",
+    title: "Character on the video form",
+    summary:
+      "The Character dropdown injects a persona profile into the job. Snapshot is frozen at submit time.",
+    body: [
+      p(
+        "Pick a character to forward its identity / language / role / voice provider / image reference into this job. The full profile is snapshotted onto jobs.character_snapshot at submit time — subsequent edits or deletes of the character never rewrite this job's record.",
+      ),
+    ],
+    related: ["characters", "character-image-library"],
+  },
+  "character-gender": {
+    id: "character-gender",
+    section: "Characters",
+    title: "Gender field",
+    summary: "Standardised dropdown drawn from /api/v1/characters/lookups.",
+    body: [
+      p(
+        "Used by the scriptwriter + image prompt builders to keep the persona consistent. Values map to translatable labels via characterLookups.gender.* keys.",
+      ),
+    ],
+  },
+  "character-dob": {
+    id: "character-dob",
+    section: "Characters",
+    title: "Date of birth & age",
+    summary: "Age is computed from DOB at read time; direct override possible.",
+    body: [
+      p(
+        "Enter a date of birth via the date picker. CharacterProfile.computed_age() returns the derived age in years. If you prefer not to set a DOB, fill the `Age` field directly.",
+      ),
+    ],
+  },
+  "character-spoken-languages": {
+    id: "character-spoken-languages",
+    section: "Characters",
+    title: "Spoken languages",
+    summary: "Comma-separated list of language codes the persona can speak.",
+    body: [
+      p(
+        "The scriptwriter uses this list to constrain the dialogue language(s). Combined with `voice.preferred_language` to pick the TTS voice.",
+      ),
+    ],
+  },
+  "character-education": {
+    id: "character-education",
+    section: "Characters",
+    title: "Education level",
+    summary: "Drives the script vocabulary register.",
+    body: [
+      p(
+        "The standardised value (PhD, Master's, Bachelor's, ...) is included in the script prompt context so the LLM matches register.",
+      ),
+    ],
+  },
+  "character-archetype": {
+    id: "character-archetype",
+    section: "Characters",
+    title: "Personality archetype",
+    summary:
+      "High-level archetype blended with tone + values.",
+    body: [
+      p(
+        "Combined with communication style, temperament and tone into a paragraph-shaped briefing the scriptwriter reads via /api/v1/characters/:id/script-context.",
+      ),
+    ],
+  },
+  "character-comm-style": {
+    id: "character-comm-style",
+    section: "Characters",
+    title: "Communication style",
+    summary: "Formal, informal, conversational, authoritative, persuasive, …",
+    body: [
+      p(
+        "Sets how formal / playful / authoritative the synthesised speech sounds. Combined with the `tone` field for the final voice profile.",
+      ),
+    ],
+  },
+  "character-tts-provider": {
+    id: "character-tts-provider",
+    section: "Characters",
+    title: "Preferred TTS provider",
+    summary:
+      "Defaults the voice provider for any new video tied to this character.",
+    body: [
+      p(
+        "Operator can override per-job. The dropdown lists every provider in /api/v1/providers/tts with a status badge (green = ready, yellow = configured but un-probed, red = unavailable).",
+      ),
+    ],
+  },
+  "character-blocked-topics": {
+    id: "character-blocked-topics",
+    section: "Characters",
+    title: "Blocked topics",
+    summary:
+      "Topic guard-rails the scriptwriter receives explicitly and will refuse to cross.",
+    body: [
+      p(
+        "Comma-separated list. Included in the script context block under `## Safety & topic guard rails` so the LLM sees them in-prompt.",
+      ),
+    ],
+  },
+  "providers-overview": {
+    id: "providers-overview",
+    section: "Providers",
+    title: "Dynamic provider registry",
+    summary:
+      "Every dropdown reads from /api/v1/providers — adding a provider doesn't require a frontend rebuild.",
+    body: [
+      p(
+        "Phase 12 added the dynamic status indicators (green / yellow / red). New providers appear automatically in dropdowns once they're listed in the registry. The status badge reflects env-based readiness + the last health-check probe (POST /api/v1/providers/:category/:id/health-check).",
+      ),
+      callout(
+        "info",
+        "Operator overrides live in the feature_providers DB table. Enabled flag, display order, and last health status are merged on top of the code registry at request time — useful to disable a flaky provider without redeploying.",
+        "Operator overrides",
+      ),
+    ],
+  },
+  // -----------------------------------------------------------------
+  // Phase 12X — DB-backed API keys store (right-sidebar Keys tab)
+  // -----------------------------------------------------------------
+  "api-keys": {
+    id: "api-keys",
+    section: "Settings",
+    title: "API Keys & Endpoints (right-sidebar)",
+    summary:
+      "Persistent secret store in Postgres. Values load into os.environ at backend startup so they survive Docker restarts.",
+    body: [
+      p(
+        "Open the right-sidebar Keys tab to add / view / test credentials for every hosted provider (FLUX BFL, Stability, Replicate, fal.ai, Together, OpenAI, Ideogram, Recraft, Vertex Imagen, Midjourney proxy) + local wrapper URLs (FLUX, SDXL, SD3.5, ComfyUI, A1111, SadTalker, F5TTS-Ro, Ollama).",
+      ),
+      h(3, "How it works"),
+      list([
+        "Each save POSTs /api/v1/secrets/ → persisted in api_secrets table (Postgres).",
+        "Backend lifespan hook loads every row into os.environ at startup — adapters that read env vars pick them up unchanged.",
+        "Test button runs a cheap reachability probe per credential type (e.g. GET /api/whoami-v2 for HF_TOKEN, GET /v1/models for OpenAI).",
+        "Result persists on api_secrets.last_test_status; the green/red dot in the UI reflects the last test outcome.",
+        "Per operator request the value field is shown in clear text (not masked).",
+      ]),
+      h(3, "Endpoints"),
+      kv([
+        ["GET /api/v1/secrets", "List all persisted secrets + the 24-entry catalog of known keys."],
+        ["POST /api/v1/secrets", "Upsert by key_name. Also pushes the value into os.environ immediately."],
+        ["PUT /api/v1/secrets/{key_name}", "Update value of an existing secret."],
+        ["DELETE /api/v1/secrets/{key_name}", "Soft-remove + drop from os.environ."],
+        ["POST /api/v1/secrets/{key_name}/test", "Run the per-key reachability probe."],
+      ]),
+      callout(
+        "info",
+        "Hosted provider adapters additionally require IMAGE_GENERATOR_ENABLE_NETWORK_CALLS=true (set via the Keys tab too) before they're allowed to make outbound HTTP calls. Mirror of the SCRIPTWRITER_ENABLE_NETWORK_CALLS gate.",
+        "Network gate",
+      ),
+    ],
+    related: ["providers-overview", "character-image-provider"],
+  },
+  // -----------------------------------------------------------------
+  // Phase 12W — Docker GPU wrappers for image generators
+  // -----------------------------------------------------------------
+  "image-wrappers-docker": {
+    id: "image-wrappers-docker",
+    section: "Providers",
+    title: "Local GPU wrappers (Docker)",
+    summary:
+      "5 image generators run as sibling Docker containers — FLUX, SDXL, SD3.5, ComfyUI, A1111 (status varies).",
+    body: [
+      p(
+        "Phase 12W added docker/model-flux, model-sdxl, model-sd35, model-comfyui, model-a1111. They mirror the model-sadtalker + model-tts-ro pattern: CUDA base + FastAPI server + read-only models/ mount. Backend adapter posts a generate request, wrapper writes the PNG into the shared artifacts volume.",
+      ),
+      h(3, "Lifecycle commands"),
+      kv([
+        ["make docker-flux-build / -up / -down / -logs / -smoke", "FLUX.1-schnell on port 8064."],
+        ["make docker-sdxl-build / -up / ...", "Stable Diffusion XL on port 8063."],
+        ["make docker-sd35-build / -up / ...", "Stable Diffusion 3.5 Large on port 8065."],
+        ["make docker-comfyui-build / -up / ...", "ComfyUI workflow runner on port 8066."],
+        ["make docker-a1111-build / -up / ...", "AUTOMATIC1111 WebUI on port 8067."],
+      ]),
+      h(3, "VRAM management"),
+      list([
+        "FLUX-schnell + SDXL + SD3.5 each consume 10–22 GB VRAM during inference (with CPU offload). Run one at a time on a 24 GB GPU.",
+        "ComfyUI / A1111 keep their model in VRAM idle — stop them between providers if you swap models.",
+        "All wrappers use Blackwell-compatible torch 2.7+cu128 for RTX 5090 (sm_120).",
+      ]),
+      callout(
+        "warn",
+        "A1111 image is built but its runtime depends on the archived Stability-AI/stablediffusion repo + SD2-era ldm code. The CompVis substitute we vendored covers SD1 ops; SD2 paths (depth model, MMDiT attention modes) crash at first import. Treat the a1111 wrapper as 'image staged, runtime requires operator patch' until a known-good SD2 fork is wired.",
+        "A1111 caveat",
+      ),
+    ],
+    related: ["sadtalker-video", "character-image-provider"],
+  },
+  "video-pipeline": {
+    id: "video-pipeline",
+    section: "Video",
+    title: "Video job pipeline (Characters → SadTalker)",
+    summary:
+      "End-to-end flow: F5TTS audio + portrait image + character snapshot → orchestrator DAG → SadTalker MP4.",
+    body: [
+      p(
+        "Submitting a video uses POST /api/v1/jobs/from-inputs with audio_artifact_id + image_artifact_id + character_id. The orchestrator runs the canonical DAG (policy_gate → scriptwriter → voice → face → identity_guard → pre_lipsync_auth → lipsync → editor → qc → publisher → export_disclosure_validation). SadTalker generates the MP4 inside the lipsync stage and the artifact is registered on the job.",
+      ),
+      h(3, "Inputs"),
+      list([
+        "Audio — F5TTS-Ro generated WAV at /storage/inputs/audio (or operator-uploaded). voice_mode=provided_audio.",
+        "Face — uploaded portrait at /storage/inputs/images. face_mode=provided_image.",
+        "character_id (optional) — backend snapshots the persona profile onto jobs.character_snapshot at submit time so future edits don't rewrite history. character_videos table gets a link row.",
+      ]),
+      h(3, "What's persisted"),
+      list([
+        "jobs row (canonical job lifecycle).",
+        "character_videos link (job_id ↔ character_id).",
+        "artifacts row pointing at /storage/artifacts/video/{job_id}/sadtalker_*.mp4.",
+        "compliance_events + stage_runs for the full audit trail.",
+      ]),
+      callout(
+        "info",
+        "Phase 12W bugfix: the agent-* containers (scriptwriter / editor / qc / publisher / compliance) used to lack the /storage volume mounts so voice stage failed with 'audio file not found'. Compose now mounts inputs_data + artifacts_data + ../models on every agent.",
+        "Storage mount fix",
+      ),
+    ],
+    related: ["video-character", "sadtalker-video", "characters"],
+  },
+  // -----------------------------------------------------------------
+  // Phase 12T — Technical Help page
+  // -----------------------------------------------------------------
+  "technical-help": {
+    id: "technical-help",
+    section: "Reference",
+    title: "Technical Help page",
+    summary:
+      "Live render of docs/TECHNICAL_ARCHITECTURE.md served by the backend; searchable with table-of-contents and Markdown download.",
+    body: [
+      p(
+        "Open via the 'Technical' nav entry or the /technical-help route. The page fetches GET /api/v1/system/technical-architecture and renders the Markdown with a sticky search box. Hits are highlighted across paragraphs, lists, tables and code blocks; the TOC follows level-1 and level-2 headings.",
+      ),
+      h(3, "Endpoints"),
+      kv([
+        ["GET /api/v1/system/technical-architecture", "JSON envelope: title, source_path, size_bytes, markdown, generated_at."],
+        ["GET /api/v1/system/technical-architecture.md", "Raw Markdown (text/markdown). Used by the Download Markdown link."],
+      ]),
+      h(3, "Why it lives on disk"),
+      list([
+        "Source of truth is docs/TECHNICAL_ARCHITECTURE.md in the repo so it is versioned with the code.",
+        "Backend Dockerfile copies it into /app/docs/ so the endpoint can read it without a runtime mount.",
+        "Edits in the file ship in the next backend image build — no DB migration required.",
+      ]),
+      callout(
+        "info",
+        "Use the search box for fast lookups: provider names, port numbers, env vars, migration revs, table names. Hits scroll into view; the TOC hides while a query is active.",
+        "Search tips",
+      ),
+    ],
+    related: ["api-keys", "providers-overview", "video-pipeline"],
+  },
 };
 
 export const HELP_TOPIC_IDS_EN: readonly string[] = Object.keys(HELP_TOPICS_EN);

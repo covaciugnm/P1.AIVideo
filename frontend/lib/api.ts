@@ -249,6 +249,135 @@ export function getUiOptions(signal?: AbortSignal): Promise<UIOptions> {
   return request<UIOptions>("/api/v1/config/ui-options", { signal });
 }
 
+export interface TechnicalArchitectureResponse {
+  title: string;
+  source_path: string;
+  size_bytes: number;
+  markdown: string;
+  generated_at: string;
+}
+
+export function getTechnicalArchitecture(
+  signal?: AbortSignal,
+): Promise<TechnicalArchitectureResponse> {
+  return request<TechnicalArchitectureResponse>(
+    "/api/v1/system/technical-architecture",
+    { signal },
+  );
+}
+
+export function getTechnicalArchitectureMarkdownUrl(): string {
+  return `${getActiveApiBaseUrl()}/api/v1/system/technical-architecture.md`;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14C — auto-detect API URL at page load
+//
+// When the dashboard renders, walk a small list of candidate backend
+// URLs and pick the first one whose ``/healthz`` returns 200 within a
+// short timeout. This insulates the operator from build-time vs.
+// runtime URL drift: even if NEXT_PUBLIC_API_BASE_URL was baked at a
+// different domain (tunnel, localhost, etc.), the dashboard finds a
+// working backend without anyone touching Settings.
+// ---------------------------------------------------------------------------
+
+export async function probeBackendHealth(
+  baseUrl: string,
+  timeoutMs = 2500,
+): Promise<boolean> {
+  if (!baseUrl) return false;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(`${baseUrl.replace(/\/$/, "")}/healthz`, {
+      method: "GET",
+      signal: ctrl.signal,
+      // Don't send cookies/credentials — every probe must be cheap.
+      credentials: "omit",
+      cache: "no-store",
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export interface CharacterVideoLinkItem {
+  id: string;
+  job_id: string;
+  job_status: string | null;
+  provider_id: string | null;
+  status: string;
+  created_at: string;
+  duration_seconds: number | null;
+  video_artifact_uri: string | null;
+  video_artifact_id: string | null;
+}
+
+export interface CharacterVideosResponse {
+  items: CharacterVideoLinkItem[];
+  total: number;
+}
+
+export function getCharacterVideos(
+  characterId: string,
+  signal?: AbortSignal,
+): Promise<CharacterVideosResponse> {
+  return request<CharacterVideosResponse>(
+    `/api/v1/characters/${characterId}/videos`,
+    { signal },
+  );
+}
+
+export async function autoDetectBackendBaseUrl(
+  candidates: readonly string[],
+): Promise<string | null> {
+  // Dedupe + drop empties while preserving order.
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  for (const c of candidates) {
+    const trimmed = (c || "").trim().replace(/\/$/, "");
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    queue.push(trimmed);
+  }
+  for (const url of queue) {
+    if (await probeBackendHealth(url)) {
+      return url;
+    }
+  }
+  return null;
+}
+
+export interface BackendLogEntry {
+  seq: number;
+  ts: number;
+  level: string;
+  logger: string;
+  message: string;
+  extra: Record<string, unknown>;
+}
+
+export interface BackendLogsResponse {
+  latest_seq: number;
+  server_time: string;
+  entries: BackendLogEntry[];
+}
+
+export function getBackendLogs(
+  params: { since_seq?: number; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<BackendLogsResponse> {
+  const search = new URLSearchParams();
+  if (params.since_seq !== undefined) search.set("since_seq", String(params.since_seq));
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  const path = qs ? `/api/v1/system/logs/backend?${qs}` : "/api/v1/system/logs/backend";
+  return request<BackendLogsResponse>(path, { signal });
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------

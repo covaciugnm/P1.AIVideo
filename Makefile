@@ -279,6 +279,154 @@ docker-sadtalker-smoke: ## Phase 10B — probe /health on the SadTalker wrapper.
 	@curl -fsS $${SADTALKER_BASE_URL:-http://localhost:8062}/health \
 		| python3 -m json.tool
 
+# ----- Phase 12W — Image generation GPU wrappers (FLUX / SDXL / SD3.5) -------
+docker-sdxl-build: ## Phase 12W — build the SDXL wrapper image (~9 GB, requires NVIDIA Container Toolkit).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile sdxl build model-sdxl
+
+docker-sdxl-up: ## Phase 12W — start the SDXL wrapper. Set SDXL_LOCAL_BASE_URL on the backend afterwards.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile sdxl up -d model-sdxl
+
+docker-sdxl-down: ## Phase 12W — stop the SDXL wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile sdxl stop model-sdxl
+
+docker-sdxl-logs: ## Phase 12W — tail SDXL wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-sdxl
+
+docker-sdxl-smoke: ## Phase 12W — probe /health on the SDXL wrapper.
+	@curl -fsS $${SDXL_LOCAL_BASE_URL:-http://localhost:8063}/health | python3 -m json.tool
+
+docker-flux-build: ## Phase 12W — build the FLUX wrapper image (~12 GB).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile flux build model-flux
+
+docker-flux-up: ## Phase 12W — start the FLUX wrapper. Operator accepts BFL license on HF + places weights under models/image/flux/.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile flux up -d model-flux
+
+docker-flux-down: ## Phase 12W — stop the FLUX wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile flux stop model-flux
+
+docker-flux-logs: ## Phase 12W — tail FLUX wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-flux
+
+docker-flux-smoke: ## Phase 12W — probe /health on the FLUX wrapper.
+	@curl -fsS $${FLUX_LOCAL_BASE_URL:-http://localhost:8064}/health | python3 -m json.tool
+
+docker-sd35-build: ## Phase 12W — build the SD3.5 wrapper image (~10 GB).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile sd35 build model-sd35
+
+docker-sd35-up: ## Phase 12W — start the SD3.5 wrapper. Operator accepts Stability license + places weights.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile sd35 up -d model-sd35
+
+docker-sd35-down: ## Phase 12W — stop the SD3.5 wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile sd35 stop model-sd35
+
+docker-sd35-logs: ## Phase 12W — tail SD3.5 wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-sd35
+
+docker-sd35-smoke: ## Phase 12W — probe /health on the SD3.5 wrapper.
+	@curl -fsS $${SD35_LOCAL_BASE_URL:-http://localhost:8065}/health | python3 -m json.tool
+
+docker-comfyui-build: ## Phase 12W — build the ComfyUI wrapper image (~10 GB).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile comfyui build model-comfyui
+
+docker-comfyui-up: ## Phase 12W — start the ComfyUI wrapper. Replaces the host install.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile comfyui up -d model-comfyui
+
+docker-comfyui-down: ## Phase 12W — stop the ComfyUI wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile comfyui stop model-comfyui
+
+docker-comfyui-logs: ## Phase 12W — tail ComfyUI wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-comfyui
+
+docker-comfyui-smoke: ## Phase 12W — probe /system_stats on the ComfyUI wrapper.
+	@curl -fsS $${COMFYUI_BASE_URL:-http://localhost:8066}/system_stats | python3 -m json.tool
+
+docker-a1111-build: ## Phase 12W — build the A1111 wrapper image (~12 GB, Python 3.10 + cu128 + pre-cloned repos).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile a1111 build model-a1111
+
+docker-a1111-up: ## Phase 12W — start the A1111 wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile a1111 up -d model-a1111
+
+docker-a1111-down: ## Phase 12W — stop the A1111 wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile a1111 stop model-a1111
+
+docker-a1111-logs: ## Phase 12W — tail A1111 wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-a1111
+
+docker-a1111-smoke: ## Phase 12W — probe /sdapi/v1/sd-models on the A1111 wrapper.
+	@curl -fsS $${A1111_BASE_URL:-http://localhost:8067}/sdapi/v1/sd-models | python3 -m json.tool | head -30
+
+# ----- Phase 12Y — open-source lip-sync video wrappers -----------------------
+docker-wav2lip-build: ## Phase 12Y — build the Wav2Lip wrapper image (~8 GB).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile wav2lip build model-wav2lip
+
+docker-wav2lip-up: ## Phase 12Y — start Wav2Lip wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile wav2lip up -d model-wav2lip
+
+docker-wav2lip-down: ## Phase 12Y — stop Wav2Lip wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile wav2lip stop model-wav2lip
+
+docker-wav2lip-logs: ## Phase 12Y — tail Wav2Lip wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-wav2lip
+
+docker-wav2lip-smoke: ## Phase 12Y — probe /health on Wav2Lip wrapper.
+	@curl -fsS $${WAV2LIP_BASE_URL:-http://localhost:8068}/health | python3 -m json.tool
+
+docker-musetalk-build: ## Phase 12Y — build the MuseTalk wrapper image (~12 GB).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile musetalk build model-musetalk
+
+docker-musetalk-up: ## Phase 12Y — start MuseTalk wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile musetalk up -d model-musetalk
+
+docker-musetalk-down: ## Phase 12Y — stop MuseTalk wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile musetalk stop model-musetalk
+
+docker-musetalk-logs: ## Phase 12Y — tail MuseTalk wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-musetalk
+
+docker-musetalk-smoke: ## Phase 12Y — probe /health on MuseTalk wrapper.
+	@curl -fsS $${MUSETALK_BASE_URL:-http://localhost:8069}/health | python3 -m json.tool
+
+docker-liveportrait-build: ## Phase 12Y — build the LivePortrait wrapper image (~12 GB).
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile liveportrait build model-liveportrait
+
+docker-liveportrait-up: ## Phase 12Y — start LivePortrait wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile liveportrait up -d model-liveportrait
+
+docker-liveportrait-down: ## Phase 12Y — stop LivePortrait wrapper.
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile liveportrait stop model-liveportrait
+
+docker-liveportrait-logs: ## Phase 12Y — tail LivePortrait wrapper logs.
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-liveportrait
+
+docker-liveportrait-smoke: ## Phase 12Y — probe /health on LivePortrait wrapper.
+	@curl -fsS $${LIVEPORTRAIT_BASE_URL:-http://localhost:8070}/health | python3 -m json.tool
+
+# ----- Phase 12V — 7 more video generators (operator-opt-in build) -----------
+# Pattern: docker-<name>-build / -up / -down / -logs / -smoke
+# SVD (img→vid), AnimateDiff (txt→vid via SDXL), LTX (real-time),
+# EchoMimic-V2 (lipsync+gestures), Hallo2 (HD lipsync),
+# HunyuanVideo (60GB SOTA, 4-bit), Mochi-1 (60GB Genmo, 4-bit).
+define _mk_wrapper_targets
+docker-$(1)-build:
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile $(1) build model-$(1)
+docker-$(1)-up:
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile $(1) up -d model-$(1)
+docker-$(1)-down:
+	@docker compose --env-file .env -f docker/compose.dev.yml --profile $(1) stop model-$(1)
+docker-$(1)-logs:
+	@docker compose --env-file .env -f docker/compose.dev.yml logs -f model-$(1)
+docker-$(1)-smoke:
+	@curl -fsS http://localhost:$(2)/health | python3 -m json.tool
+endef
+
+$(eval $(call _mk_wrapper_targets,svd,8071))
+$(eval $(call _mk_wrapper_targets,animatediff,8072))
+$(eval $(call _mk_wrapper_targets,ltx,8073))
+$(eval $(call _mk_wrapper_targets,echomimic,8074))
+$(eval $(call _mk_wrapper_targets,hallo,8075))
+$(eval $(call _mk_wrapper_targets,hunyuanvideo,8076))
+$(eval $(call _mk_wrapper_targets,mochi,8077))
+
 docker-gpu-config-check: ## Validate compose.dev + compose.gpu overlay (no services started)
 	@test -f .env || (echo "ERROR: .env missing. Run: cp .env.example .env" && exit 1)
 	@echo ">> compose.dev + compose.gpu overlay config"

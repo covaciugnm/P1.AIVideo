@@ -14,7 +14,9 @@ export function LocalizedNav() {
       <Link href="/jobs">{t("nav.jobs")}</Link>
       <Link href="/jobs/new">{t("nav.newJob")}</Link>
       <Link href="/uploads">{t("nav.uploads")}</Link>
+      <Link href="/characters">{t("nav.characters")}</Link>
       <Link href="/settings">{t("nav.settings")}</Link>
+      <Link href="/technical-help" data-testid="nav-technical">{t("nav.technical")}</Link>
       <HelpLink>{t("nav.help")}</HelpLink>
     </nav>
   );

@@ -24,11 +24,14 @@ optional download query param.
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -140,13 +143,19 @@ async def get_artifact_content(
     session: AsyncSession = Depends(get_db_session),
     download: bool = Query(default=False),
 ) -> FileResponse:
+    logger.info("artifacts.content.start artifact_id=%s download=%s", artifact_id, download)
     result = await session.execute(
         select(Artifact).where(Artifact.id == artifact_id)
     )
     artifact = result.scalar_one_or_none()
     if artifact is None:
+        logger.warning("artifacts.content.not_found artifact_id=%s", artifact_id)
         raise HTTPException(status_code=404, detail="artifact not found")
     if artifact.artifact_type not in _SERVE_ALLOWED_TYPES:
+        logger.warning(
+            "artifacts.content.rejected artifact_id=%s reason=type_not_serveable type=%s",
+            artifact_id, artifact.artifact_type,
+        )
         raise HTTPException(
             status_code=415,
             detail=f"artifact_type {artifact.artifact_type!r} is not serveable",

@@ -1,0 +1,134 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+  overflow-y: auto;
+  max-height: 100%;
+}
+
+.header h3 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+}
+
+.intro {
+  font-size: 11px;
+  color: var(--text-muted, #9aa3b2);
+  margin: 0;
+}
+
+.error {
+  color: var(--danger, #f85149);
+  font-size: 12px;
+}
+
+.section h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #9aa3b2);
+  margin: 12px 0 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 4px;
+}
+
+.row {
+  padding: 8px 4px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rowHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.keyName {
+  font-family: var(--mono-stack, monospace);
+  font-size: 11px;
+  background: var(--surface-2, #1a1d24);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.desc {
+  font-size: 11px;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.controls {
+  display: flex;
+  gap: 4px;
+}
+
+.input {
+  flex: 1;
+  font-family: var(--mono-stack, monospace);
+  font-size: 11px;
+  background: var(--surface-2, #1a1d24);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text, #e6e9ef);
+  padding: 4px 6px;
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.btnSave,
+.btnTest,
+.btnDelete {
+  font-size: 10px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-2, #1a1d24);
+  color: var(--text, #e6e9ef);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.btnSave:hover {
+  background: var(--accent-strong, #4d8bff);
+  color: #fff;
+}
+
+.btnTest:hover {
+  background: #2ea043;
+  color: #fff;
+}
+
+.btnDelete:hover {
+  background: var(--danger, #f85149);
+  color: #fff;
+}
+
+.detail {
+  font-size: 10px;
+  font-family: var(--mono-stack, monospace);
+  color: var(--text-muted, #9aa3b2);
+  padding: 4px;
+  background: var(--surface-2, #1a1d24);
+  border-radius: 3px;
+}
+
+.probe {
+  font-size: 10px;
+  color: var(--text-muted, #9aa3b2);
+}
+
+.ok {
+  color: #2ea043;
+  font-size: 10px;
+}
+
+.bad {
+  color: var(--danger, #f85149);
+  font-size: 10px;
+}
+
+.muted {
+  color: var(--text-muted, #9aa3b2);
+  font-size: 10px;
+}

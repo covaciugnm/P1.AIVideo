@@ -11,6 +11,8 @@ import {
 
 import { useT } from "@/lib/i18n/LanguageContext";
 
+import { BackendLogsPanel } from "./BackendLogsPanel";
+import { KeysPanel } from "./KeysPanel";
 import { LogsPanel } from "./LogsPanel";
 import { ProviderTestPanel } from "./ProviderTestPanel";
 import { SettingsPanel } from "./SettingsPanel";
@@ -72,6 +74,14 @@ export function RightSidebar() {
           </button>
           <button
             type="button"
+            className={`${styles.railTab} ${state.activeTab === "backend" ? styles.railTabActive : ""}`}
+            onClick={() => update({ collapsed: false, activeTab: "backend" })}
+            title={t("sidebar.backend")}
+          >
+            <span className={styles.railLabel}>{t("sidebar.backend")}</span>
+          </button>
+          <button
+            type="button"
             className={`${styles.railTab} ${state.activeTab === "settings" ? styles.railTabActive : ""}`}
             onClick={() => update({ collapsed: false, activeTab: "settings" })}
             title={t("sidebar.settings")}
@@ -86,6 +96,14 @@ export function RightSidebar() {
           >
             <span className={styles.railLabel}>{t("sidebar.test1")}</span>
           </button>
+          <button
+            type="button"
+            className={`${styles.railTab} ${state.activeTab === "keys" ? styles.railTabActive : ""}`}
+            onClick={() => update({ collapsed: false, activeTab: "keys" })}
+            title={t("sidebar.keys")}
+          >
+            <span className={styles.railLabel}>{t("sidebar.keys")}</span>
+          </button>
         </div>
       ) : (
         <>
@@ -95,8 +113,10 @@ export function RightSidebar() {
           />
           <div className={styles.body}>
             {hydrated && state.activeTab === "logs" && <LogsPanel />}
+            {hydrated && state.activeTab === "backend" && <BackendLogsPanel />}
             {hydrated && state.activeTab === "settings" && <SettingsPanel />}
             {hydrated && state.activeTab === "test1" && <ProviderTestPanel />}
+            {hydrated && state.activeTab === "keys" && <KeysPanel />}
           </div>
         </>
       )}

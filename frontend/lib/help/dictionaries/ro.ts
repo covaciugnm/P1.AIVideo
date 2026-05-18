@@ -638,6 +638,367 @@ export const HELP_TOPICS_RO: Readonly<Record<string, HelpTopic>> = {
     ],
     related: ["settings", "errors-glossary"],
   },
+  // -----------------------------------------------------------------
+  // Phase 12 — Personaje
+  // -----------------------------------------------------------------
+  characters: {
+    id: "characters",
+    section: "Personaje",
+    title: "Tabul Personaje",
+    summary:
+      "Personaje reutilizabile cu identitate, aspect, personalitate, voce + bibliotecă de imagini.",
+    body: [
+      p(
+        "Tabul Personaje gestionează personaje reutilizabile pe care le poți atașa videoclipurilor. Fiecare personaj are un profil structurat (identitate, aspect, educație, personalitate, voce, comportament în script) pe care scriptwriter-ul, generatorul de imagini și TTS-ul îl citesc la momentul submit al jobului.",
+      ),
+      h(3, "Comportament la editare & ștergere"),
+      list([
+        "Personajele sunt editabile — fiecare salvare incrementează numărul de versiune și adaugă un rând în character_versions pentru traiectoria de snapshot-uri.",
+        "Ștergerea este SOFT (setează deleted_at), așa că job-urile care făceau referință la personaj se rezolvă în continuare.",
+        "Videoclipurile generate vechi păstrează un snapshot înghețat pe jobs.character_snapshot — editări / ștergeri NU rescriu istoricul.",
+        "Generările viitoare folosesc întotdeauna versiunea curentă, editată.",
+      ]),
+      h(3, "Dropdown-uri standardizate"),
+      p(
+        "Fiecare câmp standardizat (gen, stare civilă, nivel de educație, arhetip, stil de comunicare, ton, etc.) își ia opțiunile din /api/v1/characters/lookups. Etichetele sunt traductibile prin hook-ul useT(), așa că RO / EN urmează limba globală fără rebuild.",
+      ),
+      callout(
+        "info",
+        "Când apare un provider nou (Ollama / F5-TTS / FLUX / SD3.5), apare automat în dropdown-urile relevante — fără modificări de frontend. Indicatoarele de status (verde / galben / roșu) reflectă /api/v1/providers în timp real.",
+        "Registry dinamic de providers",
+      ),
+    ],
+    related: ["character-image-library", "character-image-provider", "video-character"],
+  },
+  "character-image-library": {
+    id: "character-image-library",
+    section: "Personaje",
+    title: "Biblioteca de imagini",
+    summary:
+      "Flux generare / acceptare / referință per personaj.",
+    body: [
+      p(
+        "Fiecare personaj are propria bibliotecă de imagini. Generezi dintr-un prompt, accepți rezultatul, apoi promovezi o imagine acceptată ca referință principală. După ce există o referință principală, provider-ele care suportă image-to-image (FLUX BFL, Stability ultra, Replicate FLUX, fal.ai, Midjourney proxy, Recraft) o pot folosi pentru a menține personajul consistent între generări.",
+      ),
+      h(3, "Statusuri"),
+      kv([
+        ["draft", "Proaspăt generată — încă necurată."],
+        ["accepted", "Operator a aprobat — eligibilă să devină referință principală."],
+        ["rejected", "Operator a marcat ca necorespunzătoare — păstrată pentru istoric."],
+        ["reference", "Promovată ca referință principală (una singură per personaj)."],
+        ["archived", "Ascunsă din vizualizările default; nu este ștearsă."],
+      ]),
+    ],
+    related: ["character-image-provider", "characters", "character-main-reference"],
+  },
+  "character-image-provider": {
+    id: "character-image-provider",
+    section: "Personaje",
+    title: "Provider-i de generare imagini",
+    summary:
+      "FLUX local (default) + FLUX BFL API + SD3.5 + 13 alți backend-i cu indicatoare de status.",
+    body: [
+      p(
+        "Categoria image_generator listează 16 backend-i. Doar provider-ul mock rulează fără setări — restul ridică o eroare categorisită `provider_not_configured` / `runtime_missing` până configurezi env vars sau construiești containerul wrapper.",
+      ),
+      h(3, "Wrappere GPU locale (oglinda model-sadtalker)"),
+      kv([
+        ["flux_local", "FLUX.1-schnell / dev. Setează FLUX_LOCAL_BASE_URL + FLUX_LOCAL_MODELS_ROOT."],
+        ["sd35_local", "Stable Diffusion 3.5 Large. SD35_LOCAL_BASE_URL + SD35_LOCAL_MODELS_ROOT."],
+        ["sdxl_local", "Alternativă cu VRAM mai mic. SDXL_LOCAL_BASE_URL."],
+        ["comfyui_local", "Adu-ți propriul workflow JSON. COMFYUI_BASE_URL."],
+        ["a1111_local", "AUTOMATIC1111 webui /sdapi/v1. A1111_BASE_URL."],
+      ]),
+      h(3, "API-uri hosted (doar API key în env)"),
+      kv([
+        ["flux_bfl_api", "Cloud Black Forest Labs. FLUX_BFL_API_KEY."],
+        ["stability_api", "SD3.5 hosted. STABILITY_API_KEY."],
+        ["replicate_api", "Multi-model. REPLICATE_API_TOKEN."],
+        ["fal_api", "Hosting low-latency. FAL_KEY."],
+        ["together_api", "FLUX + community. TOGETHER_API_KEY."],
+        ["openai_dalle3", "DALL·E 3. Refolosește OPENAI_API_KEY."],
+        ["ideogram_api", "IDEOGRAM_API_KEY."],
+        ["recraft_api", "RECRAFT_API_KEY."],
+        ["vertex_imagen3", "Google Imagen 3. VERTEX_AI_PROJECT_ID + GOOGLE_APPLICATION_CREDENTIALS."],
+        ["midjourney_unofficial", "Proxy Discord-bot fragil. MIDJOURNEY_PROXY_URL + MIDJOURNEY_PROXY_TOKEN."],
+      ]),
+      callout(
+        "warn",
+        "Apelurile API outbound necesită IMAGE_GENERATOR_ENABLE_NETWORK_CALLS=true. Credențialele singure NU sunt suficiente ca să factureze automat un API.",
+        "Poarta network",
+      ),
+    ],
+    related: ["character-image-library", "providers-overview"],
+  },
+  "character-main-reference": {
+    id: "character-main-reference",
+    section: "Personaje",
+    title: "Imagine de referință principală",
+    summary:
+      "O imagine curată per personaj pe care generările următoare o pot refolosi pentru condiționare image-to-image.",
+    body: [
+      p(
+        "Promovează orice imagine acceptată cu `Setează ca referință principală`. Provider-ele care anunță reference_image=true în capabilities pot primi calea fișierului la apelurile ulterioare de generate.",
+      ),
+    ],
+    related: ["character-image-library", "character-image-provider"],
+  },
+  "video-character": {
+    id: "video-character",
+    section: "Job nou",
+    title: "Personaj pe formularul de video",
+    summary:
+      "Dropdown-ul Personaj injectează profilul în job. Snapshot-ul se îngheață la submit.",
+    body: [
+      p(
+        "Alege un personaj pentru a forwarda identitatea / limba / rolul / provider-ul de voce / referința de imagine în acest job. Profilul complet se face snapshot pe jobs.character_snapshot la submit — editări sau ștergeri ulterioare ale personajului NU rescriu acest job.",
+      ),
+    ],
+    related: ["characters", "character-image-library"],
+  },
+  "character-gender": {
+    id: "character-gender",
+    section: "Personaje",
+    title: "Câmp Gen",
+    summary: "Dropdown standardizat din /api/v1/characters/lookups.",
+    body: [
+      p(
+        "Folosit de constructorii de prompt-uri (script + imagine) pentru a menține personajul consistent. Valorile se mapează la etichete traductibile via cheile characterLookups.gender.*.",
+      ),
+    ],
+  },
+  "character-dob": {
+    id: "character-dob",
+    section: "Personaje",
+    title: "Data nașterii & vârstă",
+    summary: "Vârsta se calculează din DOB la citire; suprascriere directă posibilă.",
+    body: [
+      p(
+        "Introdu data nașterii prin date picker. CharacterProfile.computed_age() întoarce vârsta derivată în ani. Dacă preferi să nu setezi DOB, completează direct câmpul `Vârstă`.",
+      ),
+    ],
+  },
+  "character-spoken-languages": {
+    id: "character-spoken-languages",
+    section: "Personaje",
+    title: "Limbi vorbite",
+    summary: "Listă comma-separated de coduri de limbă pe care le poate vorbi personajul.",
+    body: [
+      p(
+        "Scriptwriter-ul folosește această listă pentru a constrânge limba(le) dialogului. Combinată cu `voice.preferred_language` pentru a alege vocea TTS.",
+      ),
+    ],
+  },
+  "character-education": {
+    id: "character-education",
+    section: "Personaje",
+    title: "Nivel de educație",
+    summary: "Influențează registrul vocabularului în script.",
+    body: [
+      p(
+        "Valoarea standardizată (PhD, Master, Licență, ...) este inclusă în contextul de prompt al scriptului ca LLM-ul să potrivească registrul.",
+      ),
+    ],
+  },
+  "character-archetype": {
+    id: "character-archetype",
+    section: "Personaje",
+    title: "Arhetip de personalitate",
+    summary:
+      "Arhetip la nivel înalt combinat cu ton + valori.",
+    body: [
+      p(
+        "Se combină cu stilul de comunicare, temperamentul și tonul într-un briefing format paragraf pe care scriptwriter-ul îl citește prin /api/v1/characters/:id/script-context.",
+      ),
+    ],
+  },
+  "character-comm-style": {
+    id: "character-comm-style",
+    section: "Personaje",
+    title: "Stil de comunicare",
+    summary: "Formal, informal, conversațional, autoritar, persuasiv, …",
+    body: [
+      p(
+        "Setează cât de formal / jucăuș / autoritar sună discursul sintetizat. Se combină cu câmpul `ton` pentru profilul final al vocii.",
+      ),
+    ],
+  },
+  "character-tts-provider": {
+    id: "character-tts-provider",
+    section: "Personaje",
+    title: "Provider TTS preferat",
+    summary:
+      "Setează default-ul provider-ului de voce pentru orice video nou legat de acest personaj.",
+    body: [
+      p(
+        "Operatorul poate suprascrie per-job. Dropdown-ul listează fiecare provider din /api/v1/providers/tts cu un indicator de status (verde = gata, galben = configurat dar nesondat, roșu = indisponibil).",
+      ),
+    ],
+  },
+  "character-blocked-topics": {
+    id: "character-blocked-topics",
+    section: "Personaje",
+    title: "Subiecte interzise",
+    summary:
+      "Guard-rails de subiecte pe care scriptwriter-ul le primește explicit și refuză să le treacă.",
+    body: [
+      p(
+        "Listă comma-separated. Inclusă în blocul de context al scriptului sub `## Safety & topic guard rails` ca LLM-ul să le vadă in-prompt.",
+      ),
+    ],
+  },
+  "providers-overview": {
+    id: "providers-overview",
+    section: "Providers",
+    title: "Registry dinamic de providers",
+    summary:
+      "Fiecare dropdown citește din /api/v1/providers — adăugarea unui provider nu necesită rebuild de frontend.",
+    body: [
+      p(
+        "Faza 12 a adăugat indicatoarele de status dinamice (verde / galben / roșu). Provider-i noi apar automat în dropdown-uri odată ce sunt listați în registry. Indicatorul de status reflectă starea env-based + ultima probă de health-check (POST /api/v1/providers/:category/:id/health-check).",
+      ),
+      callout(
+        "info",
+        "Suprascrierile operatorului stau în tabelul DB feature_providers. Flag enabled, display order și ultimul status de health sunt mergeite peste registry-ul de cod la momentul request-ului — util pentru a dezactiva un provider fragil fără redeploy.",
+        "Suprascrieri de operator",
+      ),
+    ],
+  },
+  // -----------------------------------------------------------------
+  // Phase 12X — Tab Keys din right-sidebar
+  // -----------------------------------------------------------------
+  "api-keys": {
+    id: "api-keys",
+    section: "Setări",
+    title: "Chei API & Endpoint-uri (right-sidebar)",
+    summary:
+      "Depozit persistent de secrete în Postgres. Valorile se încarcă în os.environ la pornirea backend-ului deci supraviețuiesc restart-urilor Docker.",
+    body: [
+      p(
+        "Deschide tab-ul Keys din right-sidebar pentru a adăuga / vedea / testa credențiale pentru fiecare provider hosted (FLUX BFL, Stability, Replicate, fal.ai, Together, OpenAI, Ideogram, Recraft, Vertex Imagen, Midjourney proxy) + URL-urile wrapper-elor locale (FLUX, SDXL, SD3.5, ComfyUI, A1111, SadTalker, F5TTS-Ro, Ollama).",
+      ),
+      h(3, "Cum funcționează"),
+      list([
+        "Fiecare Save face POST /api/v1/secrets/ → persistat în tabelul api_secrets (Postgres).",
+        "Hook-ul lifespan al backend-ului încarcă fiecare rând în os.environ la startup — adaptorii care citesc env vars îl preiau fără cod.",
+        "Butonul Test rulează o probă de reachability ieftină per tip credențial (ex: GET /api/whoami-v2 pentru HF_TOKEN, GET /v1/models pentru OpenAI).",
+        "Rezultatul persistă pe api_secrets.last_test_status; punctul verde/roșu din UI reflectă ultimul outcome al testului.",
+        "La cererea operatorului, valoarea e vizibilă în clar (nu mascată).",
+      ]),
+      h(3, "Endpoint-uri"),
+      kv([
+        ["GET /api/v1/secrets", "Listă toate secretele persistate + catalogul de 24 chei cunoscute."],
+        ["POST /api/v1/secrets", "Upsert după key_name. Împinge valoarea în os.environ imediat."],
+        ["PUT /api/v1/secrets/{key_name}", "Update valoarea unui secret existent."],
+        ["DELETE /api/v1/secrets/{key_name}", "Soft-remove + drop din os.environ."],
+        ["POST /api/v1/secrets/{key_name}/test", "Rulează proba per-cheie."],
+      ]),
+      callout(
+        "info",
+        "Adaptorii hosted necesită suplimentar IMAGE_GENERATOR_ENABLE_NETWORK_CALLS=true (setabil tot din Keys tab) înainte să facă apeluri HTTP outbound. Oglinda poartă SCRIPTWRITER_ENABLE_NETWORK_CALLS.",
+        "Poartă network",
+      ),
+    ],
+    related: ["providers-overview", "character-image-provider"],
+  },
+  // -----------------------------------------------------------------
+  // Phase 12W — Wrapper-e Docker GPU pentru image generators
+  // -----------------------------------------------------------------
+  "image-wrappers-docker": {
+    id: "image-wrappers-docker",
+    section: "Providers",
+    title: "Wrappere GPU locale (Docker)",
+    summary:
+      "5 image generators rulează ca containere Docker sibling — FLUX, SDXL, SD3.5, ComfyUI, A1111 (status variabil).",
+    body: [
+      p(
+        "Faza 12W a adăugat docker/model-flux, model-sdxl, model-sd35, model-comfyui, model-a1111. Oglinda pattern-ului model-sadtalker + model-tts-ro: bază CUDA + server FastAPI + mount read-only models/. Adaptorul backend face POST request de generate, wrapper-ul scrie PNG-ul în volumul artifacts partajat.",
+      ),
+      h(3, "Comenzi lifecycle"),
+      kv([
+        ["make docker-flux-build / -up / -down / -logs / -smoke", "FLUX.1-schnell pe portul 8064."],
+        ["make docker-sdxl-build / -up / ...", "Stable Diffusion XL pe portul 8063."],
+        ["make docker-sd35-build / -up / ...", "Stable Diffusion 3.5 Large pe portul 8065."],
+        ["make docker-comfyui-build / -up / ...", "Workflow runner ComfyUI pe portul 8066."],
+        ["make docker-a1111-build / -up / ...", "AUTOMATIC1111 WebUI pe portul 8067."],
+      ]),
+      h(3, "Management VRAM"),
+      list([
+        "FLUX-schnell + SDXL + SD3.5 consumă fiecare 10–22 GB VRAM în inferență (cu CPU offload). Rulează unul singur odată pe GPU de 24 GB.",
+        "ComfyUI / A1111 țin modelul în VRAM idle — oprește-le între provider-i dacă schimbi modelul.",
+        "Toate wrapper-ele folosesc torch 2.7+cu128 compatibil Blackwell pentru RTX 5090 (sm_120).",
+      ]),
+      callout(
+        "warn",
+        "Image-ul A1111 e construit dar runtime-ul depinde de repo-ul arhivat Stability-AI/stablediffusion + cod ldm SD2-era. Substitutul CompVis pe care l-am vendorat acoperă op-urile SD1; căile SD2 (modelul de depth, modurile attention MMDiT) crash la primul import. Tratează wrapper-ul a1111 ca 'image preparat, runtime necesită patch de operator' până când se cabla un fork SD2 cunoscut bun.",
+        "Notă A1111",
+      ),
+    ],
+    related: ["sadtalker-video", "character-image-provider"],
+  },
+  "video-pipeline": {
+    id: "video-pipeline",
+    section: "Video",
+    title: "Pipeline job video (Personaje → SadTalker)",
+    summary:
+      "Flux end-to-end: audio F5TTS + imagine portret + snapshot personaj → DAG orchestrator → MP4 SadTalker.",
+    body: [
+      p(
+        "Submit-ul unui video folosește POST /api/v1/jobs/from-inputs cu audio_artifact_id + image_artifact_id + character_id. Orchestratorul rulează DAG-ul canonic (policy_gate → scriptwriter → voice → face → identity_guard → pre_lipsync_auth → lipsync → editor → qc → publisher → export_disclosure_validation). SadTalker generează MP4 în stage-ul lipsync și artifact-ul e înregistrat pe job.",
+      ),
+      h(3, "Input-uri"),
+      list([
+        "Audio — WAV generat de F5TTS-Ro la /storage/inputs/audio (sau încărcat de operator). voice_mode=provided_audio.",
+        "Față — portret încărcat la /storage/inputs/images. face_mode=provided_image.",
+        "character_id (opțional) — backend face snapshot al profilului personajului pe jobs.character_snapshot la momentul submit, deci editări viitoare nu rescriu istoricul. Tabelul character_videos primește un rând de link.",
+      ]),
+      h(3, "Ce e persistat"),
+      list([
+        "Rând jobs (lifecycle-ul canonic al jobului).",
+        "Link character_videos (job_id ↔ character_id).",
+        "Rând artifacts pointând la /storage/artifacts/video/{job_id}/sadtalker_*.mp4.",
+        "compliance_events + stage_runs pentru audit trail complet.",
+      ]),
+      callout(
+        "info",
+        "Bugfix Faza 12W: containerele agent-* (scriptwriter / editor / qc / publisher / compliance) nu aveau mount-urile /storage deci voice stage eșua cu 'audio file not found'. Compose montează acum inputs_data + artifacts_data + ../models pe fiecare agent.",
+        "Fix mount storage",
+      ),
+    ],
+    related: ["video-character", "sadtalker-video", "characters"],
+  },
+  // -----------------------------------------------------------------
+  // Faza 12T — Pagina Ajutor tehnic
+  // -----------------------------------------------------------------
+  "technical-help": {
+    id: "technical-help",
+    section: "Referință",
+    title: "Pagina Ajutor tehnic",
+    summary:
+      "Randare live a docs/TECHNICAL_ARCHITECTURE.md servit de backend; căutare full-text, cuprins și descărcare Markdown.",
+    body: [
+      p(
+        "Se deschide din meniul „Tehnic” sau la /technical-help. Pagina apelează GET /api/v1/system/technical-architecture și randează Markdown-ul cu un câmp de căutare lipit sus. Potrivirile sunt evidențiate în paragrafe, liste, tabele și blocuri de cod; cuprinsul urmărește titlurile de nivel 1 și 2.",
+      ),
+      h(3, "Endpoint-uri"),
+      kv([
+        ["GET /api/v1/system/technical-architecture", "JSON: title, source_path, size_bytes, markdown, generated_at."],
+        ["GET /api/v1/system/technical-architecture.md", "Markdown brut (text/markdown) folosit de butonul Descarcă."],
+      ]),
+      h(3, "De ce trăiește pe disc"),
+      list([
+        "Sursa oficială este docs/TECHNICAL_ARCHITECTURE.md, versionat în repo.",
+        "Dockerfile-ul backend-ului îl copiază în /app/docs/ ca să poată fi citit fără mount runtime.",
+        "Modificările intră live la următorul build al imaginii backend — fără migrare DB.",
+      ]),
+      callout(
+        "info",
+        "Folosește caseta de căutare pentru rezolvări rapide: nume de provider, porturi, variabile de mediu, revizii Alembic, tabele DB. Cuprinsul se ascunde cât timp există filtru activ.",
+        "Sfaturi căutare",
+      ),
+    ],
+    related: ["api-keys", "providers-overview", "video-pipeline"],
+  },
 };
 
 export const HELP_TOPIC_IDS_RO: readonly string[] = Object.keys(HELP_TOPICS_RO);

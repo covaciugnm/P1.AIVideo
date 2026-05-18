@@ -1,6 +1,6 @@
 "use client";
 
-import { getHelpTopic } from "@/lib/help/dictionaries";
+import { getLocalizedHelpCorpus } from "@/lib/help/dictionaries";
 import { useLanguage, useT } from "@/lib/i18n/LanguageContext";
 
 import { useHelp } from "./HelpContext";
@@ -21,7 +21,21 @@ export function HelpHint({
   const help = useHelp();
   const t = useT();
   const { language } = useLanguage();
-  const topic = getHelpTopic(language, slug);
+  // Phase 12 — read directly from the CURRENT language's corpus. The
+  // older getHelpTopic() helper falls back to the English entry when a
+  // RO topic is missing, which caused tooltips to leak English titles
+  // (bug reported by the operator). Now: if the topic doesn't exist in
+  // the selected language, we render the generic localized
+  // ``t("help.open")`` instead of an English title — and log it in dev
+  // so the missing translation can be added.
+  const corpus = getLocalizedHelpCorpus(language);
+  const topic = corpus[slug];
+  if (!topic && process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[HelpHint] missing topic "${slug}" in language "${language}" — add it to frontend/lib/help/dictionaries/${language}.ts`,
+    );
+  }
   const title = label ?? (topic ? `${t("help.open")}: ${topic.title}` : t("help.open"));
   return (
     <button

@@ -69,4 +69,6 @@ Thumbs.db
 .audit-tmp/
 
 # Docs are not needed at runtime; keep small image
-docs/
+docs/*
+# Phase 12T: backend serves the technical-architecture doc, so allow it back.
+!docs/TECHNICAL_ARCHITECTURE.md

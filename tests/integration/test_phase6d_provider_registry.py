@@ -72,7 +72,9 @@ async def app_under_test(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_catalog_has_all_five_categories(app_under_test):
+async def test_catalog_has_all_categories(app_under_test):
+    # Phase 12 added ``image_generator`` (FLUX / SD3.5 / hosted APIs
+    # + mock) on top of the Phase 6D five.
     r = await app_under_test.get("/api/v1/providers")
     assert r.status_code == 200
     body = r.json()
@@ -82,6 +84,7 @@ async def test_catalog_has_all_five_categories(app_under_test):
         "video_generator",
         "audio_processor",
         "image_processor",
+        "image_generator",
     }
     for category, entries in body.items():
         assert len(entries) >= 1, f"category {category} is empty"

@@ -417,20 +417,60 @@ def _sadtalker_dynamic_status() -> tuple[str, str, str]:
 
 
 def _build_video_providers() -> list[ProviderInfo]:
+    # Phase 12V — full catalog including the new lipsync + txt/img→vid
+    # providers. Each entry has an env var pointing at the wrapper URL;
+    # when unset the row stays ``not_implemented`` so dropdowns surface
+    # the missing wrapper clearly. Operator opts in with
+    # ``make docker-<name>-build && make docker-<name>-up``.
     base = [
-        ("sadtalker", "SadTalker (default v1)", "sadtalker", "sadtalker-v1", True, True, ""),
-        ("musetalk", "MuseTalk (v2)", "musetalk", "musetalk-v2", True, True, "Placeholder. GPU required when wired."),
-        ("wav2lip", "Wav2Lip (fallback)", "wav2lip", "wav2lip-v1", True, True, "Placeholder. GPU required when wired."),
-        ("liveportrait", "LivePortrait (research)", "liveportrait", "liveportrait-v1", True, True, "Phase 6D placeholder; deferred."),
+        ("sadtalker", "SadTalker (talking head v1)", "sadtalker", "sadtalker-v1", True, True, ""),
+        ("wav2lip", "Wav2Lip (lipsync, fast)", "wav2lip_http", "wav2lip-gan", True, True, "Phase 12Y wrapper."),
+        ("musetalk", "MuseTalk (real-time lipsync)", "musetalk_http", "musetalk-v1.5", True, True, "Phase 12Y wrapper."),
+        ("liveportrait", "LivePortrait (motion-driven portrait)", "liveportrait_http", "liveportrait-v1", True, True, "Phase 12Y wrapper."),
+        ("echomimic", "EchoMimic-V2 (lipsync + half-body gestures)", "echomimic_http", "echomimic-v2", True, True, "Phase 12V wrapper."),
+        ("hallo", "Hallo2 (HD/4K talking head)", "hallo_http", "hallo2", True, True, "Phase 12V wrapper."),
+        ("svd", "Stable Video Diffusion (img→vid)", "svd_http", "svd-img2vid-xt", True, True, "Phase 12V wrapper, ~10GB."),
+        ("animatediff", "AnimateDiff SDXL (txt→vid)", "animatediff_http", "animatediff-sdxl-motion-v1", True, True, "Phase 12V wrapper."),
+        ("ltx_video", "LTX-Video (real-time txt→vid)", "ltx_http", "ltx-video-0.9.1", True, True, "Phase 12V wrapper, ~24GB."),
+        ("hunyuan_video", "HunyuanVideo (SOTA txt→vid, 4-bit option)", "hunyuan_http", "hunyuan-video-t2v-720p", True, True, "Phase 12V BIG wrapper, ~60GB → 16GB at int4."),
+        ("mochi", "Mochi-1 (Genmo txt→vid, 4-bit option)", "mochi_http", "mochi-1-preview", True, True, "Phase 12V BIG wrapper, ~60GB → 16GB at int4."),
         ("local_http_video", "Local HTTP video (operator endpoint)", "local_http", None, True, False, "Operator runs the worker; speaks HTTP."),
         ("external_video_api", "External video API", "external", None, False, False, "External API; not enabled."),
     ]
+    # Phase 12V — promote a video provider to ``configured`` when its
+    # ``*_BASE_URL`` env is set (mirror image-generator pattern).
+    _ENV_BY_PID = {
+        "wav2lip": "WAV2LIP_BASE_URL",
+        "musetalk": "MUSETALK_BASE_URL",
+        "liveportrait": "LIVEPORTRAIT_BASE_URL",
+        "echomimic": "ECHOMIMIC_BASE_URL",
+        "hallo": "HALLO_BASE_URL",
+        "svd": "SVD_BASE_URL",
+        "animatediff": "ANIMATEDIFF_BASE_URL",
+        "ltx_video": "LTX_BASE_URL",
+        "hunyuan_video": "HUNYUAN_BASE_URL",
+        "mochi": "MOCHI_BASE_URL",
+    }
     out: list[ProviderInfo] = []
     for pid, label, backend_type, model, local, gpu, note in base:
         docs_url = ""
         status = "not_implemented"
         if pid == "sadtalker":
             status, note, docs_url = _sadtalker_dynamic_status()
+        elif pid in _ENV_BY_PID:
+            # Phase 12V — env-driven status for new wrappers. If the
+            # ``*_BASE_URL`` is set the row becomes ``configured`` (the
+            # operator started the wrapper); otherwise stays
+            # ``not_implemented`` so the dropdown shows the gap.
+            url = os.environ.get(_ENV_BY_PID[pid], "").strip()
+            if url:
+                status = "configured"
+                note = f"Wrapper URL set ({url}). Build + start with `make docker-{pid.replace('_', '')}-up`."
+            else:
+                note = (
+                    f"{label} wrapper not configured. Set {_ENV_BY_PID[pid]} "
+                    f"and start the Docker wrapper (`make docker-{pid.replace('_', '')}-up`)."
+                )
         out.append(
             ProviderInfo(
                 category="video_generator",
@@ -444,8 +484,12 @@ def _build_video_providers() -> list[ProviderInfo]:
                 supported_models=[model] if model else [],
                 requires_network=not local,
                 requires_gpu=gpu,
-                requires_model_files=gpu and pid in ("sadtalker", "musetalk", "wav2lip", "liveportrait"),
-                healthcheck_available=pid == "sadtalker",
+                requires_model_files=gpu and pid in (
+                    "sadtalker", "musetalk", "wav2lip", "liveportrait",
+                    "echomimic", "hallo", "svd", "animatediff",
+                    "ltx_video", "hunyuan_video", "mochi",
+                ),
+                healthcheck_available=pid == "sadtalker" or pid in _ENV_BY_PID,
                 notes=note,
                 docs_url=docs_url,
             )
@@ -640,6 +684,413 @@ def _build_image_processor_providers() -> list[ProviderInfo]:
 
 
 # ---------------------------------------------------------------------------
+# Image-generator catalog (Phase 12 — Characters tab)
+# ---------------------------------------------------------------------------
+
+
+# Each entry: (provider_id, label, backend_type, default_model, locality,
+# requires_gpu, requires_model_files, env_endpoint, env_api_key,
+# supported_models, notes_when_unconfigured, docs_url, warning).
+# ``env_endpoint`` is the env var that holds the wrapper URL (for local
+# Docker wrappers) OR base API URL (for hosted APIs). When non-empty AND
+# present in the environment the provider transitions from
+# ``not_configured`` to ``configured``. ``env_api_key`` is checked only
+# for hosted-API rows; locals don't need it.
+#
+# ``mock`` is always ``available`` — it returns deterministic placeholder
+# PNGs and is the only provider that runs without operator setup.
+_IMAGE_GENERATOR_CATALOG: tuple[dict, ...] = (
+    # --- Mock (always available, for dev + CI) ---
+    {
+        "provider_id": "mock",
+        "label": "Mock image generator (deterministic placeholder PNG)",
+        "backend_type": "mock",
+        "default_model": "mock-v1",
+        "locality": "local",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "",
+        "supported_models": ["mock-v1"],
+        "always_available": True,
+        "notes": (
+            "Returns a deterministic 1024x1024 placeholder PNG. "
+            "Useful for tests and the no-credentials dev path."
+        ),
+        "docs_url": "",
+        "warning": "",
+    },
+    # --- Local GPU wrappers (mirror the model-sadtalker pattern) ---
+    {
+        "provider_id": "flux_local",
+        "label": "FLUX.1 local (open-weights, GPU wrapper) — default",
+        "backend_type": "flux_local_http",
+        "default_model": "flux.1-schnell",
+        "locality": "local",
+        "requires_gpu": True,
+        "requires_model_files": True,
+        "env_endpoint": "FLUX_LOCAL_BASE_URL",
+        "env_api_key": "",
+        "supported_models": ["flux.1-schnell", "flux.1-dev"],
+        "notes": (
+            "Black Forest Labs FLUX.1 open weights run via the optional "
+            "model-flux Docker wrapper (mirrors the model-sadtalker "
+            "pattern). Set FLUX_LOCAL_BASE_URL and FLUX_LOCAL_MODELS_ROOT, "
+            "then start the wrapper. No auto-download."
+        ),
+        "docs_url": "/docs/runbooks/flux-local-runtime.md",
+        "warning": "",
+    },
+    {
+        "provider_id": "sd35_local",
+        "label": "Stable Diffusion 3.5 Large (local, GPU wrapper)",
+        "backend_type": "sd35_local_http",
+        "default_model": "stable-diffusion-3.5-large",
+        "locality": "local",
+        "requires_gpu": True,
+        "requires_model_files": True,
+        "env_endpoint": "SD35_LOCAL_BASE_URL",
+        "env_api_key": "",
+        "supported_models": [
+            "stable-diffusion-3.5-large",
+            "stable-diffusion-3.5-large-turbo",
+            "stable-diffusion-3.5-medium",
+        ],
+        "notes": (
+            "Stability AI SD3.5 open weights run via the optional "
+            "model-sd35 Docker wrapper. Set SD35_LOCAL_BASE_URL + "
+            "SD35_LOCAL_MODELS_ROOT, then start the wrapper. No "
+            "auto-download."
+        ),
+        "docs_url": "/docs/runbooks/sd35-local-runtime.md",
+        "warning": "",
+    },
+    {
+        "provider_id": "sdxl_local",
+        "label": "Stable Diffusion XL (local, GPU wrapper)",
+        "backend_type": "sdxl_local_http",
+        "default_model": "sdxl-base-1.0",
+        "locality": "local",
+        "requires_gpu": True,
+        "requires_model_files": True,
+        "env_endpoint": "SDXL_LOCAL_BASE_URL",
+        "env_api_key": "",
+        "supported_models": ["sdxl-base-1.0", "sdxl-turbo", "sdxl-lightning"],
+        "notes": (
+            "SDXL via a local Docker wrapper. Lighter VRAM than FLUX/SD3.5 "
+            "(~10GB) — a viable alternative on smaller GPUs."
+        ),
+        "docs_url": "/docs/runbooks/sdxl-local-runtime.md",
+        "warning": "",
+    },
+    {
+        "provider_id": "comfyui_local",
+        "label": "ComfyUI workflow runner (local)",
+        "backend_type": "comfyui_local_http",
+        "default_model": "",
+        "locality": "local",
+        "requires_gpu": True,
+        "requires_model_files": True,
+        "env_endpoint": "COMFYUI_BASE_URL",
+        "env_api_key": "",
+        "supported_models": [],
+        "notes": (
+            "ComfyUI exposed via its /prompt JSON API. Lets the operator "
+            "load arbitrary workflows (FLUX, SD3.5, SDXL, inpainting, "
+            "controlnet, ipadapter for reference-image conditioning)."
+        ),
+        "docs_url": "/docs/runbooks/comfyui-runtime.md",
+        "warning": "",
+    },
+    {
+        "provider_id": "a1111_local",
+        "label": "AUTOMATIC1111 WebUI (local)",
+        "backend_type": "a1111_local_http",
+        "default_model": "",
+        "locality": "local",
+        "requires_gpu": True,
+        "requires_model_files": True,
+        "env_endpoint": "A1111_BASE_URL",
+        "env_api_key": "",
+        "supported_models": [],
+        "notes": (
+            "Stable Diffusion WebUI's /sdapi/v1 endpoints. Wide ecosystem; "
+            "useful for legacy SD checkpoints + popular extensions."
+        ),
+        "docs_url": "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/API",
+        "warning": "",
+    },
+    # --- Hosted APIs (HTTPS, single env API key) ---
+    {
+        "provider_id": "flux_bfl_api",
+        "label": "FLUX BFL hosted API (api.bfl.ml)",
+        "backend_type": "flux_bfl_api",
+        "default_model": "flux-pro-1.1",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "FLUX_BFL_API_KEY",
+        "supported_models": [
+            "flux-pro-1.1",
+            "flux-pro",
+            "flux-dev",
+            "flux-pro-1.1-ultra",
+        ],
+        "notes": (
+            "Black Forest Labs official hosted API. Set FLUX_BFL_API_KEY. "
+            "Supports text-to-image and image-reference (ultra/pro)."
+        ),
+        "docs_url": "https://docs.bfl.ml/",
+        "warning": "Outbound HTTPS; review data-residency before sending operator content.",
+    },
+    {
+        "provider_id": "stability_api",
+        "label": "Stability AI hosted (SD3.5 Large / Ultra)",
+        "backend_type": "stability_api",
+        "default_model": "stable-image-ultra",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "STABILITY_API_KEY",
+        "supported_models": [
+            "stable-image-ultra",
+            "stable-image-core",
+            "sd3.5-large",
+            "sd3.5-large-turbo",
+        ],
+        "notes": "Stability AI cloud. Set STABILITY_API_KEY.",
+        "docs_url": "https://platform.stability.ai/docs/api-reference",
+        "warning": "Outbound HTTPS; review data-residency.",
+    },
+    {
+        "provider_id": "replicate_api",
+        "label": "Replicate.com (multi-model hosted)",
+        "backend_type": "replicate_api",
+        "default_model": "black-forest-labs/flux-schnell",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "REPLICATE_API_TOKEN",
+        "supported_models": [
+            "black-forest-labs/flux-schnell",
+            "black-forest-labs/flux-dev",
+            "stability-ai/stable-diffusion-3.5-large",
+            "stability-ai/sdxl",
+        ],
+        "notes": "Replicate hosts FLUX + SD3.5 + many community models. Set REPLICATE_API_TOKEN.",
+        "docs_url": "https://replicate.com/docs",
+        "warning": "Outbound HTTPS.",
+    },
+    {
+        "provider_id": "fal_api",
+        "label": "fal.ai (fast hosted inference)",
+        "backend_type": "fal_api",
+        "default_model": "fal-ai/flux/schnell",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "FAL_KEY",
+        "supported_models": [
+            "fal-ai/flux/schnell",
+            "fal-ai/flux/dev",
+            "fal-ai/flux-pro",
+            "fal-ai/stable-diffusion-v35-large",
+        ],
+        "notes": "fal.ai cloud — optimised for low-latency. Set FAL_KEY.",
+        "docs_url": "https://fal.ai/docs",
+        "warning": "Outbound HTTPS.",
+    },
+    {
+        "provider_id": "together_api",
+        "label": "together.ai (FLUX + community models)",
+        "backend_type": "together_api",
+        "default_model": "black-forest-labs/FLUX.1-schnell",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "TOGETHER_API_KEY",
+        "supported_models": [
+            "black-forest-labs/FLUX.1-schnell",
+            "black-forest-labs/FLUX.1-pro",
+            "black-forest-labs/FLUX.1-dev",
+        ],
+        "notes": "together.ai hosts FLUX. Set TOGETHER_API_KEY.",
+        "docs_url": "https://docs.together.ai/",
+        "warning": "Outbound HTTPS.",
+    },
+    {
+        "provider_id": "openai_dalle3",
+        "label": "OpenAI DALL·E 3",
+        "backend_type": "openai_dalle3",
+        "default_model": "dall-e-3",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "OPENAI_API_KEY",
+        "supported_models": ["dall-e-3", "dall-e-2"],
+        "notes": "OpenAI Images endpoint. Reuses OPENAI_API_KEY.",
+        "docs_url": "https://platform.openai.com/docs/guides/images",
+        "warning": "Outbound HTTPS; no reference-image conditioning on dall-e-3.",
+    },
+    {
+        "provider_id": "ideogram_api",
+        "label": "Ideogram (text rendering specialist)",
+        "backend_type": "ideogram_api",
+        "default_model": "ideogram-v2",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "IDEOGRAM_API_KEY",
+        "supported_models": ["ideogram-v2", "ideogram-v2-turbo", "ideogram-v1"],
+        "notes": "Ideogram cloud. Set IDEOGRAM_API_KEY.",
+        "docs_url": "https://developer.ideogram.ai/",
+        "warning": "Outbound HTTPS.",
+    },
+    {
+        "provider_id": "recraft_api",
+        "label": "Recraft (design + illustration)",
+        "backend_type": "recraft_api",
+        "default_model": "recraftv3",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "",
+        "env_api_key": "RECRAFT_API_KEY",
+        "supported_models": ["recraftv3", "recraftv2"],
+        "notes": "Recraft cloud. Set RECRAFT_API_KEY.",
+        "docs_url": "https://www.recraft.ai/docs",
+        "warning": "Outbound HTTPS.",
+    },
+    {
+        "provider_id": "vertex_imagen3",
+        "label": "Google Vertex AI — Imagen 3",
+        "backend_type": "vertex_imagen3",
+        "default_model": "imagen-3.0-generate-002",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "VERTEX_AI_PROJECT_ID",
+        "env_api_key": "GOOGLE_APPLICATION_CREDENTIALS",
+        "supported_models": [
+            "imagen-3.0-generate-002",
+            "imagen-3.0-fast-generate-001",
+        ],
+        "notes": (
+            "Google Cloud Vertex AI Imagen 3. Set VERTEX_AI_PROJECT_ID + "
+            "VERTEX_AI_LOCATION + GOOGLE_APPLICATION_CREDENTIALS (path "
+            "to service-account JSON)."
+        ),
+        "docs_url": "https://cloud.google.com/vertex-ai/generative-ai/docs/image",
+        "warning": "Requires GCP service account; outbound HTTPS.",
+    },
+    {
+        "provider_id": "midjourney_unofficial",
+        "label": "Midjourney (unofficial proxy — fragile)",
+        "backend_type": "midjourney_proxy",
+        "default_model": "midjourney-v6",
+        "locality": "external",
+        "requires_gpu": False,
+        "requires_model_files": False,
+        "env_endpoint": "MIDJOURNEY_PROXY_URL",
+        "env_api_key": "MIDJOURNEY_PROXY_TOKEN",
+        "supported_models": ["midjourney-v6", "midjourney-v5.2"],
+        "notes": (
+            "Unofficial Discord-bot proxy (e.g. midjourney-proxy). "
+            "Set MIDJOURNEY_PROXY_URL + MIDJOURNEY_PROXY_TOKEN. No "
+            "official API exists; this path is fragile by design."
+        ),
+        "docs_url": "https://github.com/novicezk/midjourney-proxy",
+        "warning": (
+            "Midjourney has no official API. The proxy depends on "
+            "Discord bot account ToS. Use at your own risk."
+        ),
+    },
+)
+
+
+def _build_image_generator_providers() -> list[ProviderInfo]:
+    """Build the image-generator catalog (Phase 12).
+
+    Metadata-only — no provider is actually invoked here. Status is
+    derived from env vars + the always-available mock. The merge with
+    operator overrides from ``feature_providers`` (Phase 12 DB table)
+    happens later in the request lifecycle via
+    :func:`apply_feature_provider_overrides`; the base catalog never
+    blocks on DB I/O.
+    """
+    selected = os.environ.get("IMAGE_GENERATOR_BACKEND", "flux_local").strip()
+    out: list[ProviderInfo] = []
+    for entry in _IMAGE_GENERATOR_CATALOG:
+        pid = entry["provider_id"]
+        always_available = entry.get("always_available", False)
+        if always_available:
+            status = "available"
+            notes = entry["notes"]
+        else:
+            endpoint_env = entry["env_endpoint"]
+            key_env = entry["env_api_key"]
+            endpoint_set = bool(os.environ.get(endpoint_env, "").strip()) if endpoint_env else False
+            key_set = bool(os.environ.get(key_env, "").strip()) if key_env else False
+            # For local-GPU wrappers: endpoint URL is enough; key is N/A.
+            # For hosted APIs: key alone is enough (no separate endpoint
+            # env required since the SDK/URL is baked into the adapter).
+            # ComfyUI / A1111 / FLUX_LOCAL / SD35_LOCAL / SDXL_LOCAL: need endpoint.
+            # Vertex / Midjourney: need BOTH endpoint and key.
+            need_both = pid in ("vertex_imagen3", "midjourney_unofficial")
+            need_endpoint_only = entry["locality"] == "local"
+            need_key_only = (
+                entry["locality"] == "external" and not need_both
+            )
+            configured = False
+            if need_both:
+                configured = endpoint_set and key_set
+            elif need_endpoint_only:
+                configured = endpoint_set
+            elif need_key_only:
+                configured = key_set
+            status = "configured" if configured else "not_configured"
+            notes = entry["notes"]
+        out.append(
+            ProviderInfo(
+                category="image_generator",
+                provider_id=pid,
+                label=entry["label"],
+                backend_type=entry["backend_type"],
+                default_model=entry["default_model"] or None,
+                is_local=(entry["locality"] == "local"),
+                local_or_external=entry["locality"],  # type: ignore[arg-type]
+                status=status,  # type: ignore[arg-type]
+                supported_models=list(entry["supported_models"]),
+                requires_network=(entry["locality"] == "external"),
+                requires_gpu=entry["requires_gpu"],
+                requires_model_files=entry["requires_model_files"],
+                healthcheck_available=not always_available
+                and status in ("configured", "available"),
+                notes=notes,
+                warning=entry["warning"],
+                docs_url=entry["docs_url"],
+            )
+        )
+    # Selected provider first (so the dropdown defaults to it), then
+    # mock, then alphabetical for the remainder.
+    out.sort(
+        key=lambda p: (
+            p.provider_id != selected,
+            p.provider_id != "mock",
+            p.provider_id,
+        )
+    )
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -650,6 +1101,7 @@ _BUILDERS = {
     "video_generator": _build_video_providers,
     "audio_processor": _build_audio_processor_providers,
     "image_processor": _build_image_processor_providers,
+    "image_generator": _build_image_generator_providers,
 }
 
 
@@ -668,3 +1120,60 @@ def get_provider(category: str, provider_id: str) -> ProviderInfo | None:
         if p.provider_id == provider_id:
             return p
     return None
+
+
+def known_categories() -> tuple[str, ...]:
+    """The full set of provider categories the registry serves."""
+    return tuple(_BUILDERS.keys())
+
+
+def apply_feature_provider_overrides(
+    catalog: list[ProviderInfo],
+    overrides: dict[tuple[str, str], dict],
+) -> list[ProviderInfo]:
+    """Merge operator overrides from the ``feature_providers`` DB table
+    into a catalog snapshot.
+
+    ``overrides`` keys: ``(category, provider_id)``. Values may carry:
+        ``enabled`` (bool): when ``False`` and the code status is
+            ``available`` / ``configured``, we downgrade to ``disabled``.
+        ``display_order`` (int): used to re-sort the catalog so the
+            operator can promote/demote rows from the Characters /
+            Settings UI without touching code.
+        ``health_status`` (str): the last result of a real probe (e.g.
+            from ``POST /api/v1/providers/.../health-check``); when
+            present it replaces the code-derived status.
+
+    The function is pure — it returns a new list. ``overrides`` is
+    permitted to reference unknown providers; those entries are
+    ignored.
+    """
+    if not overrides:
+        return catalog
+    merged: list[tuple[ProviderInfo, int]] = []
+    for idx, p in enumerate(catalog):
+        ov = overrides.get((p.category, p.provider_id))
+        order = idx
+        if ov is None:
+            merged.append((p, order))
+            continue
+        new_status = p.status
+        new_notes = p.notes
+        if ov.get("health_status"):
+            new_status = ov["health_status"]
+        if ov.get("enabled") is False and new_status in ("available", "configured"):
+            new_status = "disabled"
+            new_notes = (
+                ov.get("operator_notes")
+                or "Disabled by operator from the provider registry."
+            )
+        if ov.get("display_order") is not None:
+            order = int(ov["display_order"])
+        merged.append(
+            (
+                p.model_copy(update={"status": new_status, "notes": new_notes}),
+                order,
+            )
+        )
+    merged.sort(key=lambda pair: (pair[1], pair[0].provider_id))
+    return [p for p, _ in merged]

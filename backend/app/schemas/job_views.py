@@ -56,6 +56,10 @@ class JobSummary(BaseModel):
     # the Edit / Retry buttons per row.
     can_edit: bool = True
     can_retry: bool = False
+    # Phase 12 — character binding surfaced on list rows so the dashboard
+    # can show "character: Maria Popescu" or filter without a per-row
+    # detail fetch.
+    character_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _populate_edit_policy(self) -> "JobSummary":
@@ -233,6 +237,10 @@ class JobDetail(BaseModel):
     subtitle_format: str = "srt"
     subtitle_burn_in: bool = False
     transcript_language: str | None = None
+    # Phase 12 — character binding + frozen snapshot. Optional so
+    # pre-Phase-12 jobs continue to deserialise cleanly.
+    character_id: uuid.UUID | None = None
+    character_snapshot: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 

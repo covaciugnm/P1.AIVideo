@@ -33,6 +33,11 @@ dependencies = [
   # added in Phase 4A-2 for the audio + image upload endpoints. Pure-Python,
   # no native deps.
   "python-multipart>=0.0.9",
+  # Phase 12W — outbound HTTP to image-generator wrappers (FLUX / SD3.5 /
+  # SDXL / ComfyUI / A1111) + hosted-API providers. Already in the dev
+  # extra (used by the test client); promote to runtime so the live
+  # backend container can talk to wrapper services without rebuilding.
+  "httpx>=0.27",
 ]
 
 [project.optional-dependencies]

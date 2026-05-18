@@ -1,17 +1,44 @@
 """Job service — DB writes for /jobs endpoints."""
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.character import Character, CharacterVideo
 from app.models.job import Job, JobStatus
 from app.schemas.job import JobCreateRequest
 from app.services.queue_publisher import publish_job_created
 
+logger = logging.getLogger(__name__)
+
+
+async def _load_character_snapshot(
+    session: AsyncSession, character_id: uuid.UUID
+) -> tuple[Character | None, dict | None]:
+    """Resolve ``character_id`` to a profile snapshot.
+
+    Returns ``(character_row, profile_dict)``. When the character is
+    missing OR soft-deleted we return ``(None, None)`` and let the
+    caller decide whether to reject the job — the default is to accept
+    the job without a snapshot, so old jobs created before the
+    character disappeared keep working.
+    """
+    result = await session.execute(select(Character).where(Character.id == character_id))
+    row = result.scalar_one_or_none()
+    if row is None or row.deleted_at is not None:
+        return None, None
+    return row, dict(row.profile_json)
+
 
 async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
+    logger.info(
+        "jobs.create.start target_duration=%s voice_mode=%s face_mode=%s character_id=%s",
+        payload.target_duration_seconds, payload.voice_mode, payload.face_mode, payload.character_id,
+        extra={"phase": "jobs.create.start"},
+    )
     # Audio + image refs are stored as plain JSON dicts in the DB — never binary.
     audio_ref_dict = (
         payload.audio_ref.model_dump(mode="json")
@@ -29,6 +56,19 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         and any(payload.provider_selection.to_dict().values())
         else None
     )
+    # Phase 12 — resolve + snapshot the character profile (if any).
+    character_row: Character | None = None
+    character_snapshot: dict | None = None
+    if payload.character_id is not None:
+        character_row, character_snapshot = await _load_character_snapshot(
+            session, payload.character_id
+        )
+        if character_row is None:
+            logger.warning(
+                "create_job: character_id %s missing/deleted — job stored without snapshot",
+                payload.character_id,
+            )
+
     job = Job(
         brief=payload.brief,
         target_duration_seconds=payload.target_duration_seconds,
@@ -51,10 +91,31 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         subtitle_format=payload.subtitle_format,
         subtitle_burn_in=payload.subtitle_burn_in,
         transcript_language=payload.transcript_language,
+        # Phase 12 — character binding + snapshot.
+        character_id=character_row.id if character_row is not None else None,
+        character_snapshot=character_snapshot,
     )
     session.add(job)
     await session.commit()
     await session.refresh(job)
+    # Phase 12 — record the link row so we can list "videos for character X"
+    # cheaply. The job's snapshot already preserves the profile for history.
+    if character_row is not None:
+        session.add(
+            CharacterVideo(
+                character_id=character_row.id,
+                job_id=job.id,
+                provider_id=(provider_selection_dict or {}).get("video_provider_id"),
+                settings_json=(provider_selection_dict or None),
+                status="pending",
+            )
+        )
+        await session.commit()
+    logger.info(
+        "jobs.create.done job_id=%s status=%s target_duration=%s character_id=%s",
+        job.id, job.status.value, job.target_duration_seconds, job.character_id,
+        extra={"job_id": str(job.id), "phase": "jobs.create.done"},
+    )
     await publish_job_created(job)
     return job
 

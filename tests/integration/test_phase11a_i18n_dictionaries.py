@@ -442,6 +442,21 @@ def test_no_identical_non_technical_pairs():
         # numbers / paths that read the same in both languages.
         "{count}", "{visible} / {total}", "{n} / {max}",
         "watermark {status}", "c2pa {status}",
+        # Phase 12 — Characters tab loanwords + proper-noun job titles
+        # + version template. Romanian uses these identically.
+        "Slug", "Status", "v{version}",
+        "Temperament", "Accent", "Prompt", "Model", "Seed",
+        "Guidance scale",
+        # Personality / archetype labels that are loanwords in RO.
+        "Expert", "Entertainer", "Rebel", "Formal", "Informal",
+        "Sarcastic", "Urgent",
+        # Seniority + occupation labels identical across languages.
+        "Junior", "Lead", "Principal", "Director", "C-level",
+        "Politician", "Student", "Adult",
+        # Phase 12X — proper-noun category label for the Keys tab.
+        "Hugging Face",
+        # Phase 15B — short column label identical in RO/EN.
+        "Provider",
     }
     suspects: list[tuple[str, str]] = []
     for k, v_en in en.items():

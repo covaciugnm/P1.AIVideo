@@ -94,6 +94,12 @@ class JobCreateRequest(BaseModel):
     # Phase 4F: optional per-job provider selection.
     provider_selection: ProviderSelection | None = None
 
+    # Phase 12 — optional persona binding. ``character_id`` references a
+    # row in ``characters``; the job_service snapshots the profile at
+    # submit time onto ``character_snapshot`` so subsequent edits or
+    # soft-deletes of the character never rewrite history.
+    character_id: uuid.UUID | None = None
+
     # Phase 11A: language + subtitle metadata. All have safe defaults so
     # pre-11A payloads stay valid; the model_validator below normalises
     # subtitle_languages when subtitle_enabled=True but no list given.
@@ -223,6 +229,9 @@ class JobResponse(BaseModel):
     subtitle_format: str = DEFAULT_SUBTITLE_FORMAT
     subtitle_burn_in: bool = False
     transcript_language: str | None = None
+    # Phase 12 — character binding + frozen snapshot.
+    character_id: uuid.UUID | None = None
+    character_snapshot: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
     # Phase 11B — editability hints derived from job.status. Lets the UI

@@ -3,8 +3,12 @@
   --surface: #161922;
   --surface-2: #1d2230;
   --border: #2a3041;
-  --text: #e6e9ef;
-  --text-muted: #9aa3b2;
+  --text: #ffffff;
+  /* Phase 13 — bump muted text from low-contrast gray (#9aa3b2) to a
+     near-white so labels, hints, timestamps and meta lines are readable
+     against the dark surfaces. */
+  --text-muted: #e2e6ee;
+  --muted: #e2e6ee;
   --accent: #6ea8fe;
   --accent-strong: #4d8bff;
   --success: #54d39a;

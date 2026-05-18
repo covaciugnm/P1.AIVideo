@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -162,8 +165,17 @@ async def upload_text(
     payload: UploadTextRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> UploadTextResponse:
+    logger.info(
+        "uploads.text.start chars=%d lang=%s tone=%s target_dur=%s",
+        len(payload.script_text or ""), payload.language, payload.tone,
+        payload.target_duration_seconds,
+    )
     text = payload.script_text
     if len(text) > _max_script_chars():
+        logger.warning(
+            "uploads.text.rejected reason=exceeds_max chars=%d max=%d",
+            len(text), _max_script_chars(),
+        )
         raise HTTPException(
             status_code=413,
             detail=f"script_text exceeds SCRIPT_TEXT_MAX_CHARS={_max_script_chars()}",
@@ -212,6 +224,10 @@ async def upload_text(
         "uri": artifact.uri,
         "checksum_sha256": artifact.checksum_sha256,
     }
+    logger.info(
+        "uploads.text.done artifact_id=%s bytes=%d sha256=%s",
+        artifact.id, artifact.size_bytes, (artifact.checksum_sha256 or "")[:10],
+    )
     return UploadTextResponse(
         artifact_id=artifact.id,
         artifact_type=artifact.artifact_type,
@@ -234,10 +250,15 @@ async def upload_audio(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db_session),
 ) -> UploadAudioResponse:
+    logger.info(
+        "uploads.audio.start filename=%r declared_mime=%s",
+        file.filename, file.content_type,
+    )
     suffix = _safe_extension(file.filename, _AUDIO_EXTENSIONS)
     expected_mime = _AUDIO_MIME_BY_EXT[suffix]
     declared_mime = (file.content_type or "").lower() or expected_mime
     if declared_mime not in _AUDIO_MIME_TYPES:
+        logger.warning("uploads.audio.rejected reason=bad_mime got=%r", declared_mime)
         raise HTTPException(
             status_code=400,
             detail=f"unsupported audio mime_type {declared_mime!r}",
@@ -358,6 +379,10 @@ async def upload_audio(
         "checksum": meta.checksum_sha256,
         "artifact_id": str(artifact.id),
     }
+    logger.info(
+        "uploads.audio.done artifact_id=%s mime=%s bytes=%d dur=%.2fs",
+        artifact.id, served_mime, meta.size_bytes, meta.duration_seconds,
+    )
     return UploadAudioResponse(
         artifact_id=artifact.id,
         artifact_type=artifact.artifact_type,
@@ -384,10 +409,15 @@ async def upload_image(
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db_session),
 ) -> UploadImageResponse:
+    logger.info(
+        "uploads.image.start filename=%r declared_mime=%s",
+        file.filename, file.content_type,
+    )
     suffix = _safe_extension(file.filename, _IMAGE_EXTENSIONS)
     expected_mime = _IMAGE_MIME_BY_EXT[suffix]
     declared_mime = (file.content_type or "").lower() or expected_mime
     if declared_mime not in _IMAGE_MIME_TYPES:
+        logger.warning("uploads.image.rejected reason=bad_mime got=%r", declared_mime)
         raise HTTPException(
             status_code=400,
             detail=f"unsupported image mime_type {declared_mime!r}",
@@ -433,6 +463,10 @@ async def upload_image(
         metadata_json=metadata_json,
     )
 
+    logger.info(
+        "uploads.image.done artifact_id=%s mime=%s bytes=%d dims=%dx%d",
+        artifact.id, inspect_mime, meta.size_bytes, meta.width or 0, meta.height or 0,
+    )
     image_ref = {
         "type": "local_path",
         "path": str(dest),
@@ -479,6 +513,12 @@ async def create_job_from_inputs(
     payload: JobFromInputsRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> JobResponse:
+    logger.info(
+        "jobs.from_inputs.start target_dur=%s voice_mode=%s face_mode=%s "
+        "audio_artifact=%s image_artifact=%s character_id=%s",
+        payload.target_duration_seconds, payload.voice_mode, payload.face_mode,
+        payload.audio_artifact_id, payload.image_artifact_id, payload.character_id,
+    )
     # Resolve script_text: inline first, then artifact lookup.
     script_text: str | None = payload.script_text
     if script_text is None and payload.script_artifact_id is not None:
@@ -600,11 +640,32 @@ async def create_job_from_inputs(
             subtitle_format=payload.subtitle_format,
             subtitle_burn_in=payload.subtitle_burn_in,
             transcript_language=payload.transcript_language,
+            # Phase 12 — forward optional character binding so the job
+            # service can snapshot the persona at submit time.
+            character_id=payload.character_id,
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     job = await job_service.create_job(session, create_req)
+
+    # Phase 17G — fallback: if no script_text in the request body but
+    # we have a provided audio artifact with TTS metadata, recover the
+    # script_text from the audio artifact's metadata_json so subtitles
+    # still get generated for the from-inputs pathway.
+    if (
+        create_req.subtitle_enabled
+        and not script_text
+        and payload.audio_artifact_id is not None
+    ):
+        try:
+            audio_art = await _load_artifact_by_id(session, payload.audio_artifact_id)
+            md = audio_art.metadata_json or {}
+            cand = md.get("script_text")
+            if isinstance(cand, str) and cand.strip():
+                script_text = cand
+        except Exception:  # noqa: BLE001
+            pass
 
     # Phase 11A — if subtitles are enabled and we have script_text, drop
     # one sidecar SRT/VTT artifact per requested language. Best-effort:
@@ -629,4 +690,8 @@ async def create_job_from_inputs(
             # and continue; the operator can re-run via a future endpoint.
             await session.rollback()
 
+    logger.info(
+        "jobs.from_inputs.done job_id=%s status=%s character_id=%s",
+        job.id, job.status.value, job.character_id,
+    )
     return JobResponse.model_validate(job)

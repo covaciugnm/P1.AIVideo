@@ -21,6 +21,10 @@ Legend in the *UI consumer* column:
 |---|---|---|---|---|---|
 | `GET` | `/healthz` | — | `{status, phase, scope}` | ✅ `BackendStatusBadge` (polled) | None |
 | `GET` | `/api/v1/system/status` | — | `{app_name, app_version, phase, scope, server_time, database_reachable, database_error}` | ✅ `getSystemStatus()` | DB |
+| `GET` | `/api/v1/system/technical-architecture` | — | `{title, source_path, size_bytes, markdown, generated_at}` (Phase 12T) | ✅ `/technical-help` page (`getTechnicalArchitecture()`) | Filesystem (reads `docs/TECHNICAL_ARCHITECTURE.md`) |
+| `GET` | `/api/v1/system/technical-architecture.md` | — | Raw Markdown (`text/markdown; charset=utf-8`) (Phase 12T) | ✅ "Download Markdown" link on the Technical Help page | Filesystem |
+| `GET` | `/api/v1/system/logs/backend?since_seq=&limit=` | — | `{latest_seq, server_time, entries[]}` (Phase 13 — in-memory ring buffer of backend log records) | ✅ Right-sidebar **Backend** tab (`BackendLogsPanel`) polling every 2s | None |
+| `GET` | `/api/v1/system/wrappers` | — | `{server_time, items[{name, container, base_url, reachable, status, ready, error}]}` (Phase 15E — live probe per model-* wrapper) | Frontend dropdown badges (UP/DOWN per provider) | Docker network DNS |
 | `GET` | `/api/v1/config/ui-options` | — | `UIOptions` (voice modes, face modes, allowed mime types, max sizes, default providers, …) | ✅ `getUiOptions()` | None |
 | `GET` | `/api/v1/config/languages` | — | `LanguagesConfigResponse` (catalog + defaults + subtitle defaults) | ✅ Phase 11A — `LanguageContext` reads on boot | None |
 | `GET` | `/api/v1/stages` | — | `[{name, label, description}]` (DAG metadata) | ➕ `getStages()` | None |

@@ -52,6 +52,8 @@ export interface JobSummary {
   // Phase 11B — editability hints surfaced on the list row.
   readonly can_edit?: boolean;
   readonly can_retry?: boolean;
+  // Phase 12 — character binding surfaced on list rows.
+  readonly character_id?: string | null;
 }
 
 export interface JobResponse {
@@ -384,7 +386,10 @@ export type ProviderCategory =
   | "tts"
   | "video_generator"
   | "audio_processor"
-  | "image_processor";
+  | "image_processor"
+  // Phase 12 — FLUX / SD3.5 / hosted API backends used by the
+  // Characters tab.
+  | "image_generator";
 
 export type ProviderStatus =
   | "available"
@@ -425,6 +430,8 @@ export interface ProvidersResponse {
   // Phase 6D — optional for backward-compat with older payloads.
   readonly audio_processor?: readonly ProviderInfo[];
   readonly image_processor?: readonly ProviderInfo[];
+  // Phase 12 — image generation backends.
+  readonly image_generator?: readonly ProviderInfo[];
 }
 
 export interface ProviderSelection {
@@ -437,6 +444,9 @@ export interface ProviderSelection {
   // Phase 6D additions.
   readonly audio_processor_id?: string | null;
   readonly image_processor_id?: string | null;
+  // Phase 12 — image generation provider + model.
+  readonly image_generator_id?: string | null;
+  readonly image_generator_model?: string | null;
 }
 
 export interface TTSGenerateRequest {
@@ -587,6 +597,8 @@ export interface CreateJobFromInputsBody {
   readonly subtitle_format?: "srt" | "vtt";
   readonly subtitle_burn_in?: boolean;
   readonly transcript_language?: string | null;
+  // Phase 12 — optional persona binding.
+  readonly character_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------

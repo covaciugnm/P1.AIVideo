@@ -1,0 +1,17 @@
+# SDXL wrapper deps — Phase 12W.
+#
+# Pinned for RTX 5090 Laptop GPU (Blackwell, sm_120). Pre-2.7 torch
+# was built only up to sm_90 so CUDA kernels were missing. torch 2.7+
+# with the cu128 wheels (CUDA 12.8 toolkit) ships full Blackwell
+# kernels — required to run inference on this hardware.
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.1
+torchvision==0.22.1
+diffusers==0.32.1
+transformers==4.46.3
+accelerate==1.2.1
+safetensors==0.4.5
+Pillow==11.0.0

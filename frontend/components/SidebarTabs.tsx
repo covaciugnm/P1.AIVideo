@@ -18,9 +18,13 @@ export function SidebarTabs({ active, onChange }: SidebarTabsProps) {
   const t = useT();
   const tabs: readonly { id: SidebarTab; label: string }[] = [
     { id: "logs", label: t("sidebar.logs") },
+    // Phase 13 — live tail of backend INFO/progress logs.
+    { id: "backend", label: t("sidebar.backend") },
     { id: "settings", label: t("sidebar.settings") },
     // Phase 8F-2 — operator provider diagnostics.
     { id: "test1", label: t("sidebar.test1") },
+    // Phase 12X — DB-backed API keys store + test probes.
+    { id: "keys", label: t("sidebar.keys") },
   ];
   return (
     <div className={styles.tabs} role="tablist">

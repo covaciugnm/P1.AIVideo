@@ -31,7 +31,22 @@ export const LANGUAGE_META: Readonly<Record<LanguageCode, LanguageMeta>> = {
  * but not the other is caught by the parity test. */
 export interface Dictionary {
   readonly nav: Readonly<Record<
-    "dashboard" | "jobs" | "newJob" | "uploads" | "settings" | "help",
+    "dashboard" | "jobs" | "newJob" | "uploads" | "characters" | "settings" | "help" | "technical",
+    string
+  >>;
+  readonly technical: Readonly<Record<
+    | "title"
+    | "subtitle"
+    | "searchPlaceholder"
+    | "noResults"
+    | "loading"
+    | "failedToLoad"
+    | "openButton"
+    | "downloadMarkdown"
+    | "sourcePath"
+    | "generatedAt"
+    | "tocTitle"
+    | "matchCount",
     string
   >>;
   readonly common: Readonly<Record<
@@ -171,7 +186,15 @@ export interface Dictionary {
     string
   >>;
   readonly sidebar: Readonly<Record<
-    "logs" | "settings" | "test1" | "activity" | "collapse" | "expand",
+    "logs" | "backend" | "settings" | "test1" | "keys" | "activity" | "collapse" | "expand",
+    string
+  >>;
+  readonly backendLogs: Readonly<Record<
+    | "filterPlaceholder" | "pause" | "resume" | "clear" | "count" | "empty",
+    string
+  >>;
+  readonly characterVideos: Readonly<Record<
+    | "empty" | "colCreated" | "colProvider" | "colDuration" | "colJobStatus" | "colJobLink",
     string
   >>;
   readonly artifactTable: Readonly<Record<
@@ -286,4 +309,52 @@ export interface Dictionary {
     | "piper_runtime_missing" | "piper_assets_missing" | "piper_provider_not_configured" | "piper_provider_not_implemented" | "piper_generation_failed" | "f5_runtime_missing" | "f5_assets_missing" | "f5_provider_not_configured" | "f5_provider_not_implemented" | "f5_generation_failed" | "provider_disabled",
     string
   >>;
+  // Phase 12 — Characters / Personas (top-level keys carry flat strings,
+  // ``sections`` / ``fields`` / ``actions`` / ``images`` / ``summary`` /
+  // ``help`` are nested string maps so we don't have to enumerate ~80
+  // field names in this type. The parity test enforces leaf-key equality
+  // between en.ts and ro.ts at runtime.
+  readonly characters: {
+    readonly title: string;
+    readonly pageHelp: string;
+    readonly addNew: string;
+    readonly empty: string;
+    readonly nameLabel: string;
+    readonly displayNameLabel: string;
+    readonly slugLabel: string;
+    readonly statusLabel: string;
+    readonly languageLabel: string;
+    readonly voiceProviderLabel: string;
+    readonly imageProviderLabel: string;
+    readonly mainReferenceLabel: string;
+    readonly imagesCount: string;
+    readonly videosCount: string;
+    readonly version: string;
+    readonly deleteConfirmTitle: string;
+    readonly deleteConfirmBody: string;
+    readonly actions: Readonly<Record<string, string>>;
+    readonly sections: Readonly<Record<string, string>>;
+    readonly fields: Readonly<Record<string, string>>;
+    readonly images: Readonly<Record<string, string>>;
+    readonly summary: Readonly<Record<string, string>>;
+    readonly help: Readonly<Record<string, string>>;
+  };
+  readonly characterLookups: Readonly<Record<
+    string,
+    Readonly<Record<string, string>>
+  >>;
+  readonly providerStatus: Readonly<Record<string, string>>;
+  readonly videoCharacter: Readonly<Record<string, string>>;
+  // Phase 12X — DB-backed API keys store displayed in the right-sidebar
+  // "Keys" tab.
+  readonly keys: {
+    readonly title: string;
+    readonly intro: string;
+    readonly placeholder: string;
+    readonly save: string;
+    readonly test: string;
+    readonly probe: string;
+    readonly confirmDelete: string;
+    readonly categories: Readonly<Record<string, string>>;
+  };
 }

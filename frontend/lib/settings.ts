@@ -52,8 +52,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showApiLogs: true,
   showSystemLogs: true,
   maxLogEntries: 500,
-  backendHostPort: 8000,
-  frontendHostPort: 3000,
+  backendHostPort: 8001,
+  frontendHostPort: 3010,
   postgresHostPort: 5432,
   redisHostPort: 6379,
   minioHostPort: 9000,
@@ -78,7 +78,9 @@ export const SIDEBAR_STORAGE_KEY = "aivideo:sidebar:v1";
 // Settings. Persisted in the same SIDEBAR_STORAGE_KEY localStorage slot;
 // older browsers with only "logs" / "settings" stored still validate
 // because the loader rejects anything outside the union and falls back.
-export type SidebarTabId = "logs" | "settings" | "test1";
+// Phase 12X added the "keys" tab — DB-backed API credentials store.
+// Phase 13 added the "backend" tab — live tail of backend INFO/progress logs.
+export type SidebarTabId = "logs" | "backend" | "settings" | "test1" | "keys";
 
 export interface SidebarState {
   readonly collapsed: boolean;
@@ -121,8 +123,10 @@ export function loadSidebarState(): SidebarState {
       collapsed: typeof parsed.collapsed === "boolean" ? parsed.collapsed : DEFAULT_SIDEBAR_STATE.collapsed,
       activeTab:
         parsed.activeTab === "logs"
+        || parsed.activeTab === "backend"
         || parsed.activeTab === "settings"
         || parsed.activeTab === "test1"
+        || parsed.activeTab === "keys"
           ? parsed.activeTab
           : DEFAULT_SIDEBAR_STATE.activeTab,
     };

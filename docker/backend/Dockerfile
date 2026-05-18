@@ -66,6 +66,11 @@ RUN pip install --no-cache-dir -e ./backend
 COPY agents/ ./agents/
 RUN pip install --no-cache-dir -e ./agents
 
+# Phase 12T — ship the technical-architecture doc so
+# ``GET /api/v1/system/technical-architecture`` can read it from disk
+# and the frontend "Technical Help" page can render it.
+COPY docs/TECHNICAL_ARCHITECTURE.md ./docs/TECHNICAL_ARCHITECTURE.md
+
 # Phase 8G — opt-in Piper TTS install via build arg. Default OFF keeps
 # the light backend image lean (~no onnxruntime). Operators who want
 # the Piper real-synthesis path enable it with:

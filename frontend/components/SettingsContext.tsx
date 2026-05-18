@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { autoDetectBackendBaseUrl } from "@/lib/api";
 import * as logBus from "@/lib/log-bus";
 import {
   DEFAULT_SETTINGS,
@@ -48,6 +49,98 @@ export function SettingsProvider({ children }: { readonly children: ReactNode })
         frontendHostPort: loaded.frontendHostPort,
       },
     });
+
+    // Phase 14C / 15X — auto-detect a reachable backend at page load.
+    // Always runs (even if the operator pinned a custom URL) but the
+    // custom URL is tried FIRST so a working operator override wins.
+    // Order: same-host context first (matches the user's current
+    // browsing origin), then the tunnel sibling host, then the
+    // build-time URL, then localhost dev fallbacks. Whichever responds
+    // to /healthz in 2.5s wins.
+
+    const candidates: string[] = [];
+
+    // 0. Operator override — try it first if pinned.
+    if (loaded.apiBaseUrlIsCustom && loaded.apiBaseUrl) {
+      candidates.push(loaded.apiBaseUrl);
+    }
+
+    if (typeof window !== "undefined") {
+      const origin = window.location.origin;
+      const host = window.location.hostname;
+      const isLocalhost =
+        host === "localhost"
+        || host === "127.0.0.1"
+        || host.startsWith("192.168.")
+        || host.startsWith("10.")
+        || host.endsWith(".local");
+
+      if (isLocalhost) {
+        // 1a. Localhost browsing → backend is also localhost, on the
+        //     compose-published port (host 8001 by default).
+        candidates.push(`http://${host}:${loaded.backendHostPort || 8001}`);
+        candidates.push(`http://${host}:8001`);
+        candidates.push(`http://${host}:8000`);
+      } else {
+        // 1b. Tunneled / domain browsing → the API sibling subdomain.
+        try {
+          const u = new URL(origin);
+          if (u.hostname && !u.hostname.startsWith("api-")) {
+            candidates.push(`${u.protocol}//api-${u.hostname}`);
+          }
+        } catch {
+          /* ignore */
+        }
+        // Same-origin (when CF path routing maps /api to backend).
+        candidates.push(origin);
+      }
+    }
+
+    // 2. The build-time NEXT_PUBLIC_API_BASE_URL — works when the page
+    //    was rebuilt with a deploy-target URL baked in.
+    if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_BASE_URL) {
+      candidates.push(process.env.NEXT_PUBLIC_API_BASE_URL);
+    }
+
+    // 3. Last-resort dev fallbacks (works on any localhost setup).
+    candidates.push("http://localhost:8001");
+    candidates.push("http://localhost:8000");
+
+    let cancelled = false;
+    void (async () => {
+      const winner = await autoDetectBackendBaseUrl(candidates);
+      if (cancelled) return;
+      if (winner && winner !== loaded.apiBaseUrl) {
+        logBus.emit({
+          source: "frontend",
+          level: "info",
+          message: `auto-detect: switching API base URL → ${winner}`,
+          meta: { previous: loaded.apiBaseUrl, candidates },
+        });
+        setSettings((prev) =>
+          prev.apiBaseUrlIsCustom ? prev : { ...prev, apiBaseUrl: winner },
+        );
+        // Persist so subsequent reloads start with the working URL.
+        const fresh = { ...loaded, apiBaseUrl: winner };
+        saveSettings(fresh);
+      } else if (winner) {
+        logBus.emit({
+          source: "frontend",
+          level: "info",
+          message: `auto-detect: current API base URL is reachable (${winner})`,
+        });
+      } else {
+        logBus.emit({
+          source: "frontend",
+          level: "warning",
+          message: `auto-detect: no candidate backend reachable — tried ${candidates.length}`,
+          meta: { candidates },
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const update = useCallback((patch: Partial<Settings>) => {

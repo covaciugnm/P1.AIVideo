@@ -8,11 +8,14 @@ exposed.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -189,6 +192,8 @@ async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
         video_language=job.video_language or "ro",
         subtitle_enabled=bool(job.subtitle_enabled),
         subtitle_languages=job.subtitle_languages,
+        # Phase 12 — character binding on the list row.
+        character_id=job.character_id,
     )
 
 
@@ -262,7 +267,12 @@ async def create_job(
     payload: JobCreateRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> JobResponse:
+    logger.info(
+        "jobs.create_endpoint.start target_dur=%s voice_mode=%s face_mode=%s character_id=%s",
+        payload.target_duration_seconds, payload.voice_mode, payload.face_mode, payload.character_id,
+    )
     job = await job_service.create_job(session, payload)
+    logger.info("jobs.create_endpoint.done job_id=%s status=%s", job.id, job.status.value)
     return JobResponse.model_validate(job)
 
 
@@ -359,6 +369,7 @@ async def update_job(
         raise HTTPException(
             status_code=400, detail="no editable fields provided"
         )
+    logger.info("jobs.update.start job_id=%s fields=%s", job_id, sorted(payload.model_dump(exclude_none=True).keys()))
     await _load_job_or_404(session, job_id)
     patch = payload.model_dump(exclude_none=True)
     if "provider_selection" in patch and payload.provider_selection is not None:
@@ -367,9 +378,11 @@ async def update_job(
     try:
         updated = await job_service.update_job(session, job_id, patch)
     except job_service.JobEditError as exc:
+        logger.warning("jobs.update.rejected job_id=%s status=%s detail=%s", job_id, exc.status_code, exc.detail)
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail="job not found")
+    logger.info("jobs.update.done job_id=%s", job_id)
     return JobResponse.model_validate(updated)
 
 
@@ -383,9 +396,12 @@ async def delete_job(
     job_id: uuid.UUID,
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
+    logger.info("jobs.delete.start job_id=%s", job_id)
     deleted = await job_service.delete_job(session, job_id)
     if not deleted:
+        logger.warning("jobs.delete.not_found job_id=%s", job_id)
         raise HTTPException(status_code=404, detail="job not found")
+    logger.info("jobs.delete.done job_id=%s", job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -452,8 +468,13 @@ async def cancel_job(
     payload: JobCancelRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> JobResponse:
+    logger.info("jobs.cancel.start job_id=%s reason=%r", job_id, payload.reason)
     job = await _load_job_or_404(session, job_id)
     if job.status in _TERMINAL_STATUSES:
+        logger.warning(
+            "jobs.cancel.rejected job_id=%s reason=already_terminal status=%s",
+            job_id, job.status.value,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
@@ -483,6 +504,7 @@ async def cancel_job(
         reasons=[reason],
         extra={"cancelled_at": cancelled_at},
     )
+    logger.info("jobs.cancel.done job_id=%s new_status=%s", job.id, job.status.value)
     return JobResponse.model_validate(job)
 
 
@@ -503,8 +525,16 @@ async def retry_job(
     ``rejection_reason``, preserves all prior stage_run rows for audit,
     and the worker re-runs the DAG with the patched metadata.
     """
+    logger.info(
+        "jobs.retry.start job_id=%s stage=%r reason=%r",
+        job_id, payload.stage_name, payload.reason,
+    )
     job = await _load_job_or_404(session, job_id)
     if job.status not in (JobStatus.failed, JobStatus.rejected):
+        logger.warning(
+            "jobs.retry.rejected job_id=%s reason=wrong_status status=%s",
+            job_id, job.status.value,
+        )
         raise HTTPException(
             status_code=409,
             detail=(
@@ -547,6 +577,10 @@ async def retry_job(
             "retry_count": recovery["retry_count"],
             "retry_stage_name": payload.stage_name,
         },
+    )
+    logger.info(
+        "jobs.retry.done job_id=%s retry_count=%d new_status=%s",
+        job.id, recovery["retry_count"], job.status.value,
     )
     return JobResponse.model_validate(job)
 

@@ -24,16 +24,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Five canonical provider categories. ``image_processor`` and
-# ``audio_processor`` were added in Phase 6D; older clients that didn't
-# know about them continue to work because they simply ignore the two
-# extra keys on the catalog response.
+# Provider categories. Phase 6D added ``audio_processor`` /
+# ``image_processor``; Phase 12 adds ``image_generator`` (FLUX / SD3.5
+# / hosted-API backends used by the Characters tab). Older clients that
+# don't know about new keys simply ignore them on the catalog response.
 ProviderCategory = Literal[
     "llm",
     "tts",
     "video_generator",
     "audio_processor",
     "image_processor",
+    "image_generator",
 ]
 
 
@@ -68,6 +69,10 @@ class ProviderSelection(BaseModel):
     # Phase 6D additions.
     audio_processor_id: str | None = Field(default=None, max_length=80)
     image_processor_id: str | None = Field(default=None, max_length=80)
+    # Phase 12 — text-to-image / image-to-image generation backend
+    # (FLUX local default, BFL API, SD3.5, hosted APIs, mock).
+    image_generator_id: str | None = Field(default=None, max_length=80)
+    image_generator_model: str | None = Field(default=None, max_length=160)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(exclude_none=True)
@@ -119,3 +124,5 @@ class ProvidersResponse(BaseModel):
     # Phase 6D additions.
     audio_processor: list[ProviderInfo] = Field(default_factory=list)
     image_processor: list[ProviderInfo] = Field(default_factory=list)
+    # Phase 12 — image generation backends (Characters tab).
+    image_generator: list[ProviderInfo] = Field(default_factory=list)

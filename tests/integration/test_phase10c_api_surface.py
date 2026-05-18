@@ -22,6 +22,15 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     # Health / system / config
     ("GET", "/healthz"),
     ("GET", "/api/v1/system/status"),
+    # Phase 12T — Technical Help (markdown report served from disk)
+    ("GET", "/api/v1/system/technical-architecture"),
+    ("GET", "/api/v1/system/technical-architecture.md"),
+    # Phase 13 — backend log ring buffer (right-sidebar Backend tab)
+    ("GET", "/api/v1/system/logs/backend"),
+    # Phase 15E — live probe of every model-* wrapper container
+    ("GET", "/api/v1/system/wrappers"),
+    # Phase 15B — character video library (job deep links)
+    ("GET", "/api/v1/characters/{character_id}/videos"),
     ("GET", "/api/v1/config/ui-options"),
     ("GET", "/api/v1/config/languages"),
     ("GET", "/api/v1/stages"),
@@ -67,6 +76,31 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("POST", "/api/v1/audio/fit-check"),
     ("POST", "/api/v1/qc/inspect"),
     ("POST", "/api/v1/export/finalize"),
+    # Phase 12 — Characters / Personas tab.
+    ("GET", "/api/v1/characters"),
+    ("POST", "/api/v1/characters"),
+    ("GET", "/api/v1/characters/lookups"),
+    ("GET", "/api/v1/characters/{character_id}"),
+    ("PUT", "/api/v1/characters/{character_id}"),
+    ("DELETE", "/api/v1/characters/{character_id}"),
+    ("GET", "/api/v1/characters/{character_id}/script-context"),
+    ("GET", "/api/v1/characters/{character_id}/images"),
+    ("POST", "/api/v1/characters/{character_id}/images/generate"),
+    ("POST", "/api/v1/characters/{character_id}/images/{image_id}/accept"),
+    ("POST", "/api/v1/characters/{character_id}/images/{image_id}/reject"),
+    ("POST", "/api/v1/characters/{character_id}/images/{image_id}/set-main-reference"),
+    ("POST", "/api/v1/characters/{character_id}/images/{image_id}/archive"),
+    ("DELETE", "/api/v1/characters/{character_id}/images/{image_id}"),
+    ("GET", "/api/v1/characters/{character_id}/images/{image_id}/content"),
+    # Phase 12 — image generator catalog + per-provider health check.
+    ("GET", "/api/v1/providers/image-generators"),
+    ("POST", "/api/v1/providers/{category}/{provider_id}/health-check"),
+    # Phase 12X — DB-backed API key store (right-sidebar Keys page).
+    ("GET", "/api/v1/secrets"),
+    ("POST", "/api/v1/secrets"),
+    ("PUT", "/api/v1/secrets/{key_name}"),
+    ("DELETE", "/api/v1/secrets/{key_name}"),
+    ("POST", "/api/v1/secrets/{key_name}/test"),
 )
 
 

@@ -24,12 +24,15 @@ No ML, no GPU, no model weights.
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,8 +136,13 @@ async def qc_inspect(
     payload: QcInspectRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> QcInspectResult:
+    logger.info(
+        "qc.inspect.start job_id=%s artifact_id=%s",
+        payload.job_id, payload.artifact_id,
+    )
     job_row = await session.execute(select(Job).where(Job.id == payload.job_id))
     if job_row.scalar_one_or_none() is None:
+        logger.warning("qc.inspect.not_found job_id=%s", payload.job_id)
         raise HTTPException(status_code=404, detail="job not found")
 
     art, err = await _resolve_target_artifact(

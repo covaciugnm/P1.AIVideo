@@ -44,7 +44,12 @@ BACKEND_PYPROJECT = REPO_ROOT / "backend" / "pyproject.toml"
 AGENTS_PYPROJECT = REPO_ROOT / "agents" / "pyproject.toml"
 
 
-_GPU_PLACEHOLDERS = ("sadtalker", "musetalk", "wav2lip", "liveportrait")
+_GPU_PLACEHOLDERS = (
+    "sadtalker", "musetalk", "wav2lip", "liveportrait",
+    # Phase 12V additions — 7 new GPU video generator wrappers.
+    "echomimic", "hallo", "svd", "animatediff", "ltx_video",
+    "hunyuan_video", "mochi",
+)
 _NON_GPU_VIDEO = ("local_http_video", "external_video_api")
 _CUDA_AGENTS = ("agent-voice", "agent-face", "agent-lipsync")
 

@@ -29,11 +29,14 @@ Boundaries:
 """
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,6 +116,10 @@ async def script_generate(
     session: AsyncSession = Depends(get_db_session),
 ) -> ScriptGenerateResponse:
     provider_id = payload.provider_id.strip() or "template"
+    logger.info(
+        "script.generate.start provider=%s model=%s target_dur=%s lang=%s",
+        provider_id, payload.model, payload.target_duration_seconds, payload.language,
+    )
 
     # Network-call gate.
     enable_network = os.environ.get(
