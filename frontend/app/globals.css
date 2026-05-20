@@ -295,6 +295,23 @@ h3 {
   background: transparent;
 }
 
+/* Phase 23 — character lifecycle: destructive "Retire" action + the
+   little lock glyph next to immutable fields when a character is active. */
+.btn-danger {
+  background: var(--danger, #b42318);
+  border-color: var(--danger, #b42318);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.1);
+}
+
+.lock-hint {
+  opacity: 0.7;
+  font-size: 0.85em;
+}
+
 table.simple {
   width: 100%;
   border-collapse: collapse;
@@ -349,4 +366,75 @@ table.simple tbody tr:hover {
   border-radius: var(--radius-sm);
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* ===========================================================================
+   Phase 22 — responsive layout for phones / narrow viewports (≤ 768px).
+   Stacks the header nav, collapses the app body to a single column, makes
+   wide tables scroll horizontally, and shrinks card padding. No JS — pure
+   CSS so SSR + hydration are unaffected.
+   =========================================================================== */
+@media (max-width: 768px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+  }
+  .app-header-left {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  .nav-links {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    row-gap: var(--space-2);
+  }
+  /* Stack the main content above/below the activity sidebar instead of
+     side-by-side. The sidebar drops to the bottom and goes full width. */
+  .app-body {
+    flex-direction: column;
+  }
+  .app-main {
+    padding: var(--space-3);
+  }
+  /* Cards get tighter padding on small screens. */
+  .card {
+    padding: var(--space-3);
+  }
+  /* Wide tables (videos list, artifacts) scroll horizontally instead of
+     overflowing the viewport. Wrap any <table> in its natural container. */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* Form rows become single-column. */
+  .field,
+  .row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  /* Selects + inputs go full width so they're tappable. */
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="search"],
+  textarea {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+  /* Headings shrink a touch. */
+  h1 { font-size: 22px; }
+  h2 { font-size: 18px; }
+}
+
+/* Extra-small phones (≤ 420px): even tighter. */
+@media (max-width: 420px) {
+  .app-main { padding: var(--space-2); }
+  .nav-links { font-size: 14px; gap: var(--space-2); }
+  h1 { font-size: 20px; }
 }

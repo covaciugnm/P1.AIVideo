@@ -33,6 +33,13 @@ const STATUS_VARIANT: Readonly<Record<string, Variant>> = {
   not_configured: "muted",
   not_implemented: "muted",
   error: "danger",
+
+  // Phase 23 — character lifecycle states.
+  active: "success",
+  editing: "info",
+  retired: "muted",
+  inactive: "muted",
+  draft: "warn",
 };
 
 interface StatusBadgeProps {

@@ -54,6 +54,13 @@ export interface JobSummary {
   readonly can_retry?: boolean;
   // Phase 12 — character binding surfaced on list rows.
   readonly character_id?: string | null;
+  // Phase 21 — pipeline variant + per-scene plan + display name.
+  readonly job_type?: "talking_head" | "scenes_only" | "news_presenter";
+  readonly scene_plan?: readonly SceneSpec[] | null;
+  // Phase 21 — "<Character>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>". The
+  // backend always returns this; UI uses it as the primary
+  // identifier column in the videos list.
+  readonly display_name?: string;
 }
 
 export interface JobResponse {
@@ -421,6 +428,14 @@ export interface ProviderInfo {
   readonly warning?: string;
   readonly docs_url?: string;
   readonly is_custom?: boolean;
+  // Phase 18 — TTS voice gender filter ("male"|"female"|"neutral"|null).
+  readonly voice_gender?: string | null;
+  // Phase 20 — voice-aware metadata. ``language`` is an ISO 639-1 code
+  // used to filter the TTS dropdown by selected video language;
+  // ``sample_text`` + ``sample_audio_url`` power the per-voice preview.
+  readonly language?: string | null;
+  readonly sample_text?: string | null;
+  readonly sample_audio_url?: string | null;
 }
 
 export interface ProvidersResponse {
@@ -498,6 +513,25 @@ export interface ScriptGenerateRequest {
   readonly language?: string;
   readonly provider_id?: string;
   readonly model?: string | null;
+  // Phase 21 iter 2 — output mode. "spoken_script" (default) produces
+  // a voiceable script; "image_description" produces an English visual
+  // prompt suitable for FLUX (used by the "Generate image description"
+  // button to drive character image generation).
+  readonly mode?: "spoken_script" | "image_description" | "scene_plan";
+  readonly job_type_hint?: "scenes_only" | "news_presenter";
+  readonly character_gender?: string;
+}
+
+// Phase 21 — scene_plan editable shape. Mirrors backend SceneSpec.
+export interface SceneSpec {
+  scene_number: number;
+  kind: "presenter" | "broll";
+  spoken_text: string;
+  visual_description: string | null;
+  duration_s: number;
+  image_artifact_id: string | null;
+  audio_artifact_id: string | null;
+  clip_artifact_id: string | null;
 }
 
 export interface ScriptGenerateResponse {
@@ -512,6 +546,8 @@ export interface ScriptGenerateResponse {
   readonly language: string;
   readonly artifact_id: string | null;
   readonly message: string;
+  // Phase 21 — populated only when mode="scene_plan".
+  readonly scenes?: readonly SceneSpec[] | null;
 }
 
 export interface ScriptGenerateError {
@@ -599,6 +635,11 @@ export interface CreateJobFromInputsBody {
   readonly transcript_language?: string | null;
   // Phase 12 — optional persona binding.
   readonly character_id?: string | null;
+  // Phase 21 — pipeline variant + per-scene plan.
+  readonly job_type?: "talking_head" | "scenes_only" | "news_presenter";
+  readonly scene_plan?: readonly SceneSpec[] | null;
+  // Phase 22 — output orientation.
+  readonly orientation?: "landscape" | "portrait" | "square";
 }
 
 // ---------------------------------------------------------------------------

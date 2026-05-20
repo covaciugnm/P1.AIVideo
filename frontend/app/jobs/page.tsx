@@ -234,7 +234,9 @@ function JobsTable({
               <tr key={job.id}>
                 <td>
                   <Link href={`/jobs/${job.id}`} className={styles.jobLink}>
-                    <strong>{shortId(job.id)}</strong>
+                    <strong title={job.id}>
+                      {job.display_name || shortId(job.id)}
+                    </strong>
                   </Link>
                   <div className={styles.brief} title={job.brief}>
                     {job.brief}

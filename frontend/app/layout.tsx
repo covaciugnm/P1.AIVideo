@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -22,6 +22,14 @@ export const metadata: Metadata = {
   title: "P1.AIVideo",
   description:
     "Synthetic-only short-form reel pipeline. Metadata-only operator dashboard.",
+};
+
+// Phase 22 — mobile viewport so the responsive CSS (globals.css media
+// queries) actually engages on phones instead of rendering a zoomed-out
+// desktop layout.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

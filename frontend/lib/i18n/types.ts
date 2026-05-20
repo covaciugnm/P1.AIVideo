@@ -143,7 +143,7 @@ export interface Dictionary {
     string
   >>;
   readonly createJob: Readonly<Record<
-    | "title" | "intro" | "sectionBrief" | "briefLabel" | "briefPlaceholder" | "targetDuration" | "durationBetween" | "sectionVoice" | "voiceMode" | "voiceTts" | "voiceProvided" | "scriptText" | "scriptPlaceholder" | "scriptCounter" | "sectionProviders" | "scriptProvider" | "ttsProvider" | "videoProvider" | "audioProcessor" | "imageProcessor" | "providerInherit" | "providerInheritWithName" | "providersUnavailable" | "providerSelected" | "sectionFace" | "useProvidedImage" | "providedImageTitle" | "imageConsent" | "imageSynthetic" | "audioConsent" | "audioOwned" | "audioFitCheck" | "audioFitChecking" | "providedAudioTitle" | "sectionLanguage" | "languageIntro" | "videoLanguage" | "enableSubtitles" | "subtitleLanguages" | "subtitleFormat" | "burnSubtitles" | "burnNotImplemented" | "sectionCompliance" | "complianceBanner" | "syntheticConfirm" | "consentConfirm" | "generateScript" | "generateScriptBusy" | "generateAudio" | "generateAudioBusy" | "listen" | "uploadAudio" | "uploadImage" | "submit" | "submitting" | "providerNotConfigured" | "providerRequiresGpu" | "providerRequiresModelFiles" | "watermarkRequired" | "c2paRequired" | "scriptArtifactCreated" | "audioArtifactCreated" | "scriptGeneratedPreview" | "scriptFailed" | "audioFailed" | "missingScriptText" | "missingAudioRef" | "missingImageRef" | "scriptGeneratedStatus" | "ttsGeneratedStatus" | "ttsPreviewLabel",
+    | "title" | "intro" | "sectionJobType" | "jobTypeIntro" | "jobTypeTalkingHead" | "jobTypeTalkingHeadDesc" | "jobTypeScenesOnly" | "jobTypeScenesOnlyDesc" | "jobTypeNewsPresenter" | "jobTypeNewsPresenterDesc" | "jobTypeComingSoon" | "jobTypeScenesOnlyPending" | "jobTypeNewsPresenterPending" | "orientationLabel" | "orientationLandscape" | "orientationPortrait" | "orientationSquare" | "orientationHelp" | "sectionScenePlan" | "scenePlanGenerate" | "scenePlanRegenerate" | "scenePlanBusy" | "scenePlanHelp" | "scenePlanEmpty" | "scenePlanEmptyPlaceholder" | "scenePlanDone" | "scenePlanTotal" | "scenePlanAddBroll" | "scenePlanAddBrollHelp" | "scenePlanAddPresenter" | "scenePlanAddPresenterHelp" | "scenePlanKindPresenter" | "scenePlanKindBroll" | "scenePlanKindHelp" | "scenePlanDuration" | "scenePlanMoveUp" | "scenePlanMoveDown" | "scenePlanDelete" | "scenePlanSpokenText" | "scenePlanSpokenPlaceholder" | "scenePlanVisualDesc" | "scenePlanVisualPlaceholder" | "scenePlanPresenterNote" | "sectionBrief" | "briefLabel" | "briefHelp" | "briefMinChars" | "scriptMinChars" | "briefPlaceholder" | "targetDuration" | "durationBetween" | "sectionVoice" | "voiceMode" | "voiceTts" | "voiceProvided" | "scriptText" | "scriptTextHelp" | "scriptPlaceholder" | "scriptCounter" | "generateScriptHelp" | "generateAudioHelp" | "sectionProviders" | "scriptProvider" | "scriptProviderHelp" | "ttsProvider" | "ttsProviderHelp" | "videoProvider" | "audioProcessor" | "imageProcessor" | "providerInherit" | "providerInheritWithName" | "providersUnavailable" | "providerSelected" | "providerInformational" | "sectionFace" | "useProvidedImage" | "providedImageTitle" | "imageConsent" | "imageSynthetic" | "audioConsent" | "audioOwned" | "audioFitCheck" | "audioFitChecking" | "providedAudioTitle" | "sectionLanguage" | "languageIntro" | "videoLanguage" | "enableSubtitles" | "subtitleLanguages" | "subtitleFormat" | "burnSubtitles" | "burnNotImplemented" | "burnSubtitlesNote" | "subtitleTextLanguage" | "subtitleTextLanguageHelp" | "subtitleTextLanguageSameAsSpoken" | "sectionCompliance" | "complianceBanner" | "syntheticConfirm" | "consentConfirm" | "generateScript" | "generateScriptBusy" | "generateAudio" | "generateAudioBusy" | "generateScenario" | "scenarioLabel" | "scenarioHelp" | "scenarioReadonlyNote" | "scenarioEmpty" | "imageDescLabel" | "imageDescHelp" | "imageDescEditableNote" | "imageDescEmpty" | "imageGenButton" | "imageGenBusy" | "imageGenHelp" | "imageGenNoCharacter" | "imageGenNeedDesc" | "imageGenDone" | "imageGenPreviewAlt" | "imageGenPreviewNote" | "imageGenClear" | "imageGenClearHelp" | "faceUsingGeneratedTitle" | "faceUsingGeneratedDesc" | "faceSwitchToManual" | "textScriptProvider" | "textScriptProviderHelp" | "generateTextScript" | "generateTextScriptHelp" | "generateTextScriptDisabledFilled" | "generateTextScriptDisabledNoSource" | "generateTextScriptOverwriteHint" | "generateTextScriptOverwriteConfirm" | "ttsGenderFiltered" | "ttsFilteredBy" | "sectionLanguagePicker" | "languagePickerIntro" | "videoLanguageHelp" | "characterLanguagesNote" | "languageNoneAvailable" | "languageSectionSubtitleIntro" | "samplePlayUnsupported" | "listen" | "uploadAudio" | "uploadImage" | "submit" | "submitting" | "providerNotConfigured" | "providerRequiresGpu" | "providerRequiresModelFiles" | "watermarkRequired" | "c2paRequired" | "scriptArtifactCreated" | "audioArtifactCreated" | "scriptGeneratedPreview" | "scriptFailed" | "audioFailed" | "missingScriptText" | "missingAudioRef" | "missingImageRef" | "scriptGeneratedStatus" | "ttsGeneratedStatus" | "ttsPreviewLabel",
     string
   >>;
   readonly uploads: Readonly<Record<
@@ -190,7 +190,7 @@ export interface Dictionary {
     string
   >>;
   readonly backendLogs: Readonly<Record<
-    | "filterPlaceholder" | "pause" | "resume" | "clear" | "count" | "empty",
+    | "filterPlaceholder" | "pause" | "resume" | "reload" | "reloadHelp" | "clear" | "count" | "empty" | "emptyWaiting" | "emptyFiltered" | "emptyError",
     string
   >>;
   readonly characterVideos: Readonly<Record<
@@ -254,7 +254,9 @@ export interface Dictionary {
     string
   >>;
   readonly statuses: Readonly<Record<
-    | "pending_compliance" | "accepted" | "published" | "rejected" | "failed" | "running" | "succeeded" | "skipped" | "pending" | "cancelled" | "unknown",
+    | "pending_compliance" | "accepted" | "published" | "rejected" | "failed" | "running" | "succeeded" | "skipped" | "pending" | "cancelled"
+    | "active" | "inactive" | "draft" | "editing" | "retired"
+    | "unknown",
     string
   >>;
   readonly stages: Readonly<Record<
@@ -338,6 +340,10 @@ export interface Dictionary {
     readonly images: Readonly<Record<string, string>>;
     readonly summary: Readonly<Record<string, string>>;
     readonly help: Readonly<Record<string, string>>;
+    // Phase 23 — character lifecycle (editing / active / retired).
+    readonly lifecycle: Readonly<Record<string, string>>;
+    // Phase IG-4 — identity-consistent generation panel.
+    readonly identity: Readonly<Record<string, string>>;
   };
   readonly characterLookups: Readonly<Record<
     string,

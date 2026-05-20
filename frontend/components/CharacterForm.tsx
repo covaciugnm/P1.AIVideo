@@ -19,6 +19,7 @@ import { ProviderStatusBadge } from "@/components/ProviderStatusBadge";
 import {
   type CharacterLookupsResponse,
   type CharacterProfile,
+  type CharacterStatus,
   type LookupOption,
   getCharacterLookups,
   makeEmptyProfile,
@@ -29,7 +30,7 @@ import type { ProviderInfo, ProvidersResponse } from "@/lib/types";
 
 export interface CharacterFormValue {
   readonly profile: CharacterProfile;
-  readonly status: "active" | "inactive" | "draft";
+  readonly status: CharacterStatus;
   readonly default_language: string;
   readonly default_voice_provider_id: string;
   readonly default_image_provider_id: string;
@@ -38,7 +39,9 @@ export interface CharacterFormValue {
 export function makeDefaultFormValue(): CharacterFormValue {
   return {
     profile: makeEmptyProfile(),
-    status: "active",
+    // Phase 23 — new characters start in "editing" so identity + voice
+    // stay mutable until the operator explicitly activates them.
+    status: "editing",
     default_language: "",
     default_voice_provider_id: "",
     default_image_provider_id: "",
@@ -49,9 +52,28 @@ interface Props {
   readonly value: CharacterFormValue;
   readonly onChange: (next: CharacterFormValue) => void;
   readonly readOnly?: boolean;
+  /**
+   * Phase 23 — TTS voice provider_ids the character may pick (those not
+   * reserved by another active/editing character, plus its own). When
+   * provided, the voice dropdown is filtered to this set. ``null`` means
+   * "not loaded yet" → show the full list.
+   */
+  readonly availableVoices?: readonly string[] | null;
+  /**
+   * Phase 23 — when true (character is active) identity (gender + date of
+   * birth) and the TTS voice are immutable. Move the character back to
+   * "editing" to change them.
+   */
+  readonly identityLocked?: boolean;
 }
 
-export function CharacterForm({ value, onChange, readOnly }: Props) {
+export function CharacterForm({
+  value,
+  onChange,
+  readOnly,
+  availableVoices,
+  identityLocked,
+}: Props) {
   const t = useT();
   const [lookups, setLookups] = useState<CharacterLookupsResponse | null>(null);
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
@@ -105,16 +127,18 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
     options: readonly LookupOption[] | undefined,
     current: string | undefined | null,
     onPick: (v: string) => void,
+    extraDisabled = false,
   ) => (
     <label className="form-row">
       <span>
         {label}
         {helpSlug && <HelpHint slug={helpSlug} small />}
+        {extraDisabled && <span className="lock-hint"> 🔒</span>}
       </span>
       <select
         value={current ?? ""}
         onChange={(e) => onPick(e.target.value)}
-        disabled={readOnly}
+        disabled={readOnly || extraDisabled}
       >
         <option value="">—</option>
         {(options ?? []).map((opt) => (
@@ -133,18 +157,20 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
     onPick: (v: string) => void,
     type: "text" | "date" | "number" = "text",
     placeholder?: string,
+    extraDisabled = false,
   ) => (
     <label className="form-row">
       <span>
         {label}
         {helpSlug && <HelpHint slug={helpSlug} small />}
+        {extraDisabled && <span className="lock-hint"> 🔒</span>}
       </span>
       <input
         type={type}
         value={current ?? ""}
         onChange={(e) => onPick(e.target.value)}
         placeholder={placeholder}
-        disabled={readOnly}
+        disabled={readOnly || extraDisabled}
       />
     </label>
   );
@@ -204,19 +230,34 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
     category: keyof ProvidersResponse,
     current: string | undefined,
     onPick: (v: string) => void,
+    opts?: {
+      readonly filterIds?: readonly string[] | null;
+      readonly extraDisabled?: boolean;
+    },
   ) => {
-    const list = ((providers?.[category] as readonly ProviderInfo[]) ?? []);
+    let list = ((providers?.[category] as readonly ProviderInfo[]) ?? []);
+    // Phase 23 — when a filter set is supplied (voice exclusivity), keep
+    // only the allowed ids, but always keep the currently-selected one so
+    // an already-assigned voice never silently disappears.
+    if (opts?.filterIds) {
+      const allowed = new Set(opts.filterIds);
+      list = list.filter(
+        (p) => allowed.has(p.provider_id) || p.provider_id === current,
+      );
+    }
+    const extraDisabled = opts?.extraDisabled ?? false;
     const picked = list.find((p) => p.provider_id === current);
     return (
       <label className="form-row">
         <span>
           {label}
           <HelpHint slug={helpSlug} small />
+          {extraDisabled && <span className="lock-hint"> 🔒</span>}
         </span>
         <select
           value={current ?? ""}
           onChange={(e) => onPick(e.target.value)}
-          disabled={readOnly}
+          disabled={readOnly || extraDisabled}
         >
           <option value="">{t("providerStatus.selectProvider")}</option>
           {list.map((p) => (
@@ -261,6 +302,7 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
           lookups?.gender,
           value.profile.identity.gender,
           (v) => setIdentity({ gender: v || null }),
+          identityLocked,
         )}
         {renderInput(
           t("characters.fields.dateOfBirth"),
@@ -268,6 +310,8 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
           value.profile.identity.date_of_birth,
           (v) => setIdentity({ date_of_birth: v || null }),
           "date",
+          undefined,
+          identityLocked,
         )}
         {renderInput(
           t("characters.fields.age"),
@@ -278,6 +322,9 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
         )}
         {renderInput(t("characters.fields.nationality"), null, value.profile.identity.nationality, (v) =>
           setIdentity({ nationality: v || null }),
+          "text",
+          undefined,
+          identityLocked,
         )}
         {renderSelect(
           t("characters.fields.nativeLanguage"),
@@ -285,6 +332,7 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
           lookups?.language,
           value.profile.identity.native_language,
           (v) => setIdentity({ native_language: v || null }),
+          identityLocked,
         )}
         {renderMultiCsv(
           t("characters.fields.spokenLanguages"),
@@ -301,6 +349,9 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
         )}
         {renderInput(t("characters.fields.placeOfBirth"), null, value.profile.identity.place_of_birth, (v) =>
           setIdentity({ place_of_birth: v || null }),
+          "text",
+          undefined,
+          identityLocked,
         )}
         {renderInput(t("characters.fields.currentLocation"), null, value.profile.identity.current_location, (v) =>
           setIdentity({ current_location: v || null }),
@@ -368,9 +419,13 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
           lookups?.education_level,
           value.profile.education.education_level,
           (v) => setEducation({ education_level: v || null }),
+          identityLocked,
         )}
         {renderInput(t("characters.fields.fieldOfStudy"), null, value.profile.education.field_of_study, (v) =>
           setEducation({ field_of_study: v || null }),
+          "text",
+          undefined,
+          identityLocked,
         )}
         {renderMultiCsv(t("characters.fields.certifications"), null, value.profile.education.certifications, (v) =>
           setEducation({ certifications: v }),
@@ -508,6 +563,7 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
             setVoice({ preferred_tts_provider_id: v || null });
             onChange({ ...value, default_voice_provider_id: v });
           },
+          { filterIds: availableVoices, extraDisabled: identityLocked },
         )}
         {renderInput(t("characters.fields.f5ttsProfile"), null, value.profile.voice.f5tts_profile, (v) =>
           setVoice({ f5tts_profile: v || null }),
@@ -562,7 +618,7 @@ export function CharacterForm({ value, onChange, readOnly }: Props) {
           null,
           lookups?.character_status,
           value.status,
-          (v) => onChange({ ...value, status: (v || "active") as "active" | "inactive" | "draft" }),
+          (v) => onChange({ ...value, status: (v || "editing") as CharacterStatus }),
         )}
         {renderSelect(
           t("characters.languageLabel"),

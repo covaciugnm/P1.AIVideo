@@ -18,11 +18,14 @@ import {
   characterImageContentUrl,
   deleteCharacterImage,
   generateCharacterImage,
+  generateConsistentImage,
+  generateInitialImage,
   listCharacterImages,
   setCharacterImageStatus,
   type CharacterImageGenerateRequest,
   type CharacterImageResponse,
   type CharacterResponse,
+  type GenerateConsistentRequest,
 } from "@/lib/characters";
 import { useT } from "@/lib/i18n/LanguageContext";
 import * as api from "@/lib/api";
@@ -160,7 +163,12 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
 
   const handleAction = async (
     image: CharacterImageResponse,
-    action: "accept" | "reject" | "set-main-reference" | "archive",
+    action:
+      | "accept"
+      | "reject"
+      | "set-main-reference"
+      | "set-full-body-reference"
+      | "archive",
   ) => {
     setActionBusyId(image.id);
     setError(null);
@@ -401,6 +409,14 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
         {error && <p style={{ color: "var(--danger)", marginTop: 8 }}>{error}</p>}
       </div>
 
+      <IdentityGenPanel
+        character={character}
+        onGenerated={async () => {
+          await reloadImages();
+          await onReload();
+        }}
+      />
+
       {images.length === 0 ? (
         <p className="muted">{t("characters.images.noImages")}</p>
       ) : (
@@ -434,7 +450,12 @@ function ImageCard({
   readonly character: CharacterResponse;
   readonly onAction: (
     image: CharacterImageResponse,
-    action: "accept" | "reject" | "set-main-reference" | "archive",
+    action:
+      | "accept"
+      | "reject"
+      | "set-main-reference"
+      | "set-full-body-reference"
+      | "archive",
   ) => void;
   readonly onDelete: (image: CharacterImageResponse) => void;
   readonly busy?: boolean;
@@ -442,6 +463,7 @@ function ImageCard({
 }) {
   const t = useT();
   const isMain = character.main_reference_image_id === image.id;
+  const isFullBody = character.full_body_reference_image_id === image.id;
   return (
     <div className="image-card card" style={{ marginBottom: 12 }}>
       {/* Phase 16B — wrap image in <a target="_blank"> so clicking the
@@ -465,9 +487,31 @@ function ImageCard({
         {isMain && (
           <span className="badge badge-success">{t("characters.images.mainReferenceBadge")}</span>
         )}
+        {isFullBody && (
+          <span className="badge badge-success" style={{ marginLeft: 4 }}>
+            {t("characters.images.fullBodyReferenceBadge")}
+          </span>
+        )}
+        {image.role && (
+          <span className="badge" style={{ marginLeft: 4 }}>
+            {t(`characters.images.role_${image.role}`)}
+          </span>
+        )}
         <p className="muted" style={{ fontSize: 11 }}>
           {t("characters.images.generatedWith", { provider: image.provider_id ?? "?" })}
         </p>
+        {typeof image.identity_similarity_score === "number" && (
+          <p className="muted" style={{ fontSize: 11 }}>
+            {t("characters.images.identityScore", {
+              score: image.identity_similarity_score.toFixed(3),
+            })}
+            {image.identity_drift_warning && (
+              <span style={{ color: "var(--danger)", marginLeft: 6 }}>
+                ⚠ {t("characters.images.driftWarning")}
+              </span>
+            )}
+          </p>
+        )}
         {image.prompt && <p style={{ fontSize: 12 }}>{image.prompt}</p>}
         {/* Phase 17F — when accepted, lock all destructive buttons. */}
         {image.status === "accepted" ? (
@@ -501,6 +545,16 @@ function ImageCard({
                 disabled={busy}
               >
                 {busy ? "…" : t("characters.images.setMainReference")}
+              </button>
+            )}
+            {!isFullBody && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => onAction(image, "set-full-body-reference")}
+                disabled={busy}
+              >
+                {busy ? "…" : t("characters.images.setFullBodyReference")}
               </button>
             )}
             <button type="button" className="btn" onClick={() => onAction(image, "archive")} disabled={busy}>
@@ -551,6 +605,153 @@ function ImageCard({
           );
         })()}
       </div>
+    </div>
+  );
+}
+
+// Phase IG-4 — identity-consistent generation panel. "Initial" proposes a
+// first face (text-to-image); "consistent" needs both canonical references.
+function IdentityGenPanel({
+  character,
+  onGenerated,
+}: {
+  readonly character: CharacterResponse;
+  readonly onGenerated: () => Promise<void> | void;
+}) {
+  const t = useT();
+  const hasFace = Boolean(character.main_reference_image_id);
+  const hasBody = Boolean(character.full_body_reference_image_id);
+  const canConsistent = hasFace && hasBody;
+
+  const [scene, setScene] = useState<GenerateConsistentRequest>({
+    scene_prompt: "",
+    outfit_prompt: "",
+    location_prompt: "",
+    season: "",
+    mood: "",
+    pose: "",
+    framing: "",
+    aspect_ratio: "portrait",
+    quality_preset: "standard",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const set = (patch: Partial<GenerateConsistentRequest>) =>
+    setScene((s) => ({ ...s, ...patch }));
+
+  const run = async (kind: "initial" | "consistent") => {
+    setBusy(true);
+    setError(null);
+    setStatus(t("characters.identity.generating"));
+    try {
+      if (kind === "initial") {
+        await generateInitialImage(character.id, {
+          aspect_ratio: scene.aspect_ratio,
+          quality_preset: scene.quality_preset,
+        });
+      } else {
+        await generateConsistentImage(character.id, scene);
+      }
+      setStatus(t("characters.identity.done"));
+      await onGenerated();
+    } catch (err) {
+      setError((err as Error).message);
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    placeholder = "",
+  ) => (
+    <label className="form-row">
+      <span>{label}</span>
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={busy}
+      />
+    </label>
+  );
+
+  return (
+    <div className="card" style={{ marginTop: 16, padding: 12 }}>
+      <h4 style={{ marginTop: 0 }}>{t("characters.identity.title")}</h4>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {t("characters.identity.help")}
+      </p>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => run("initial")}
+          disabled={busy}
+          title={t("characters.identity.initialHint")}
+        >
+          {t("characters.identity.generateInitial")}
+        </button>
+        {!canConsistent && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            {t("characters.identity.needRefs")}
+          </span>
+        )}
+      </div>
+
+      {field(t("characters.identity.scene"), scene.scene_prompt ?? "", (v) => set({ scene_prompt: v }))}
+      {field(t("characters.identity.outfit"), scene.outfit_prompt ?? "", (v) => set({ outfit_prompt: v }))}
+      {field(t("characters.identity.location"), scene.location_prompt ?? "", (v) => set({ location_prompt: v }))}
+      {field(t("characters.identity.season"), scene.season ?? "", (v) => set({ season: v }))}
+      {field(t("characters.identity.mood"), scene.mood ?? "", (v) => set({ mood: v }))}
+      {field(t("characters.identity.pose"), scene.pose ?? "", (v) => set({ pose: v }))}
+      {field(t("characters.identity.framing"), scene.framing ?? "", (v) => set({ framing: v }))}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label className="form-row" style={{ margin: 0 }}>
+          <span>{t("characters.identity.aspect")}</span>
+          <select
+            value={scene.aspect_ratio}
+            onChange={(e) => set({ aspect_ratio: e.target.value as GenerateConsistentRequest["aspect_ratio"] })}
+            disabled={busy}
+          >
+            <option value="portrait">9:16</option>
+            <option value="landscape">16:9</option>
+            <option value="square">1:1</option>
+          </select>
+        </label>
+        <label className="form-row" style={{ margin: 0 }}>
+          <span>{t("characters.identity.quality")}</span>
+          <select
+            value={scene.quality_preset}
+            onChange={(e) => set({ quality_preset: e.target.value as GenerateConsistentRequest["quality_preset"] })}
+            disabled={busy}
+          >
+            <option value="draft">draft</option>
+            <option value="standard">standard</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => run("consistent")}
+          disabled={busy || !canConsistent}
+          title={canConsistent ? "" : t("characters.identity.needRefs")}
+        >
+          {t("characters.identity.generateConsistent")}
+        </button>
+      </div>
+
+      {status && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>{status}</p>}
+      {error && <p style={{ color: "var(--danger)", marginTop: 6 }}>{error}</p>}
     </div>
   );
 }

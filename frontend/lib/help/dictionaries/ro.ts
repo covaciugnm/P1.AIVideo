@@ -29,19 +29,20 @@ const list = (items: readonly string[], ordered = false): HelpBlock => ({
 export const HELP_TOPICS_RO: Readonly<Record<string, HelpTopic>> = {
   dashboard: {
     id: "dashboard",
-    section: "Tablou de bord",
-    title: "Tablou de bord",
-    summary: "Starea stack-ului, joburile recente și link-uri rapide — ecranul de start.",
+    section: "Navigație",
+    title: "Tabul „Tablou de bord” a fost eliminat",
+    summary: "Phase 21 — / redirecționează la Personaje. Flow-ul este Personaje → Video-uri.",
     body: [
-      p("Tabloul de bord sumarizează starea stack-ului și face link la fluxurile principale. Indicatorul Backend din dreapta sus interoghează /healthz, așa că știi dacă API-ul răspunde."),
-      p("Tabelul cu joburi recente este o proiecție subțire a GET /api/v1/jobs ordonată după created_at. Apasă pe orice rând pentru a intra în Detaliu job."),
+      p("Începând cu Phase 21 tabul „Tablou de bord” a fost scos din navigație pentru că duplica integral lista de Video-uri. Calea / redirecționează acum direct la /characters (Personaje) — pagina de start naturală a fluxului."),
+      p("Fluxul operatorului devine:"),
       list([
-        "Link-urile rapide te duc la Joburi / Job nou / Încărcări / Setări.",
-        "Bara de activitate din dreapta este restrânsibilă — restrânge-o pentru mai mult spațiu.",
-        "Apasă ? oricând pentru a deschide acest overlay de ajutor.",
+        "1. Personaje — creează / alegi personajul cu care vrei să generezi video-ul.",
+        "2. Video-uri — vezi lista istorică + apeși „+ Video nou” pentru a începe.",
+        "3. Detaliu video — urmărești progresul DAG, descarci MP4-ul final, ștergi dacă vrei.",
       ]),
+      p("Indicatorul Backend din header continuă să apară pe TOATE paginile; cardul cu Backend Logs e tot în sidebar dreapta. Doar landing-ul dedicat dispare."),
     ],
-    related: ["jobs-list", "create-job", "settings"],
+    related: ["characters", "jobs-list", "create-job"],
   },
   "jobs-list": {
     id: "jobs-list",
@@ -61,10 +62,66 @@ export const HELP_TOPICS_RO: Readonly<Record<string, HelpTopic>> = {
     ],
     related: ["create-job", "job-detail", "recovery-controls"],
   },
+  "video-types": {
+    id: "video-types",
+    section: "Video-uri",
+    title: "Tipuri de video (talking_head / scenes_only / news_presenter)",
+    summary: "Trei pipeline-uri distincte pentru videoclipuri. Phase 21.",
+    body: [
+      p("Începând cu Phase 21 fiecare video are un tip explicit care decide pipeline-ul backend și forma formularului de creare."),
+      kv([
+        ["talking_head", "Pipeline-ul clasic (11 etape). Un singur portret static al personajului cu gura sincronizată pe scenariul rostit. Cel mai rapid (~2-3 min/video)."],
+        ["scenes_only", "B-roll multi-scenă (6 etape). Niciun personaj pe ecran. Operatorul (sau LLM-ul) propune o listă de scene cu prompt FLUX + text rostit; fiecare scenă devine un clip cu Ken-Burns + voiceover, ffmpeg le concatenează. ~4-6 min."],
+        ["news_presenter", "Hibrid (9 etape). Segmente prezentator (lipsync SadTalker pe portretul personajului) intercalate cu scene B-roll. Necesită personaj. ~5-10 min în funcție de cât e SadTalker."],
+      ]),
+      p("La submit operatorul alege tipul în Step 0 al formularului; restul cardurilor se adaptează (scenes_only ascunde secțiunea Față, talking_head ascunde editorul de plan de scene)."),
+      list([
+        "Toate cele trei tipuri trec prin aceleași etape de QC + export disclosure + publisher, deci auditul rămâne uniform.",
+        "Pipeline YAML-urile sunt în pipelines/ — reel_default.yaml (talking_head), reel_scenes_only.yaml, reel_news_presenter.yaml.",
+        "Stage-ul comun scene_composer (Phase 21) este single-process pentru toate scenele dintr-un video; nu paralelizează scene între ele.",
+      ]),
+    ],
+    related: ["create-job", "scene-plan", "subtitles", "characters"],
+  },
+  "scene-plan": {
+    id: "scene-plan",
+    section: "Video-uri",
+    title: "Plan de scene (scenes_only / news_presenter)",
+    summary: "Editor de scene cu cards add/delete/reorder; LLM propune lista, operatorul ajustează.",
+    body: [
+      p("Pentru tipurile scenes_only și news_presenter, după ce introduci descrierea apeși „Generează plan scene”. LLM-ul (Ollama Qwen3.6 implicit) propune 3–8 scene cu:"),
+      kv([
+        ["scene_number", "Index 1-based, refăcut automat dacă reordonezi."],
+        ["kind", "„presenter” (lipsync pe portret) sau „broll” (imagine FLUX statică cu zoom). scenes_only forțează kind=broll."],
+        ["spoken_text", "Ce rostește vocea în această scenă, în limba aleasă pentru video."],
+        ["visual_description", "Prompt FLUX în engleză — doar pentru broll. Background + lumină + stil. Fără oameni, fără branduri reale."],
+        ["duration_s", "Între 1.0 și 20.0 secunde. Suma trebuie să fie în ±20% față de target_duration_seconds."],
+      ]),
+      p("Fiecare card e editabil — schimbi kind, modifici textul, ajustezi durata, reordonezi cu săgeți, ștergi sau adaugi scene. Butonul Submit validează ca toate scenele să aibă spoken_text non-empty și ca broll să aibă visual_description."),
+    ],
+    related: ["video-types", "create-job", "subtitles"],
+  },
+  "video-orientation": {
+    id: "video-orientation",
+    section: "Video-uri",
+    title: "Format video (portret / peisaj / pătrat)",
+    summary: "Selector de orientare pentru video-uri mobile (9:16) sau clasice (16:9). Phase 22.",
+    body: [
+      p("La crearea unui video alegi formatul de ieșire din selectorul de orientare (Step 0, sub tipul de video). Se aplică tuturor celor trei tipuri de video."),
+      kv([
+        ["Peisaj (16:9)", "Format clasic widescreen 1280×720. Implicit. Pentru YouTube orizontal, prezentari."],
+        ["Portret (9:16)", "Format mobil vertical 720×1280. Pentru TikTok, Instagram Reels, YouTube Shorts."],
+        ["Pătrat (1:1)", "Format 1024×1024. Potrivit pentru postări in feed Instagram/Facebook."],
+      ]),
+      p("Tehnic: scene_composer randează imaginile FLUX direct la dimensiunile țintă, iar clipurile SadTalker (pătrate) sunt scalate + completate cu margini negre (scale-fit + pad) pentru a se potrivi formatului ales. Toate clipurile sunt normalizate la aceleași dimensiuni inainte de concatenarea ffmpeg."),
+      p("Interfata web este responsive: pe telefon meniul se rearanjeaza, formularele devin pe o coloana, iar tabelele se pot derula orizontal."),
+    ],
+    related: ["create-job", "video-types", "scene-plan"],
+  },
   "create-job": {
     id: "create-job",
-    section: "Joburi",
-    title: "Creează job",
+    section: "Video-uri",
+    title: "Creează video",
     summary: "Wizard cu file pentru un reel nou: descriere → furnizori → limbă → conformitate.",
     body: [
       p("Fiecare filă validează local înainte de a permite trecerea; nimic nu ajunge la backend până la submit."),

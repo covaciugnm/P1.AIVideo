@@ -43,19 +43,20 @@ const list = (items: readonly string[], ordered = false): HelpBlock => ({
 export const HELP_TOPICS_EN: Readonly<Record<string, HelpTopic>> = {
   dashboard: {
     id: "dashboard",
-    section: "Dashboard",
-    title: "Dashboard",
-    summary: "Stack health, latest jobs, and quick links — the landing screen.",
+    section: "Navigation",
+    title: "Dashboard tab removed",
+    summary: "Phase 21 — / redirects to Characters. The flow is Characters → Videos.",
     body: [
-      p("The Dashboard summarises stack health and links to the main flows. The top-right Backend status badge polls /healthz so you know the API is alive."),
-      p("The recent-jobs table is a thin projection of GET /api/v1/jobs sorted by created_at. Click any row to drill into Job Detail."),
+      p("Starting with Phase 21 the Dashboard tab was removed from the navigation because it duplicated the Videos list verbatim. The root path / now redirects straight to /characters (the natural starting point of the flow)."),
+      p("Operator flow:"),
       list([
-        "Quick links jump to Jobs / New job / Uploads / Settings.",
-        "Activity sidebar is collapsible — collapse it for screen real estate.",
-        "Press ? at any time to open this help overlay.",
+        "1. Characters — create / pick the character you want to generate a video for.",
+        "2. Videos — see the historical list and click '+ New video' to start.",
+        "3. Video detail — track DAG progress, download the final MP4, delete if needed.",
       ]),
+      p("The Backend status badge still appears on EVERY page; the Backend Logs card is still in the right sidebar. Only the dedicated landing screen is gone."),
     ],
-    related: ["jobs-list", "create-job", "settings"],
+    related: ["characters", "jobs-list", "create-job"],
   },
   "jobs-list": {
     id: "jobs-list",
@@ -75,11 +76,67 @@ export const HELP_TOPICS_EN: Readonly<Record<string, HelpTopic>> = {
     ],
     related: ["create-job", "job-detail", "recovery-controls"],
   },
+  "video-types": {
+    id: "video-types",
+    section: "Videos",
+    title: "Video types (talking_head / scenes_only / news_presenter)",
+    summary: "Three distinct pipelines for videos. Phase 21.",
+    body: [
+      p("Starting with Phase 21 every video has an explicit job_type that decides the backend pipeline and the shape of the creation form."),
+      kv([
+        ["talking_head", "The classic pipeline (11 stages). One still character portrait with the mouth synced to the spoken script. Fastest (~2-3 min/video)."],
+        ["scenes_only", "Multi-scene B-roll (6 stages). No character on screen. The operator (or LLM) proposes a list of scenes with a FLUX prompt + spoken text; each scene becomes a Ken-Burns clip with voiceover, ffmpeg concatenates them. ~4-6 min."],
+        ["news_presenter", "Hybrid (9 stages). Presenter segments (SadTalker lipsync on the character portrait) interleaved with B-roll scenes. Requires a character. ~5-10 min depending on SadTalker."],
+      ]),
+      p("At submit the operator picks the type in Step 0 of the form; the rest of the cards adapt (scenes_only hides the Face section, talking_head hides the scene-plan editor)."),
+      list([
+        "All three types share the QC + export disclosure + publisher stages, so the audit trail is uniform.",
+        "Pipeline YAMLs live in pipelines/ — reel_default.yaml (talking_head), reel_scenes_only.yaml, reel_news_presenter.yaml.",
+        "The shared scene_composer stage (Phase 21) is single-process for all scenes within one video; it does NOT parallelise scenes against each other.",
+      ]),
+    ],
+    related: ["create-job", "scene-plan", "subtitles", "characters"],
+  },
+  "scene-plan": {
+    id: "scene-plan",
+    section: "Videos",
+    title: "Scene plan (scenes_only / news_presenter)",
+    summary: "Scene-card editor with add/delete/reorder; LLM proposes the list, operator tweaks.",
+    body: [
+      p("For scenes_only and news_presenter, once you've typed the brief you click 'Generate scene plan'. The LLM (Ollama Qwen3.6 by default) proposes 3–8 scenes with:"),
+      kv([
+        ["scene_number", "1-based index, auto-renumbered on reorder."],
+        ["kind", "'presenter' (lipsync on portrait) or 'broll' (still FLUX image with zoom). scenes_only forces kind=broll."],
+        ["spoken_text", "What the voice narrates during this scene, in the chosen video language."],
+        ["visual_description", "English FLUX prompt — broll only. Background + lighting + style. No people, no real brands."],
+        ["duration_s", "Between 1.0 and 20.0 seconds. The sum must be within ±20% of target_duration_seconds."],
+      ]),
+      p("Each card is editable — change kind, edit text, tweak duration, reorder with arrows, delete or add scenes. Submit validates that every scene has non-empty spoken_text and every broll has visual_description."),
+    ],
+    related: ["video-types", "create-job", "subtitles"],
+  },
+  "video-orientation": {
+    id: "video-orientation",
+    section: "Videos",
+    title: "Video format (portrait / landscape / square)",
+    summary: "Orientation selector for mobile (9:16) or classic (16:9) videos. Phase 22.",
+    body: [
+      p("When creating a video you pick the output format from the orientation selector (Step 0, under the video type). It applies to all three video types."),
+      kv([
+        ["Landscape (16:9)", "Classic widescreen 1280×720. Default. For horizontal YouTube, presentations."],
+        ["Portrait (9:16)", "Vertical mobile 720×1280. For TikTok, Instagram Reels, YouTube Shorts."],
+        ["Square (1:1)", "1024×1024. Suits Instagram/Facebook feed posts."],
+      ]),
+      p("Technically: scene_composer renders FLUX images directly at the target dimensions, and SadTalker clips (square) are scale-fit + black-padded to match the chosen format. All clips are normalised to identical dimensions before the ffmpeg concat."),
+      p("The web UI is responsive: on a phone the nav re-flows, forms become single-column, and tables scroll horizontally."),
+    ],
+    related: ["create-job", "video-types", "scene-plan"],
+  },
   "create-job": {
     id: "create-job",
-    section: "Jobs",
-    title: "Create job",
-    summary: "Multi-tab wizard for a new reel: brief → providers → language → compliance.",
+    section: "Videos",
+    title: "Create video",
+    summary: "Multi-tab wizard for a new video: brief → providers → language → compliance.",
     body: [
       p("Each tab validates locally before letting you proceed; nothing reaches the backend until you submit."),
       kv([

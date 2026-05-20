@@ -10,11 +10,16 @@ export function LocalizedNav() {
   const t = useT();
   return (
     <nav className="nav-links">
-      <Link href="/">{t("nav.dashboard")}</Link>
-      <Link href="/jobs">{t("nav.jobs")}</Link>
-      <Link href="/jobs/new">{t("nav.newJob")}</Link>
-      <Link href="/uploads">{t("nav.uploads")}</Link>
+      {/* Phase 21 user iteration:
+          - Dashboard tab removed (it duplicated the videos list).
+          - Personaje (Characters) reordered to come BEFORE Video-uri
+            so the operator picks the persona FIRST, then generates
+            videos for it.
+          - "Adaugă video" button stays only on the Videos page
+            (top-right) — never in the global nav. */}
       <Link href="/characters">{t("nav.characters")}</Link>
+      <Link href="/jobs">{t("nav.jobs")}</Link>
+      <Link href="/uploads">{t("nav.uploads")}</Link>
       <Link href="/settings">{t("nav.settings")}</Link>
       <Link href="/technical-help" data-testid="nav-technical">{t("nav.technical")}</Link>
       <HelpLink>{t("nav.help")}</HelpLink>
