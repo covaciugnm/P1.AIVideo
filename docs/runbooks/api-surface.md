@@ -94,6 +94,7 @@ artifacts are addressed in the context of their owning job.
 | `GET` | `/api/v1/providers/audio-processors` | — | `ProviderInfo[]` | ✅ `getProvidersForCategory("audio_processor")` | None |
 | `GET` | `/api/v1/providers/image-processors` | — | `ProviderInfo[]` | ✅ `getProvidersForCategory("image_processor")` | None |
 | `GET` | `/api/v1/providers/{category}/{provider_id}` | — | single `ProviderInfo` with full readiness detail | ➕ `getProviderDetail()` | depends on provider |
+| `GET` | `/api/v1/providers/tts/{provider_id}/sample.wav` | — | streams the reference WAV for one F5 voice (Phase 20). 404 for non-F5 providers / unknown voice ids | inline `<audio controls>` in CreateJobForm | None |
 
 Each `ProviderInfo` carries a live readiness `status` (`ok` / `available` /
 `not_implemented` / `not_configured` / `missing_assets` / `runtime_missing` /

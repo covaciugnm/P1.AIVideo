@@ -47,6 +47,9 @@ volumes:
   # local-driver named volume — switch to bind mounts in prod.
   inputs_data:
   artifacts_data:
+  # Phase 19: persists the `model-ollama` container's pulled models so
+  # `ollama create` registrations survive container restarts.
+  ollama_models:
 
 services:
   # ---------------------------------------------------------------------------
@@ -152,6 +155,11 @@ services:
       # service. Default empty → the backend reports the provider as
       # ``not_implemented`` so the UI shows clean readiness state.
       F5TTS_RO_BASE_URL: "${F5TTS_RO_BASE_URL:-}"
+      # Phase 20 — voice catalog root. The backend reads
+      # ``${F5TTS_RO_MODELS_ROOT}/voices.yaml`` to expose one TTS
+      # dropdown row per voice; absolute paths from the catalog are
+      # forwarded to the wrapper, which sees the same /models mount.
+      F5TTS_RO_MODELS_ROOT: "${F5TTS_RO_MODELS_ROOT:-/models/tts/f5tts-ro}"
       # Phase 11G — Ollama scriptwriter (external LLM daemon). The
       # backend reads these directly from the host env; the .env file
       # also exports them for the host shell, but compose pins them on
@@ -164,6 +172,17 @@ services:
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.6}"
       OLLAMA_FALLBACK_MODEL: "${OLLAMA_FALLBACK_MODEL:-qwen3:8b}"
+      # Phase 20 — scriptwriter generation params (cinematic prompt).
+      # All env-overridable; default to the recipe pinned by the operator
+      # for Qwen-3.6 27B Q4 GGUF on a single GPU.
+      OLLAMA_TEMPERATURE: "${OLLAMA_TEMPERATURE:-0.7}"
+      OLLAMA_TOP_P: "${OLLAMA_TOP_P:-0.9}"
+      OLLAMA_TOP_K: "${OLLAMA_TOP_K:-20}"
+      OLLAMA_REPEAT_PENALTY: "${OLLAMA_REPEAT_PENALTY:-1.05}"
+      OLLAMA_NUM_CTX: "${OLLAMA_NUM_CTX:-8192}"
+      OLLAMA_NUM_PREDICT: "${OLLAMA_NUM_PREDICT:-4096}"
+      OLLAMA_STOP: "${OLLAMA_STOP:-<|im_end|>;;<|endoftext|>}"
+      OLLAMA_GENERATE_TIMEOUT_SECONDS: "${OLLAMA_GENERATE_TIMEOUT_SECONDS:-300}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,6 +205,10 @@ services:
       # ``/models/lipsync/sadtalker/...``. Empty by default — no
       # auto-download.
       - ../models:/models:ro
+      # Phase IG-1 — ComfyUI identity-consistent workflow templates. The
+      # backend reads + substitutes these before POSTing to ComfyUI. See
+      # workflows/comfyui/README.md.
+      - ../workflows:/workflows:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 10s
@@ -261,6 +284,11 @@ services:
       # provider=f5tts_ro to the model-tts-ro wrapper. Unset → DAG
       # rejects the request with tts_provider_not_configured.
       F5TTS_RO_BASE_URL: "${F5TTS_RO_BASE_URL:-}"
+      # Phase 21 — FLUX wrapper URL forwarded so scene_composer can
+      # render per-scene B-roll images on the orchestrator side too.
+      FLUX_LOCAL_BASE_URL: "${FLUX_LOCAL_BASE_URL:-}"
+      # Phase 20 — voice catalog root (mirrors backend).
+      F5TTS_RO_MODELS_ROOT: "${F5TTS_RO_MODELS_ROOT:-/models/tts/f5tts-ro}"
       # Phase 11G — Ollama scriptwriter env mirrored on the orchestrator
       # so the scriptwriter stage in the DAG can reach the same daemon
       # the backend uses for /api/v1/script/generate previews.
@@ -269,6 +297,15 @@ services:
       OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.6}"
       OLLAMA_FALLBACK_MODEL: "${OLLAMA_FALLBACK_MODEL:-qwen3:8b}"
+      # Phase 20 — mirror scriptwriter tuning params on the orchestrator.
+      OLLAMA_TEMPERATURE: "${OLLAMA_TEMPERATURE:-0.7}"
+      OLLAMA_TOP_P: "${OLLAMA_TOP_P:-0.9}"
+      OLLAMA_TOP_K: "${OLLAMA_TOP_K:-20}"
+      OLLAMA_REPEAT_PENALTY: "${OLLAMA_REPEAT_PENALTY:-1.05}"
+      OLLAMA_NUM_CTX: "${OLLAMA_NUM_CTX:-8192}"
+      OLLAMA_NUM_PREDICT: "${OLLAMA_NUM_PREDICT:-4096}"
+      OLLAMA_STOP: "${OLLAMA_STOP:-<|im_end|>;;<|endoftext|>}"
+      OLLAMA_GENERATE_TIMEOUT_SECONDS: "${OLLAMA_GENERATE_TIMEOUT_SECONDS:-300}"
     extra_hosts:
       # Phase 11G — same Linux host-gateway shim as the backend so the
       # orchestrator's scriptwriter stage can reach a host-side Ollama
@@ -414,8 +451,17 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile.cuda
     <<: *env-defaults
+    environment:
+      <<: *agent-runtime-env
     depends_on: [redis, minio]
     volumes:
+      # Phase 21-fix — these GPU agents also run the DAG worker and can
+      # pick up ANY stage (voice/face/lipsync). Without the shared
+      # storage volumes the F5/SadTalker wrappers write to the real
+      # volume but the agent checks its own ephemeral /storage and reports
+      # "missing on the shared volume". Mirror the CPU agents exactly.
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
       - ../models:/models:ro
     networks: [aivideo-net]
 
@@ -425,8 +471,12 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile.cuda
     <<: *env-defaults
+    environment:
+      <<: *agent-runtime-env
     depends_on: [redis, minio]
     volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
       - ../models:/models:ro
     networks: [aivideo-net]
 
@@ -436,8 +486,12 @@ services:
       <<: *build-defaults
       dockerfile: docker/agents/Dockerfile.cuda
     <<: *env-defaults
+    environment:
+      <<: *agent-runtime-env
     depends_on: [redis, minio]
     volumes:
+      - inputs_data:/storage/inputs
+      - artifacts_data:/storage/artifacts
       - ../models:/models:ro
     networks: [aivideo-net]
 
@@ -918,6 +972,51 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8080/health\",timeout=2).status==200 else 1)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # =========================================================================
+  # Phase 19 — Containerised Ollama runtime (optional alternative to the
+  # host Ollama daemon used by default via host.docker.internal).
+  #
+  # When active, the backend can be pointed at this service by setting
+  # ``OLLAMA_BASE_URL=http://aivideo-model-ollama-1:11434`` in .env, or
+  # ``http://localhost:${MODEL_OLLAMA_PORT:-11435}`` from the host. The
+  # container binds the project's ``models/qwen-gguf`` directory read-only
+  # at ``/gguf`` so locally-downloaded GGUF files can be imported via
+  # ``ollama create <tag> -f /gguf/Modelfile``.
+  #
+  # Profile-gated so the regular ``compose up`` flow leaves it offline
+  # (which avoids port collisions with a user-level ``ollama serve`` on
+  # the host).
+  # =========================================================================
+  model-ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    container_name: aivideo-model-ollama-1
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:-30m}"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "${MODEL_OLLAMA_PORT:-11435}:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - ../models/qwen-gguf:/gguf:ro
+    networks: [aivideo-net]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

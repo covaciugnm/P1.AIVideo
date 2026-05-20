@@ -1,0 +1,73 @@
+{
+  "_comment": "P1.AIVideo — SDXL + InstantID identity-consistent workflow (FALLBACK provider, ~10GB VRAM, default on 24GB boxes). Conditions generation on the canonical FACE reference (__FACE_REF__) so the same synthetic person appears in a new scene/outfit. Node class names follow cubiq/ComfyUI_InstantID — adjust to your installed nodes (see README). Placeholders: __PROMPT__ __NEGATIVE__ __SEED__ __WIDTH__ __HEIGHT__ __STEPS__ __CFG__ __FACE_REF__.",
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "__FACE_REF__" }
+  },
+  "11": {
+    "class_type": "InstantIDModelLoader",
+    "inputs": { "instantid_file": "ip-adapter.bin" }
+  },
+  "12": {
+    "class_type": "InstantIDFaceAnalysis",
+    "inputs": { "provider": "CPU" }
+  },
+  "13": {
+    "class_type": "ControlNetLoader",
+    "inputs": { "control_net_name": "instantid/diffusion_pytorch_model.safetensors" }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "__PROMPT__", "clip": ["4", 1] }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "__NEGATIVE__", "clip": ["4", 1] }
+  },
+  "14": {
+    "class_type": "ApplyInstantID",
+    "inputs": {
+      "weight": 0.8,
+      "start_at": 0.0,
+      "end_at": 1.0,
+      "instantid": ["11", 0],
+      "insightface": ["12", 0],
+      "control_net": ["13", 0],
+      "image": ["10", 0],
+      "model": ["4", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0]
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": { "width": __WIDTH__, "height": __HEIGHT__, "batch_size": 1 }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": __SEED__,
+      "steps": __STEPS__,
+      "cfg": __CFG__,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["14", 0],
+      "positive": ["14", 1],
+      "negative": ["14", 2],
+      "latent_image": ["5", 0]
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["3", 0], "vae": ["4", 2] }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": { "filename_prefix": "p1aivideo_consistent", "images": ["8", 0] }
+  }
+}

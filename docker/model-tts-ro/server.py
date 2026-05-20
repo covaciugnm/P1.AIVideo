@@ -190,6 +190,13 @@ class TTSGenerateRequest(BaseModel):
     language: str = Field(default="ro", max_length=16)
     reference_audio_path: str | None = Field(default=None)
     reference_text: str | None = Field(default=None)
+    # Phase 20 — optional voice-specific checkpoint override. When the
+    # operator selected one of the fine-tuned F5 voices ("Voce barbat
+    # linistita 1", "Voce Barbat Prezentator 1") the backend passes
+    # the absolute path to ``model.pt`` here so the wrapper loads the
+    # voice-specific weights instead of the default checkpoint. Empty /
+    # missing → fall back to F5TTS_RO_CKPT_FILE (default behavior).
+    model_path: str | None = Field(default=None, max_length=1024)
 
 
 class TTSGenerateResponse(BaseModel):
@@ -332,6 +339,28 @@ def tts_generate(payload: TTSGenerateRequest) -> TTSGenerateResponse:
     ref_text = payload.reference_text or _reference_text()
     device = os.environ.get("F5TTS_RO_DEVICE", "cpu")
 
+    # Phase 20 — per-request voice-specific checkpoint override. When
+    # the operator selected one of the fine-tuned F5 voices (Voce
+    # linistita 1, Prezentator 1), the backend passes the absolute
+    # path to that voice's model.pt. Empty / missing → use the default
+    # checkpoint configured via F5TTS_RO_CKPT_FILE.
+    requested_ckpt = (payload.model_path or "").strip()
+    if requested_ckpt:
+        ckpt_path = Path(requested_ckpt)
+        if not ckpt_path.is_file():
+            return _fail(
+                "assets_missing",
+                error_code="assets_missing",
+                message=(
+                    f"Voice-specific checkpoint not found at {requested_ckpt!r}. "
+                    "Check the voices.yaml entry and that the file was copied "
+                    "into the model-tts-ro volume."
+                ),
+            )
+        ckpt_to_load = str(ckpt_path)
+    else:
+        ckpt_to_load = str(_ckpt_file())
+
     try:
         # Phase 11F-CDOROB — instantiate F5TTS with cdorob's exact
         # checkpoint + vocab. The cdorob README pins ``F5TTS_v1_Base``
@@ -339,7 +368,7 @@ def tts_generate(payload: TTSGenerateRequest) -> TTSGenerateResponse:
         # explicitly. ``infer`` writes the WAV at ``file_wave``.
         tts = f5_api.F5TTS(
             model=_model_name(),
-            ckpt_file=str(_ckpt_file()),
+            ckpt_file=ckpt_to_load,
             vocab_file=str(_vocab_file()),
             device=device,
         )

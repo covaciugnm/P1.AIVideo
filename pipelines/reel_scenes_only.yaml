@@ -1,0 +1,56 @@
+# Phase 21 — scenes_only pipeline.
+#
+# Voice-narrated B-roll video. No character on screen. Each scene is
+# rendered as a FLUX still + Ken-Burns zoom + TTS overlay. All scenes
+# are then ffmpeg-concatenated into the final reel_draft.
+#
+# The single ``scene_composer`` stage replaces the
+# voice+face+lipsync+editor quartet of the original pipeline; the
+# compliance gates + qc + publisher run unchanged so the audit trail
+# stays uniform across all three job types.
+
+name: reel_scenes_only
+schema_version: 1
+
+defaults:
+  compliance:
+    watermark_required: true
+    c2pa_required: true
+    compliance_token_required: false  # no presenter → no lipsync gate
+
+budget:
+  max_wall_minutes: 30  # per-scene FLUX/TTS calls add up
+  max_gpu_minutes: 25
+
+stages:
+  - id: policy_gate
+    agent: compliance_officer
+    role: intake_gate
+
+  - id: scriptwriter
+    agent: scriptwriter
+    needs: [policy_gate]
+    params:
+      llm_backend: "${LLM_BACKEND}"
+      model_id: "${LLM_MODEL_ID}"
+      mode: spoken_script  # scene_plan is already on the Job row
+
+  - id: scene_composer
+    agent: scene_composer
+    needs: [scriptwriter]
+    params:
+      image_provider: flux_local
+      tts_provider: f5tts_ro
+
+  - id: qc
+    agent: qc
+    needs: [scene_composer]
+
+  - id: export_disclosure_validation
+    agent: compliance_officer
+    role: export_gate
+    needs: [qc]
+
+  - id: publisher
+    agent: publisher
+    needs: [export_disclosure_validation]

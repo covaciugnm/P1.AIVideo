@@ -307,32 +307,98 @@ Baseline: **883 passed, 12 skipped** as of 2026-05-18.
 
 ---
 
-## 10. Pipeline (job lifecycle)
+## 10. Pipeline (job / video lifecycle)
+
+Phase 21 introduced **three pipeline variants** selected by the
+operator via `job_type` (talking_head | scenes_only | news_presenter).
+The DAG runner dispatches to the right pipeline YAML based on the
+job_type value; downstream stages (qc, publisher) are shared across
+all three.
+
+### 10.1 talking_head — 11 stages (default, back-compat)
 
 ```
-[POST /api/v1/jobs/from-inputs]
-        │  validates uploads + consent + character snapshot
-        ▼
-   jobs.status = pending_compliance
-        │  agent-compliance approves
-        ▼
-   jobs.status = accepted   ──► DAG dispatch via Redis Streams
-        │
-        ├─► agent-scriptwriter (LLM)        ──► artifact: script.txt
-        ├─► agent-voice / model-tts-ro      ──► artifact: audio.wav (chunked)
-        ├─► agent-face / model-{flux,sdxl,…}──► artifact: face.png
-        ├─► agent-lipsync / model-{sadtalker,wav2lip,…}
-        │                                    ──► artifact: video.mp4
-        ├─► agent-editor + agent-publisher  ──► final.mp4
-        └─► agent-qc                        ──► QC report
-        ▼
-   jobs.status = published   (artifacts streamable via /api/v1/artifacts)
+[POST /api/v1/jobs/from-inputs  job_type=talking_head]
+   │
+   ▼
+   pending_compliance ──► policy_gate
+                          scriptwriter        (LLM, mode=spoken_script)
+                          voice               (Piper or F5 TTS)
+                          face                (FLUX / SDXL / SD3.5 / uploaded)
+                          identity_guard
+                          pre_lipsync_auth    (compliance token mint)
+                          lipsync             (SadTalker / Wav2Lip / MuseTalk)
+                          editor              (ffmpeg remux + optional subtitle burn-in)
+                          qc
+                          export_disclosure_validation
+                          publisher
+   ▼
+   published (1.5–25MB MP4 — single talking head)
+```
+
+### 10.2 scenes_only — 6 stages (Phase 21)
+
+```
+[POST /api/v1/jobs/from-inputs  job_type=scenes_only  scene_plan=[…broll…]]
+   │
+   ▼
+   pending_compliance ──► policy_gate
+                          scriptwriter        (mode=spoken_script — back-compat artifact)
+                          scene_composer      ┐
+                                              ├─ per scene: FLUX image + F5 TTS + ffmpeg zoompan
+                                              └─ ffmpeg concat → reel_draft
+                          qc                  (consumes editor-aliased output)
+                          export_disclosure_validation
+                          publisher
+   ▼
+   published (no character on screen; voiceover over B-roll scenes)
+```
+
+### 10.3 news_presenter — 9 stages (Phase 21 hybrid)
+
+```
+[POST /api/v1/jobs/from-inputs  job_type=news_presenter  scene_plan=[…presenter+broll…]]
+   │
+   ▼
+   pending_compliance ──► policy_gate
+                          scriptwriter
+                          face                (character portrait)
+                          identity_guard
+                          pre_lipsync_auth
+                          scene_composer      ┐
+                                              ├─ presenter scene: SadTalker lipsync on portrait
+                                              ├─ broll scene:    FLUX image + ffmpeg zoompan
+                                              ├─ each scene:     per-scene F5 TTS
+                                              └─ ffmpeg concat   → reel_draft
+                          qc
+                          export_disclosure_validation
+                          publisher
+   ▼
+   published (presenter + B-roll interleaved hybrid reel)
 ```
 
 Every stage writes a `stage_runs` row. Failures attach to
 `jobs.recovery_metadata` with category (`runtime_missing`,
 `assets_missing`, `gpu_unavailable`, `generation_failed`, `storage_failed`)
 so the UI can offer targeted retry actions.
+
+### 10.4 Worker concurrency (Phase 21 fix)
+
+The orchestrator picks the next job via
+`SELECT … FOR UPDATE SKIP LOCKED` + `UPDATE status='accepted'` in one
+transaction, so the 8 `aivideo-agent-*` containers (each running their
+own copy of `run_worker`) cannot race to process the same job. Before
+the fix multiple workers would each run the DAG against the same row
+and flood the wrappers with duplicate FLUX/TTS calls → GPU OOM.
+
+### 10.5 display_name (operator-facing identifier)
+
+Each video carries a computed `display_name` of the form
+`<CharacterName>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>` — e.g.
+`Alexandra.Voicu.09.25.AM.2026.05.19`. When no character is bound
+(e.g. scenes_only without character_id) the prefix is the literal
+`Video.`. The Videos list (`/jobs`) and Dashboard redirect target use
+this as the primary column in place of the raw UUID.
 
 ---
 

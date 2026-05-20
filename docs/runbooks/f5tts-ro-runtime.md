@@ -197,6 +197,73 @@ wrapper's responses to backend error codes:
   without consent is prohibited; the form's `synthetic_or_owned_voice`
   flag remains load-bearing.
 
+## Phase 20 — Multi-voice catalog
+
+The provider catalog now reads `${F5TTS_RO_MODELS_ROOT}/voices.yaml`
+and emits **one TTS dropdown row per voice** (instead of a single
+`f5tts_ro` entry). Each voice declares:
+
+- `id` — stable identifier (used as `f5tts_ro_<id>` provider_id)
+- `label` — human-readable name shown in the dropdown
+- `language` — ISO 639-1 code (`ro`); drives the per-language filter
+- `gender` — `male` / `female` / `neutral`; drives the per-character filter
+- `ref_audio` / `ref_text` — paths relative to `voices/<id>/`
+- `sample_text` — short showcase phrase shown next to the voice
+- `model` *(optional)* — voice-specific `model_*.pt` checkpoint. Omit
+  to use the default `model/model_last.pt`.
+- `description` *(optional)* — short note for the operator
+
+### Adding a new voice
+
+1. Drop the assets under
+   `models/tts/f5tts-ro/voices/<voice_id>/`:
+   - `ref_audio.wav` — short clean clip (5–15 s)
+   - `ref_text.txt` — the EXACT transcript of the reference clip
+   - `model.pt` *(optional)* — fine-tuned checkpoint when the voice
+     has voice-specific weights
+2. Append a YAML block to `voices.yaml`.
+3. No code change, no container rebuild — the next
+   `GET /api/v1/providers` reflects the new voice.
+
+The voices currently shipped (Phase 20):
+
+| `id` | Gender | Custom model? | Origin |
+|------|--------|---------------|--------|
+| `ro_default` | neutral | no (base) | cdorob upstream |
+| `ro_barbat_1_linistit` | male | yes (95k steps) | NAS `Voce barbat linistita 1` |
+| `ro_barbat_2_prezentator` | male | yes (125k steps) | NAS `Voce Barbat Prezentator 1` |
+| `ro_barbat_3_costel` | male | no (base) | NAS `costel` |
+| `ro_barbat_4_dorel` | male | no (base) | NAS `dorel` |
+| `ro_barbat_5_georgel` | male | no (base) | NAS `georgel` |
+| `ro_femeie_1_lacramioara` | female | no (base) | NAS `lacramioara` |
+| `ro_femeie_2_marioara` | female | no (base) | NAS `marioara` |
+
+### Sample audio endpoint
+
+`GET /api/v1/providers/tts/f5tts_ro_<voice_id>/sample.wav` streams
+the reference WAV the voice was trained against — the frontend
+renders an inline `<audio controls>` element so the operator can
+preview a voice before committing to a job.
+
+### Per-voice request shape
+
+When the operator picks a per-voice provider id the backend resolves
+the catalog entry and adds three keys to the wrapper request body:
+
+```json
+{
+  "text": "...",
+  "voice_id": "ro_barbat_3_costel",
+  "reference_audio_path": "/models/tts/f5tts-ro/voices/ro_barbat_3_costel/ref_audio.wav",
+  "reference_text": "<contents of ref_text.txt>",
+  "model_path": "/models/tts/f5tts-ro/voices/ro_barbat_1_linistit/model.pt"
+}
+```
+
+`model_path` is only sent when the voice declares its own
+checkpoint. The wrapper falls back to `F5TTS_RO_CKPT_FILE` when the
+key is absent, so legacy (`f5tts_ro`) jobs keep working.
+
 ## Files added in Phase 10A-1
 
 - `docker/model-tts-ro/Dockerfile` — optional service image

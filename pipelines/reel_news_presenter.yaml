@@ -1,0 +1,73 @@
+# Phase 21 — news_presenter pipeline (hybrid).
+#
+# Interleaves presenter segments (character lipsynced over a still
+# portrait) with B-roll scene clips (FLUX image + Ken-Burns). The
+# ``scene_composer`` stage handles both kinds inline; the character
+# portrait comes from the operator-selected character (state.image_ref).
+#
+# Differs from scenes_only only in that it ALSO requires the face
+# stage to produce the character portrait, and the compliance token
+# gate is on (presenter segments trigger SadTalker, which guards on it).
+
+name: reel_news_presenter
+schema_version: 1
+
+defaults:
+  compliance:
+    watermark_required: true
+    c2pa_required: true
+    compliance_token_required: true
+
+budget:
+  max_wall_minutes: 35
+  max_gpu_minutes: 30
+
+stages:
+  - id: policy_gate
+    agent: compliance_officer
+    role: intake_gate
+
+  - id: scriptwriter
+    agent: scriptwriter
+    needs: [policy_gate]
+    params:
+      llm_backend: "${LLM_BACKEND}"
+      model_id: "${LLM_MODEL_ID}"
+      mode: spoken_script
+
+  - id: face
+    agent: face
+    needs: [policy_gate]
+    params:
+      persona: "caucasian_male_30s_neutral"
+
+  - id: identity_guard
+    agent: compliance_officer
+    role: identity_guard
+    needs: [face]
+
+  - id: pre_lipsync_auth
+    agent: compliance_officer
+    role: pre_lipsync_auth
+    needs: [identity_guard]
+
+  - id: scene_composer
+    agent: scene_composer
+    needs: [scriptwriter, pre_lipsync_auth]
+    params:
+      image_provider: flux_local
+      tts_provider: f5tts_ro
+      lipsync_provider: sadtalker
+
+  - id: qc
+    agent: qc
+    needs: [scene_composer]
+
+  - id: export_disclosure_validation
+    agent: compliance_officer
+    role: export_gate
+    needs: [qc]
+
+  - id: publisher
+    agent: publisher
+    needs: [export_disclosure_validation]
