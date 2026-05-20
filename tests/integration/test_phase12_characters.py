@@ -167,7 +167,8 @@ async def test_character_crud_lifecycle(client):
 
 
 @pytest.mark.asyncio
-async def test_character_unique_slug_collision(client):
+async def test_character_name_must_be_unique(client):
+    # Names are unique among non-deleted characters (once used, can't reuse).
     a = await client.post(
         "/api/v1/characters", json={"profile": _minimal_profile("Same Name")}
     )
@@ -175,9 +176,16 @@ async def test_character_unique_slug_collision(client):
         "/api/v1/characters", json={"profile": _minimal_profile("Same Name")}
     )
     assert a.status_code == 201
-    assert b.status_code == 201
+    assert b.status_code == 409
+    assert "already exists" in b.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_distinct_names_get_distinct_slugs(client):
+    a = await client.post("/api/v1/characters", json={"profile": _minimal_profile("Name One")})
+    b = await client.post("/api/v1/characters", json={"profile": _minimal_profile("Name Two")})
+    assert a.status_code == 201 and b.status_code == 201
     assert a.json()["slug"] != b.json()["slug"]
-    assert b.json()["slug"].startswith("same-name-")
 
 
 # ---------------------------------------------------------------------------

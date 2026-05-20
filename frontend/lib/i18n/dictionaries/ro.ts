@@ -1245,11 +1245,14 @@ export const DICTIONARY_RO: Dictionary = {
         "Când un provider suportă condiționare pe imagine (ex: FLUX BFL ultra, Stability ultra, Replicate FLUX), această imagine de referință menține personajul cu același aspect între generări.",
     },
     lifecycle: {
-      label: "Ciclu de viață",
+      label: "Stare",
       toEditing: "Trece în editare",
       toActive: "Activează",
       toRetired: "Retrage",
-      clone: "Clonează profilul",
+      stateEditing: "În Editare",
+      stateActive: "Activ",
+      stateRetired: "Retras",
+      clone: "Clonează personajul",
       cloneHint:
         "Creează o copie nouă în editare cu alt nume. Clona renunță la voce + referințele față/corp întreg ca să le poți alege din nou.",
       lockedHint:

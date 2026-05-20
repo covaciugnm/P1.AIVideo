@@ -1246,11 +1246,14 @@ export const DICTIONARY_EN: Dictionary = {
         "When a provider supports image conditioning (e.g. FLUX BFL ultra, Stability ultra, Replicate FLUX), this reference image keeps the persona looking the same across generations.",
     },
     lifecycle: {
-      label: "Lifecycle",
+      label: "Status",
       toEditing: "Move to editing",
       toActive: "Activate",
       toRetired: "Retire",
-      clone: "Clone profile",
+      stateEditing: "Editing",
+      stateActive: "Active",
+      stateRetired: "Retired",
+      clone: "Clone character",
       cloneHint:
         "Create a new editing copy with a different name. The clone drops the voice + face/full-body references so you can re-pick them.",
       lockedHint:

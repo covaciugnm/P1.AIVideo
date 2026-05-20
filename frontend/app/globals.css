@@ -603,3 +603,12 @@ table.simple tbody tr:hover {
   border-radius: 14px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 }
 .modal-card h3 { margin-top: 0; }
+
+/* Lifecycle bar — green = current state; title sized like the buttons. */
+.btn-success { background: var(--success, #2e7d32); border-color: var(--success, #2e7d32); color: #08130c; font-weight: 700; }
+.btn-success:disabled { opacity: 1; cursor: default; }
+.lifecycle-title {
+  display: inline-flex; align-items: center;
+  padding: var(--space-2) var(--space-4);
+  font-size: 14px; font-weight: 700; color: var(--text);
+}

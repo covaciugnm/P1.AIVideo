@@ -123,6 +123,29 @@ async def _ensure_unique_slug(session: AsyncSession, base: str) -> str:
         suffix += 1
 
 
+async def _name_taken(
+    session: AsyncSession, name: str, *, exclude_id: uuid.UUID | None = None
+) -> bool:
+    """Case-insensitive name uniqueness among non-deleted characters."""
+    stmt = select(Character.id).where(
+        func.lower(Character.name) == name.strip().lower(),
+        Character.deleted_at.is_(None),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Character.id != exclude_id)
+    return (await session.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def _unique_name(session: AsyncSession, base: str) -> str:
+    """Return a free name variant, appending ' (N)' if ``base`` is taken."""
+    if not await _name_taken(session, base):
+        return base
+    n = 2
+    while await _name_taken(session, f"{base} ({n})"):
+        n += 1
+    return f"{base} ({n})"
+
+
 async def list_characters(
     session: AsyncSession,
     *,
@@ -195,6 +218,9 @@ async def create_character(
 ) -> Character:
     profile = request.profile
     name = profile.identity.name
+    # Names are unique among non-deleted characters (once used, can't reuse).
+    if await _name_taken(session, name):
+        raise CharacterRuleError(f"A character named {name!r} already exists.")
     base_slug = _slugify(request.slug or profile.identity.slug or name)
     slug = await _ensure_unique_slug(session, base_slug)
     # Phase 23 — enforce TTS voice exclusivity at create time.
@@ -282,6 +308,13 @@ async def update_character(
             request.default_voice_provider_id,
             exclude_character_id=character.id,
         )
+
+    # Name uniqueness on rename (case-insensitive, excluding self).
+    if request.profile is not None:
+        new_name = request.profile.identity.name
+        if new_name.strip().lower() != (character.name or "").strip().lower():
+            if await _name_taken(session, new_name, exclude_id=character.id):
+                raise CharacterRuleError(f"A character named {new_name!r} already exists.")
 
     profile_changed = False
     if request.profile is not None:
@@ -430,7 +463,8 @@ async def clone_character(
     """
     profile = dict(source.profile_json or {})
     ident = dict(profile.get("identity") or {})
-    base_name = new_name or f"{source.name} (copy)"
+    # Clone the IDENTITY only; the name must be unique (can't reuse a name).
+    base_name = await _unique_name(session, new_name or f"{source.name} (copy)")
     ident["name"] = base_name
     # Drop the inherited display_name/slug so they regenerate cleanly.
     ident.pop("display_name", None)
