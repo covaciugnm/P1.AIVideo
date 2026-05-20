@@ -61,6 +61,19 @@ class ScriptGenerateRequest(BaseModel):
     language: str = Field(default="en", max_length=16)
     provider_id: str = Field(default="template", max_length=80)
     model: str | None = Field(default=None, max_length=160)
+    # Phase 21 iter 2 — output mode.
+    #   "spoken_script" (default, back-compat): produce a natural-language
+    #     spoken script to be voiced by TTS.
+    #   "image_description": produce a SHORT visual image prompt (background
+    #     + character outfit + pose + lighting) suitable as input for a
+    #     text-to-image model (FLUX). The result is also written into the
+    #     ``full_script`` field of the response so existing frontend
+    #     plumbing keeps working.
+    mode: Literal["spoken_script", "image_description", "scene_plan"] = "spoken_script"
+    # Phase 21 — scene_plan mode needs an extra hint so the LLM knows
+    # whether to emit broll-only or interleaved presenter+broll plans.
+    job_type_hint: Literal["scenes_only", "news_presenter"] | None = None
+    character_gender: str | None = Field(default=None, max_length=32)
 
 
 class ScriptGenerateResponse(BaseModel):
@@ -77,6 +90,10 @@ class ScriptGenerateResponse(BaseModel):
     language: str
     artifact_id: uuid.UUID | None = None  # phase 5B: artifact registration optional
     message: str = ""
+    # Phase 21 — populated only when mode="scene_plan". List of segment
+    # dicts (mirrors SceneSpec; ids start as null and get filled in
+    # by downstream per-scene render stages).
+    scenes: list[dict] | None = None
 
 
 class ScriptGenerateError(BaseModel):
@@ -116,9 +133,23 @@ async def script_generate(
     session: AsyncSession = Depends(get_db_session),
 ) -> ScriptGenerateResponse:
     provider_id = payload.provider_id.strip() or "template"
+    # Phase 19 — explicit per-model Ollama entries. The catalog exposes
+    # "ollama_<sanitized_model>" provider IDs so each pulled model has
+    # its own row in the UI dropdown. Map back to the ollama backend +
+    # set the model from the catalog when this naming pattern is used.
+    requested_model = payload.model
+    if provider_id.startswith("ollama_"):
+        from app.services.provider_registry import _build_llm_providers
+        match = next(
+            (p for p in _build_llm_providers() if p.provider_id == provider_id),
+            None,
+        )
+        if match and match.supported_models:
+            requested_model = match.supported_models[0]
+        provider_id = "ollama"
     logger.info(
         "script.generate.start provider=%s model=%s target_dur=%s lang=%s",
-        provider_id, payload.model, payload.target_duration_seconds, payload.language,
+        provider_id, requested_model, payload.target_duration_seconds, payload.language,
     )
 
     # Network-call gate.
@@ -148,9 +179,10 @@ async def script_generate(
             f"Unknown provider {provider_id!r}: {exc}",
         )
 
-    # Inject the operator-supplied model if non-None.
-    if payload.model:
-        provider.model_name = payload.model
+    # Inject the operator-supplied model if non-None (may have been
+    # overridden above when provider_id was a per-model "ollama_*" alias).
+    if requested_model:
+        provider.model_name = requested_model
 
     # Health probe — short-circuit on cleanly-reported not_implemented /
     # not_configured so the operator gets a categorised hint.
@@ -183,6 +215,13 @@ async def script_generate(
         )
 
     # ----- Real generation path -----
+    # Phase 21 — pack job_type_hint + character_gender via metadata
+    # so the scene-plan and image-description modes can read them.
+    extra_meta: dict = {}
+    if payload.job_type_hint:
+        extra_meta["job_type_hint"] = payload.job_type_hint
+    if payload.character_gender:
+        extra_meta["character_gender"] = payload.character_gender
     req = ScriptRequest(
         job_id=uuid.uuid4(),  # synthetic — preview only, no job linkage yet
         brief=payload.brief,
@@ -190,6 +229,8 @@ async def script_generate(
         target_duration_seconds=payload.target_duration_seconds,
         language=payload.language,
         tone=payload.tone,
+        mode=payload.mode,
+        metadata=extra_meta,
     )
     try:
         result = await provider.generate(req)
@@ -228,6 +269,17 @@ async def script_generate(
     # job_id similar to the upload-intake artifacts.
     _ = session  # session reserved for future artifact persistence.
 
+    # Phase 21 — scene_plan mode: the Ollama parser stashes the
+    # parsed scenes list onto ``result.metadata["scenes"]``. Surface
+    # it on the response so the frontend can render an editable
+    # scene-plan card without re-parsing JSON itself.
+    scenes_out = None
+    if payload.mode == "scene_plan":
+        meta = getattr(result, "metadata", {}) or {}
+        if isinstance(meta, dict):
+            maybe_scenes = meta.get("scenes")
+            if isinstance(maybe_scenes, list):
+                scenes_out = maybe_scenes
     return ScriptGenerateResponse(
         status="generated",
         provider_id=provider_id,
@@ -240,4 +292,5 @@ async def script_generate(
         language=result.language,
         artifact_id=None,
         message="Preview-only; copy into Create Job to register an artifact.",
+        scenes=scenes_out,
     )

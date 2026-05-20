@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.character import Character, CharacterVideo
 from app.models.job import Job, JobStatus
 from app.schemas.job import JobCreateRequest
+from app.services import character_service
 from app.services.queue_publisher import publish_job_created
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,11 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
                 "create_job: character_id %s missing/deleted — job stored without snapshot",
                 payload.character_id,
             )
+        elif character_service.is_generation_blocked(character_row):
+            # Phase 23 — a retired/inactive character cannot back new videos.
+            raise character_service.CharacterRuleError(
+                f"character status '{character_row.status}' does not allow video generation"
+            )
 
     job = Job(
         brief=payload.brief,
@@ -94,6 +100,11 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
         # Phase 12 — character binding + snapshot.
         character_id=character_row.id if character_row is not None else None,
         character_snapshot=character_snapshot,
+        # Phase 21 — pipeline variant + per-scene plan.
+        job_type=getattr(payload, "job_type", None) or "talking_head",
+        scene_plan=getattr(payload, "scene_plan", None),
+        # Phase 22 — output orientation.
+        orientation=getattr(payload, "orientation", None) or "landscape",
     )
     session.add(job)
     await session.commit()

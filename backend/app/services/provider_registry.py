@@ -49,6 +49,24 @@ def _proper_label(name: str) -> str:
     return name.replace("_", " ").title()
 
 
+def _query_ollama_models(base_url: str, timeout: float = 1.5) -> list[str]:
+    """Phase 19 — quick GET to Ollama's /api/tags so the LLM provider
+    catalog can expose every locally-pulled model in the UI dropdown.
+    Returns an empty list on any error (network, timeout, parse) so the
+    catalog stays metadata-only and never blocks the request.
+    """
+    if not base_url:
+        return []
+    try:
+        import json as _json
+        import urllib.request as _urllib_request
+        with _urllib_request.urlopen(f"{base_url.rstrip('/')}/api/tags", timeout=timeout) as r:
+            data = _json.loads(r.read())
+        return sorted({m.get("name", "") for m in data.get("models", []) if m.get("name")})
+    except Exception:
+        return []
+
+
 def _build_llm_providers() -> list[ProviderInfo]:
     try:
         from agents.scriptwriter.core.registry import known_backends
@@ -168,26 +186,192 @@ def _build_llm_providers() -> list[ProviderInfo]:
             status = "not_configured"
             note = "Set the provider's env vars to enable."
 
-        _add(
-            name,
-            _proper_label(name),
-            backend_type=name,
-            default_model=model or None,
-            status=status,
-            locality="local" if is_local else "external",
-            requires_network=True,
-            requires_gpu=False,
-            requires_model_files=is_local,
-            notes=note,
+        # Phase 19 — expose every locally-pulled Ollama model as its OWN
+        # provider entry so the UI dropdown shows one row per model
+        # (qwen3.6:latest, qwen2.5:7b, llama3.1:8b, …) instead of one
+        # generic "ollama" row.
+        if name == "ollama" and network_enabled:
+            base_url = os.environ.get("OLLAMA_BASE_URL", "").strip()
+            models = _query_ollama_models(base_url) if base_url else []
+            if models:
+                for m in models:
+                    safe_id = "ollama_" + m.replace(":", "_").replace(".", "_").replace("/", "_")
+                    # Pretty label: family + size hint extracted from tag.
+                    ml = m.lower()
+                    pretty = f"Ollama · {m}"
+                    if "qwen3.6" in ml and "27b" in ml and ("q4" in ml or "4-bit" in ml or "4bit" in ml):
+                        pretty = f"Ollama · Qwen 3.6 · 27B · 4-bit GGUF · {m}"
+                    elif "qwen3.6" in ml:
+                        pretty = f"Ollama · Qwen 3.6 · {m}"
+                    elif "qwen3.5" in ml and "9b" in ml and ("q4" in ml or "4-bit" in ml or "4bit" in ml):
+                        pretty = f"Ollama · Qwen 3.5 · 9B · 4-bit GGUF · {m}"
+                    elif "qwen3.5" in ml:
+                        pretty = f"Ollama · Qwen 3.5 · {m}"
+                    elif "qwen2.5" in ml:
+                        pretty = f"Ollama · Qwen 2.5 · {m}"
+                    elif "qwen" in ml:
+                        pretty = f"Ollama · Qwen · {m}"
+                    elif "llama3.1" in ml:
+                        pretty = f"Ollama · Llama 3.1 · {m}"
+                    elif "llama" in ml:
+                        pretty = f"Ollama · Llama · {m}"
+                    elif "nomic-embed" in ml:
+                        # Embedding model — skip from script catalog.
+                        continue
+                    out.append(
+                        ProviderInfo(
+                            category="llm",
+                            provider_id=safe_id,
+                            label=pretty,
+                            backend_type="ollama",
+                            default_model=m,
+                            is_local=True,
+                            local_or_external="local",  # type: ignore[arg-type]
+                            status="configured",  # type: ignore[arg-type]
+                            supported_models=[m],
+                            requires_network=False,
+                            requires_gpu=False,
+                            requires_model_files=True,
+                            healthcheck_available=True,
+                            notes=f"Ollama model {m} — pulled locally.",
+                        )
+                    )
+                continue  # Skip generic "ollama" row when we expose per-model entries.
+
+        out.append(
+            ProviderInfo(
+                category="llm",
+                provider_id=name,
+                label=_proper_label(name),
+                backend_type=name,
+                default_model=model or None,
+                is_local=is_local,
+                local_or_external="local" if is_local else "external",  # type: ignore[arg-type]
+                status=status,  # type: ignore[arg-type]
+                supported_models=[model] if model else [],
+                requires_network=True,
+                requires_gpu=False,
+                requires_model_files=is_local,
+                healthcheck_available=False,
+                notes=note,
+            )
+        )
+        continue
+
+    # Phase 24 — operator chose Qwen3.6 27b as the standing default for all
+    # videos (other LLMs stay selectable). Float the configured OLLAMA_MODEL
+    # (e.g. qwen3.6:27b-q4) to the very top so the UI prefills it first.
+    default_model = os.environ.get("OLLAMA_MODEL", "").strip()
+
+    def _is_preferred_default(p: ProviderInfo) -> bool:
+        return bool(
+            default_model
+            and p.backend_type == "ollama"
+            and p.default_model == default_model
         )
 
-    out.sort(key=lambda p: (p.provider_id != selected, p.provider_id != "template", p.provider_id))
+    out.sort(
+        key=lambda p: (
+            not _is_preferred_default(p),
+            p.provider_id != selected,
+            p.provider_id != "template",
+            p.provider_id,
+        )
+    )
     return out
 
 
 # ---------------------------------------------------------------------------
 # TTS catalog
 # ---------------------------------------------------------------------------
+
+
+def _infer_piper_voice_gender(voice_id: str) -> str | None:
+    """Heuristic — Piper voice names embed a speaker token (e.g.
+    ``en_US-amy-medium``). Map common Piper speakers to genders so the
+    frontend can filter the TTS dropdown by character gender.
+    Returns ``None`` when the voice is unknown — UI then never blocks it.
+    """
+    if not voice_id:
+        return None
+    speaker = voice_id.lower().split("-")[1] if "-" in voice_id else voice_id.lower()
+    female = {"amy", "anya", "alba", "catherine", "kathleen", "kristin",
+              "lessac", "libritts_r", "ljspeech", "miriam"}
+    male = {"alan", "danny", "joe", "kerstin", "norman", "ryan",
+            "thorsten", "kerstin_p"}
+    if speaker in female: return "female"
+    if speaker in male: return "male"
+    return None
+
+
+def _load_f5tts_ro_voices(models_root: str) -> list[dict]:
+    """Phase 20 — load the F5TTS-Ro voice catalog.
+
+    Looks for ``<models_root>/voices.yaml`` and returns a list of voice
+    dicts. The catalog file uses a permissive schema (see
+    ``models/tts/f5tts-ro/voices.yaml`` for the canonical layout). Each
+    voice's reference assets must exist on disk; voices that are
+    declared in YAML but whose ref_audio is missing are silently
+    dropped so the UI never offers an unusable voice.
+
+    Returns an empty list on any error so the legacy single-row fallback
+    in ``_build_tts_providers`` keeps working.
+    """
+    if not models_root:
+        models_root = str(
+            Path(__file__).resolve().parents[3] / "models" / "tts" / "f5tts-ro"
+        )
+    catalog_path = Path(models_root) / "voices.yaml"
+    if not catalog_path.exists():
+        return []
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        # PyYAML isn't a hard dep; if it's missing we degrade silently
+        # to the legacy single-row provider entry.
+        return []
+    try:
+        with catalog_path.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        return []
+    voices = data.get("voices") if isinstance(data, dict) else None
+    if not isinstance(voices, list):
+        return []
+    out: list[dict] = []
+    for entry in voices:
+        if not isinstance(entry, dict):
+            continue
+        voice_id = (entry.get("id") or "").strip()
+        if not voice_id:
+            continue
+        ref_audio = (entry.get("ref_audio") or "ref_audio.wav").strip()
+        ref_text = (entry.get("ref_text") or "ref_text.txt").strip()
+        voice_dir = Path(models_root) / "voices" / voice_id
+        audio_path = (voice_dir / ref_audio).resolve()
+        text_path = (voice_dir / ref_text).resolve()
+        # Only emit a voice when both reference files actually exist on
+        # disk — otherwise the wrapper will fail every selection.
+        if not audio_path.exists() or not text_path.exists():
+            continue
+        out.append(
+            {
+                "id": voice_id,
+                "label": entry.get("label") or "",
+                "language": (entry.get("language") or "ro").lower(),
+                "gender": (entry.get("gender") or "neutral").lower(),
+                "sample_text": entry.get("sample_text") or "",
+                "ref_audio_abs": str(audio_path),
+                "ref_text_abs": str(text_path),
+                "model_abs": (
+                    str((voice_dir / entry["model"]).resolve())
+                    if entry.get("model")
+                    else ""
+                ),
+                "description": entry.get("description") or "",
+            }
+        )
+    return out
 
 
 def _build_tts_providers() -> list[ProviderInfo]:
@@ -237,6 +421,8 @@ def _build_tts_providers() -> list[ProviderInfo]:
             healthcheck_available=True,
             notes=piper_notes,
             docs_url="https://github.com/rhasspy/piper",
+            # Phase 18 — voice gender heuristic from Piper voice name.
+            voice_gender=_infer_piper_voice_gender(voice or ""),
         )
     )
 
@@ -246,68 +432,104 @@ def _build_tts_providers() -> list[ProviderInfo]:
     # probed entirely via env (no network call here — the status reflects
     # whether ``F5TTS_RO_BASE_URL`` is set + whether the operator-mounted
     # model directory exists).
+    #
+    # Phase 20 — voice catalog (voices.yaml) drives per-voice provider
+    # rows. When the catalog file is present we emit one ProviderInfo
+    # per voice (each with language + gender + sample_text +
+    # sample_audio_url), filtered by the wrapper's reachability. The
+    # legacy single-row "f5tts_ro" provider_id is preserved as an alias
+    # by the request-time resolver in app/api/tts.py.
     f5_base = os.environ.get("F5TTS_RO_BASE_URL", "").strip()
     f5_root = os.environ.get("F5TTS_RO_MODELS_ROOT", "").strip()
-    f5_voice = os.environ.get("F5TTS_RO_DEFAULT_VOICE", "ro_default").strip()
-    if not f5_base and not f5_root:
-        f5_status = "not_implemented"
-        f5_notes = (
-            "F5TTS-Ro service not configured. Build & start the optional "
-            "tts-ro Docker service (`make docker-tts-ro-build && "
-            "make docker-tts-ro-up`) and set F5TTS_RO_BASE_URL — no "
-            "auto-download. See docs/runbooks/f5tts-ro-runtime.md."
-        )
-    elif not f5_base:
-        f5_status = "not_configured"
-        f5_notes = (
-            f"F5TTS_RO_MODELS_ROOT={f5_root!r} but F5TTS_RO_BASE_URL is "
-            "unset — the backend reaches the model only via the optional "
-            "tts-ro HTTP wrapper. Start the tts-ro service and set the URL."
-        )
-    elif not f5_root:
-        f5_status = "configured"
-        f5_notes = (
-            f"F5TTS_RO_BASE_URL={f5_base!r}; F5TTS_RO_MODELS_ROOT unset. "
-            "The wrapper service should mount the operator's Romanian "
-            "model directory (./models/tts/f5tts-ro by default)."
-        )
+    f5_voices = _load_f5tts_ro_voices(f5_root)
+    if f5_voices:
+        # Per-voice rows (Phase 20). Status mirrors the wrapper's
+        # configuration — voices.yaml describes voices that ARE on disk
+        # so we never emit a row for a missing checkpoint.
+        if not f5_base:
+            f5_status_per_voice = "not_configured"
+            f5_notes_suffix = (
+                f"Voice catalog {f5_root!r}/voices.yaml found, but "
+                "F5TTS_RO_BASE_URL is unset — start the tts-ro wrapper "
+                "service to enable selection."
+            )
+        else:
+            f5_status_per_voice = "configured"
+            f5_notes_suffix = (
+                f"F5TTS-Ro wrapper at {f5_base!r}; voice catalog at "
+                f"{f5_root!r}/voices.yaml."
+            )
+        for voice in f5_voices:
+            voice_id = voice["id"]
+            out.append(
+                ProviderInfo(
+                    category="tts",
+                    provider_id=f"f5tts_ro_{voice_id}",
+                    label=voice.get("label") or f"F5TTS-Ro · {voice_id}",
+                    backend_type="local_http_tts",
+                    default_model=voice_id,
+                    is_local=True,
+                    local_or_external="local",  # type: ignore[arg-type]
+                    status=f5_status_per_voice,  # type: ignore[arg-type]
+                    supported_models=[voice_id],
+                    requires_network=False,
+                    requires_gpu=False,
+                    requires_model_files=True,
+                    healthcheck_available=bool(f5_base),
+                    notes=(voice.get("description") or "") + " · " + f5_notes_suffix,
+                    docs_url="/docs/runbooks/f5tts-ro-runtime.md",
+                    voice_gender=voice.get("gender") or "neutral",
+                    language=voice.get("language") or "ro",
+                    sample_text=voice.get("sample_text") or "",
+                    sample_audio_url=f"/api/v1/providers/tts/f5tts_ro_{voice_id}/sample.wav",
+                )
+            )
     else:
-        # Operator has wired both URL + models root. The actual readiness
-        # is reported by the tts-ro service /health endpoint; the
-        # backend catalog merely marks the operator's intent.
-        f5_status = "available"
-        f5_notes = (
-            f"F5TTS-Ro wrapper at {f5_base!r}, model root {f5_root!r}. "
-            "Real readiness depends on the wrapper /health endpoint."
+        # Catalog absent — fall back to the legacy single-row status entry
+        # so the operator still sees WHY no F5 voice is selectable.
+        if not f5_base and not f5_root:
+            f5_status = "not_implemented"
+            f5_notes = (
+                "F5TTS-Ro service not configured. Build & start the optional "
+                "tts-ro Docker service (`make docker-tts-ro-build && "
+                "make docker-tts-ro-up`) and set F5TTS_RO_BASE_URL — no "
+                "auto-download. See docs/runbooks/f5tts-ro-runtime.md."
+            )
+        elif not f5_base:
+            f5_status = "not_configured"
+            f5_notes = (
+                f"F5TTS_RO_MODELS_ROOT={f5_root!r} but F5TTS_RO_BASE_URL is "
+                "unset, and no voices.yaml catalog was found — drop one at "
+                f"{f5_root!r}/voices.yaml to expose individual voices."
+            )
+        else:
+            f5_status = "not_configured"
+            f5_notes = (
+                f"F5TTS_RO_BASE_URL={f5_base!r} but no voices.yaml catalog "
+                "found — the per-voice dropdown is empty. Add voices.yaml "
+                "under F5TTS_RO_MODELS_ROOT."
+            )
+        out.append(
+            ProviderInfo(
+                category="tts",
+                provider_id="f5tts_ro",
+                label="F5TTS-Ro Romanian (no voices configured)",
+                backend_type="local_http_tts",
+                default_model=None,
+                is_local=True,
+                local_or_external="local",  # type: ignore[arg-type]
+                status=f5_status,  # type: ignore[arg-type]
+                supported_models=[],
+                requires_network=False,
+                requires_gpu=False,
+                requires_model_files=True,
+                healthcheck_available=bool(f5_base),
+                notes=f5_notes,
+                docs_url="/docs/runbooks/f5tts-ro-runtime.md",
+                voice_gender="neutral",
+                language="ro",
+            )
         )
-    out.append(
-        ProviderInfo(
-            category="tts",
-            provider_id="f5tts_ro",
-            label="F5TTS-Ro Romanian (optional service)",
-            backend_type="local_http_tts",
-            default_model=f5_voice or None,
-            is_local=True,
-            local_or_external="local",
-            status=f5_status,  # type: ignore[arg-type]
-            supported_models=[f5_voice] if f5_voice else [],
-            requires_network=False,
-            # F5-TTS upstream uses torch; the Romanian adapter inherits
-            # that requirement. CPU-only inference is supported but slow.
-            requires_gpu=False,
-            requires_model_files=True,
-            healthcheck_available=bool(f5_base),
-            notes=f5_notes,
-            warning=(
-                "Romanian TTS via cdorob/f5-tts-romanian (MIT). Operator "
-                "must mount the cdorob checkpoint at "
-                "models/tts/f5tts-ro/model/model_last.pt + vocab.txt, "
-                "plus a synthetic reference WAV + matching transcript at "
-                "models/tts/f5tts-ro/reference/."
-            ),
-            docs_url="/docs/runbooks/f5tts-ro-runtime.md",
-        )
-    )
 
     # Stubs for additional TTS providers — operator-installable, but the
     # backend speaks only metadata until a real adapter ships.
@@ -1119,6 +1341,32 @@ def get_provider(category: str, provider_id: str) -> ProviderInfo | None:
     for p in list_providers_by_category(category):
         if p.provider_id == provider_id:
             return p
+    return None
+
+
+def resolve_f5tts_ro_voice(provider_id: str) -> dict | None:
+    """Phase 20 — resolve an ``f5tts_ro_<voice_id>`` provider_id (or the
+    legacy ``f5tts_ro`` alias) to the voice dict from ``voices.yaml``.
+    Returns ``None`` when the catalog is empty or the voice id doesn't
+    match. Callers can use the returned dict's ``ref_audio_abs``,
+    ``ref_text_abs``, and ``model_abs`` (may be empty) to drive the
+    wrapper request.
+    """
+    f5_root = os.environ.get("F5TTS_RO_MODELS_ROOT", "").strip()
+    voices = _load_f5tts_ro_voices(f5_root)
+    if not voices:
+        return None
+    if provider_id == "f5tts_ro":
+        # Legacy alias — default to the first voice in the catalog so
+        # pre-Phase-20 jobs still resolve to a real voice.
+        default = os.environ.get(
+            "F5TTS_RO_DEFAULT_VOICE", voices[0]["id"]
+        ).strip()
+        match = next((v for v in voices if v["id"] == default), None)
+        return match or voices[0]
+    if provider_id.startswith("f5tts_ro_"):
+        wanted = provider_id[len("f5tts_ro_"):]
+        return next((v for v in voices if v["id"] == wanted), None)
     return None
 
 

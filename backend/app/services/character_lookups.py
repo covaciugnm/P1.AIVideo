@@ -229,7 +229,11 @@ _MOOD = [
 ]
 
 _CHARACTER_STATUS = [
+    # Phase 23 lifecycle order: editing → active → retired (legacy
+    # inactive/draft kept so historical rows still resolve a label).
+    _opt("editing", "characterLookups.status.editing", "Editing", "În editare"),
     _opt("active", "characterLookups.status.active", "Active", "Activ"),
+    _opt("retired", "characterLookups.status.retired", "Retired", "Retras"),
     _opt("inactive", "characterLookups.status.inactive", "Inactive", "Inactiv"),
     _opt("draft", "characterLookups.status.draft", "Draft", "Schiță"),
 ]

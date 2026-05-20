@@ -190,7 +190,13 @@ async def generate_subtitle_artifacts(
                 "alignment": "approximate",
                 "real_timing": False,
                 "burn_in_requested": burn_in_requested,
-                "burn_in_status": "not_implemented" if burn_in_requested else "sidecar_only",
+                # Phase 21 — burn-in is now wired through the orchestrator
+                # → editor stage (ffmpeg subtitles= filter). The actual
+                # bake happens when the DAG runs; this row only records
+                # the operator's INTENT.
+                "burn_in_status": (
+                    "queued_for_editor" if burn_in_requested else "sidecar_only"
+                ),
             },
         )
         new_ids.append(art.id)

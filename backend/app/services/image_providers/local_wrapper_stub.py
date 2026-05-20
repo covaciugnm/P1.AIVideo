@@ -247,50 +247,153 @@ class LocalWrapperImageProviderStub(ImageProvider):
             },
         )
 
-    async def _call_comfyui(
-        self, base: str, request: ImageGenerationInput
-    ) -> ImageGenerationResult:
-        # ComfyUI workflows are JSON DAGs. The operator must provide a
-        # workflow template via env (COMFYUI_WORKFLOW_PATH); we substitute
-        # the prompt + seed into the placeholders ``__PROMPT__`` /
-        # ``__SEED__`` / ``__WIDTH__`` / ``__HEIGHT__``.
-        import json
-        import time
-        import uuid as _uuid
+    def _resolve_workflow_template(self, request: ImageGenerationInput) -> str:
+        """Phase IG-1 — locate the ComfyUI workflow template.
 
+        Priority:
+          1. ``request.workflow_name`` → ``${COMFYUI_WORKFLOW_DIR}/<name>.json``
+             (identity-consistent workflows like ``pulid_flux_consistent``).
+          2. legacy single ``COMFYUI_WORKFLOW_PATH`` env (back-compat).
+        Returns the raw template text (placeholders not yet substituted).
+        """
+        name = (request.workflow_name or "").strip()
+        if name:
+            wf_dir = os.environ.get("COMFYUI_WORKFLOW_DIR", "/workflows").strip()
+            # Defensive: only a bare file stem, never a path traversal.
+            safe = name.replace("..", "").strip("/")
+            candidate = Path(wf_dir) / f"{safe}.json"
+            try:
+                return candidate.read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ProviderUnavailableError(
+                    "provider_not_configured",
+                    f"ComfyUI workflow {name!r} not found at {candidate} "
+                    f"(set COMFYUI_WORKFLOW_DIR; see workflows/comfyui/README.md): {exc}",
+                ) from exc
         wf_path = os.environ.get("COMFYUI_WORKFLOW_PATH", "").strip()
         if not wf_path:
             raise ProviderUnavailableError(
                 "provider_not_configured",
-                "COMFYUI_WORKFLOW_PATH not set. Point it at a workflow JSON "
-                "with __PROMPT__ / __SEED__ / __WIDTH__ / __HEIGHT__ "
-                "placeholders that ComfyUI will substitute.",
+                "No ComfyUI workflow selected. Pass workflow_name (resolved "
+                "under COMFYUI_WORKFLOW_DIR) or set COMFYUI_WORKFLOW_PATH.",
             )
         try:
-            template = Path(wf_path).read_text(encoding="utf-8")
+            return Path(wf_path).read_text(encoding="utf-8")
         except OSError as exc:
             raise ProviderUnavailableError(
                 "provider_not_configured",
                 f"ComfyUI workflow template at {wf_path} not readable: {exc}",
             ) from exc
-        seed_val = int(request.seed) if request.seed is not None else int(time.time())
+
+    @staticmethod
+    def _build_workflow_dict(
+        template: str,
+        request: ImageGenerationInput,
+        seed_val: int,
+        face_ref_name: str,
+        body_ref_name: str,
+    ) -> dict:
+        """Phase IG-1 — substitute placeholders into a ComfyUI template and
+        parse the result. Pure + side-effect-free so it is unit-testable
+        without a live ComfyUI server. Raises ProviderUnavailableError if
+        the substituted text is not valid JSON."""
+        import json
+
+        def _esc(s: str) -> str:
+            # JSON-escape a value for safe substitution inside a JSON string.
+            return json.dumps(s)[1:-1]
+
         workflow_json = (
-            template.replace("__PROMPT__", json.dumps(request.prompt or "")[1:-1])
+            template.replace("__PROMPT__", _esc(request.prompt or ""))
+            .replace("__NEGATIVE__", _esc(request.negative_prompt or ""))
             .replace("__SEED__", str(seed_val))
             .replace("__WIDTH__", str(request.width))
             .replace("__HEIGHT__", str(request.height))
+            .replace("__STEPS__", str(int(request.steps) if request.steps else 28))
+            .replace(
+                "__CFG__",
+                str(float(request.guidance_scale) if request.guidance_scale else 3.5),
+            )
+            .replace("__FACE_REF__", _esc(face_ref_name))
+            .replace("__BODY_REF__", _esc(body_ref_name))
         )
         try:
-            workflow = json.loads(workflow_json)
+            parsed = json.loads(workflow_json)
         except json.JSONDecodeError as exc:
             raise ProviderUnavailableError(
                 "provider_not_configured",
                 f"ComfyUI workflow JSON invalid after substitution: {exc}",
             ) from exc
+        # ComfyUI treats every top-level key as a node id. Drop our doc-only
+        # keys (e.g. ``_comment``) so they aren't validated as nodes.
+        return {k: v for k, v in parsed.items() if not str(k).startswith("_")}
+
+    async def _comfyui_upload_image(
+        self, client: "httpx.AsyncClient", base: str, local_path: str
+    ) -> str:
+        """Phase IG-1 — push a reference image into ComfyUI's input dir via
+        ``/upload/image`` and return the server-side filename to inject into
+        a LoadImage node. Raises ProviderUnavailableError on failure."""
+        try:
+            data = Path(local_path).read_bytes()
+        except OSError as exc:
+            raise ProviderUnavailableError(
+                "reference_image_missing",
+                f"Reference image {local_path} not readable: {exc}",
+            ) from exc
+        files = {"image": (Path(local_path).name, data, "image/png")}
+        resp = await client.post(
+            base.rstrip("/") + "/upload/image",
+            files=files,
+            data={"overwrite": "true"},
+        )
+        if resp.status_code // 100 != 2:
+            raise ProviderUnavailableError(
+                "generation_failed",
+                f"ComfyUI /upload/image returned {resp.status_code}: {resp.text[:200]}",
+            )
+        body = resp.json()
+        name = body.get("name")
+        subfolder = body.get("subfolder", "")
+        if not name:
+            raise ProviderUnavailableError(
+                "generation_failed", f"ComfyUI upload returned no name: {body!r}"
+            )
+        return f"{subfolder}/{name}" if subfolder else name
+
+    async def _call_comfyui(
+        self, base: str, request: ImageGenerationInput
+    ) -> ImageGenerationResult:
+        # ComfyUI workflows are JSON DAGs. We substitute the prompt + seed +
+        # dimensions + (for identity-consistent workflows) the uploaded
+        # face / full-body reference filenames into named placeholders.
+        import json
+        import time
+        import uuid as _uuid
+
+        template = self._resolve_workflow_template(request)
+        seed_val = int(request.seed) if request.seed is not None else int(time.time())
 
         client_id = _uuid.uuid4().hex
         timeout_s = float(os.environ.get("IMAGE_GENERATOR_TIMEOUT_SECONDS", "600"))
         async with httpx.AsyncClient(timeout=timeout_s) as client:
+            # Identity references must be uploaded BEFORE substitution so we
+            # can inject the server-side filenames into the LoadImage nodes.
+            face_ref_name = ""
+            body_ref_name = ""
+            if request.face_reference_path:
+                face_ref_name = await self._comfyui_upload_image(
+                    client, base, request.face_reference_path
+                )
+            if request.body_reference_path:
+                body_ref_name = await self._comfyui_upload_image(
+                    client, base, request.body_reference_path
+                )
+
+            workflow = self._build_workflow_dict(
+                template, request, seed_val, face_ref_name, body_ref_name
+            )
+
             queue_resp = await client.post(
                 base.rstrip("/") + "/prompt",
                 json={"prompt": workflow, "client_id": client_id},
@@ -364,6 +467,9 @@ class LocalWrapperImageProviderStub(ImageProvider):
                 "wrapper_url": base,
                 "comfyui_prompt_id": prompt_id,
                 "comfyui_filename": image_filename,
+                "workflow_name": request.workflow_name,
+                "face_reference_used": bool(request.face_reference_path),
+                "body_reference_used": bool(request.body_reference_path),
             },
         )
 

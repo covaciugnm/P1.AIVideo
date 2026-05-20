@@ -34,6 +34,73 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+# Phase 23 — character lifecycle states.
+#   editing : draft / under edit. Everything (face, DOB, voice) editable.
+#             Reserves its TTS voice so no other character can grab it.
+#   active  : committed. Face / date_of_birth / gender / voice are IMMUTABLE.
+#             Can generate photos + videos. Still reserves its voice.
+#   retired : decommissioned. CANNOT generate photos/videos. RELEASES its
+#             TTS voice so another character may claim it.
+# Legacy "inactive" (old soft-delete status) is treated as retired.
+STATUS_EDITING = "editing"
+STATUS_ACTIVE = "active"
+STATUS_RETIRED = "retired"
+_VOICE_HOLDING_STATUSES = (STATUS_EDITING, STATUS_ACTIVE)
+# Statuses that block photo / video generation.
+_GEN_BLOCKED_STATUSES = (STATUS_RETIRED, "inactive")
+
+
+class CharacterRuleError(ValueError):
+    """Raised when a lifecycle / immutability / exclusivity rule is
+    violated. The API layer maps it to HTTP 409."""
+
+
+async def assigned_voice_ids(
+    session: AsyncSession, *, exclude_character_id: uuid.UUID | None = None
+) -> set[str]:
+    """Phase 23 — set of TTS voice ids currently RESERVED by characters.
+
+    A voice is reserved while its character is in ``editing`` or
+    ``active`` (not retired, not soft-deleted). Retiring a character
+    frees its voice. ``exclude_character_id`` lets the owning character
+    keep seeing its own voice as available when re-saving.
+    """
+    stmt = select(Character.default_voice_provider_id).where(
+        Character.deleted_at.is_(None),
+        Character.status.in_(_VOICE_HOLDING_STATUSES),
+        Character.default_voice_provider_id.is_not(None),
+    )
+    if exclude_character_id is not None:
+        stmt = stmt.where(Character.id != exclude_character_id)
+    rows = await session.execute(stmt)
+    return {v for (v,) in rows.all() if v}
+
+
+async def assert_voice_available(
+    session: AsyncSession,
+    voice_id: str | None,
+    *,
+    exclude_character_id: uuid.UUID | None = None,
+) -> None:
+    """Phase 23 — raise CharacterRuleError if ``voice_id`` is already
+    reserved by another non-retired character."""
+    if not voice_id:
+        return
+    taken = await assigned_voice_ids(session, exclude_character_id=exclude_character_id)
+    if voice_id in taken:
+        raise CharacterRuleError(
+            f"TTS voice {voice_id!r} is already assigned to another active "
+            "or editing character. Retire that character to free the voice, "
+            "or pick a different voice."
+        )
+
+
+def is_generation_blocked(character: Character) -> bool:
+    """Phase 23 — True when the character is retired/inactive and so
+    cannot produce new photos or videos."""
+    return (character.status or "") in _GEN_BLOCKED_STATUSES
+
+
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -63,7 +130,8 @@ async def list_characters(
     status: str | None = None,
     limit: int = 200,
 ) -> tuple[list[CharacterSummary], int]:
-    stmt = select(Character).order_by(Character.created_at.desc())
+    # Always alphabetical by name (Phase 23 — operator request).
+    stmt = select(Character).order_by(func.lower(Character.name).asc())
     if not include_deleted:
         stmt = stmt.where(Character.deleted_at.is_(None))
     if status is not None:
@@ -129,6 +197,12 @@ async def create_character(
     name = profile.identity.name
     base_slug = _slugify(request.slug or profile.identity.slug or name)
     slug = await _ensure_unique_slug(session, base_slug)
+    # Phase 23 — enforce TTS voice exclusivity at create time.
+    requested_voice = (
+        request.default_voice_provider_id
+        or profile.voice.preferred_tts_provider_id
+    )
+    await assert_voice_available(session, requested_voice)
     row = Character(
         name=name,
         slug=slug,
@@ -152,11 +226,63 @@ async def create_character(
     return row
 
 
+def _identity_immutable_fields(profile_json: dict) -> dict:
+    """Phase 23/24 — fields that become immutable once a character is
+    active. The face + full-body images are guarded separately via
+    face_locked / full_body_locked; this covers the biographical
+    identity the operator asked to freeze: date of birth, gender,
+    place/nationality of origin, and the formal education record.
+    """
+    p = profile_json or {}
+    ident = p.get("identity") or {}
+    edu = p.get("education") or {}
+    return {
+        "identity.date_of_birth": ident.get("date_of_birth"),
+        "identity.gender": ident.get("gender"),
+        "identity.place_of_birth": ident.get("place_of_birth"),
+        "identity.nationality": ident.get("nationality"),
+        "identity.native_language": ident.get("native_language"),
+        "education.education_level": edu.get("education_level"),
+        "education.field_of_study": edu.get("field_of_study"),
+    }
+
+
 async def update_character(
     session: AsyncSession,
     character: Character,
     request: CharacterUpdateRequest,
 ) -> Character:
+    # Phase 23 — immutability gate. Once a character is ACTIVE, the
+    # face (face_locked), date_of_birth, gender, and TTS voice are
+    # frozen. To change them the operator must first move the
+    # character back to ``editing`` (status transition endpoint).
+    locked = (character.status or "") == STATUS_ACTIVE
+
+    if request.profile is not None and locked:
+        old_imm = _identity_immutable_fields(character.profile_json)
+        new_imm = _identity_immutable_fields(request.profile.model_dump(mode="json"))
+        for field, old_val in old_imm.items():
+            if new_imm.get(field) != old_val:
+                raise CharacterRuleError(
+                    f"{field} is immutable while the character is "
+                    f"active (was {old_val!r}, got {new_imm.get(field)!r}). "
+                    "Move the character to 'editing' first."
+                )
+
+    # Phase 23 — voice change rules: blocked while active; otherwise
+    # must not collide with another character's reserved voice.
+    if request.default_voice_provider_id is not None:
+        if locked and request.default_voice_provider_id != character.default_voice_provider_id:
+            raise CharacterRuleError(
+                "The TTS voice is immutable while the character is active. "
+                "Move it to 'editing' to change the voice."
+            )
+        await assert_voice_available(
+            session,
+            request.default_voice_provider_id,
+            exclude_character_id=character.id,
+        )
+
     profile_changed = False
     if request.profile is not None:
         # Snapshot the previous version BEFORE we overwrite the row,
@@ -190,6 +316,70 @@ async def update_character(
     return character
 
 
+async def transition_status(
+    session: AsyncSession,
+    character: Character,
+    new_status: str,
+) -> Character:
+    """Phase 23 — explicit lifecycle transition.
+
+    Valid moves:
+      editing → active   (commit; requires a voice + a locked face)
+      active  → editing  (re-open for changes)
+      active  → retired  (decommission; frees the voice)
+      editing → retired  (abandon a draft; frees the voice)
+      retired → editing  (revive — voice must still be free)
+    """
+    cur = (character.status or "").lower()
+    nxt = new_status.lower()
+    valid = {
+        (STATUS_EDITING, STATUS_ACTIVE),
+        (STATUS_ACTIVE, STATUS_EDITING),
+        (STATUS_ACTIVE, STATUS_RETIRED),
+        (STATUS_EDITING, STATUS_RETIRED),
+        (STATUS_RETIRED, STATUS_EDITING),
+        ("inactive", STATUS_EDITING),  # legacy revive
+    }
+    if cur == nxt:
+        return character
+    if (cur, nxt) not in valid:
+        raise CharacterRuleError(
+            f"invalid status transition {cur!r} → {nxt!r}. Allowed: "
+            "editing→active, active→editing, active→retired, "
+            "editing→retired, retired→editing."
+        )
+    if nxt == STATUS_ACTIVE:
+        # Activation requires a committed face + a voice.
+        if not character.main_reference_image_id:
+            raise CharacterRuleError(
+                "cannot activate: the character has no main reference image "
+                "(accept a generated face first)."
+            )
+        if not character.default_voice_provider_id:
+            raise CharacterRuleError(
+                "cannot activate: no TTS voice assigned. Pick a voice while "
+                "the character is in 'editing'."
+            )
+        # Re-check the voice is still free (another character might have
+        # been activated meanwhile).
+        await assert_voice_available(
+            session, character.default_voice_provider_id,
+            exclude_character_id=character.id,
+        )
+    if nxt == STATUS_EDITING and cur == STATUS_RETIRED:
+        # Reviving a retired character — its voice may have been claimed
+        # by someone else while it was retired.
+        await assert_voice_available(
+            session, character.default_voice_provider_id,
+            exclude_character_id=character.id,
+        )
+    character.status = nxt
+    character.updated_at = _utcnow()
+    await session.commit()
+    await session.refresh(character)
+    return character
+
+
 async def soft_delete_character(
     session: AsyncSession, character: Character
 ) -> Character:
@@ -213,6 +403,63 @@ async def set_main_reference_image(
     return character
 
 
+async def set_full_body_reference_image(
+    session: AsyncSession,
+    character: Character,
+    image_id: uuid.UUID | None,
+) -> Character:
+    """Phase 24 — pin the full-body reference image (companion to the
+    face main_reference)."""
+    character.full_body_reference_image_id = image_id
+    character.updated_at = _utcnow()
+    await session.commit()
+    await session.refresh(character)
+    return character
+
+
+async def clone_character(
+    session: AsyncSession, source: Character, *, new_name: str | None = None
+) -> Character:
+    """Phase 24 — duplicate a character's PROFILE into a brand-new row
+    that opens in ``editing``.
+
+    The clone deliberately drops the exclusive bindings so the operator
+    can re-pick them on the copy: TTS voice, face/full-body references,
+    and the locks. This is the supported way to "branch" an active
+    character when you want to change a frozen field.
+    """
+    profile = dict(source.profile_json or {})
+    ident = dict(profile.get("identity") or {})
+    base_name = new_name or f"{source.name} (copy)"
+    ident["name"] = base_name
+    # Drop the inherited display_name/slug so they regenerate cleanly.
+    ident.pop("display_name", None)
+    ident.pop("slug", None)
+    profile["identity"] = ident
+
+    slug = await _ensure_unique_slug(session, _slugify(base_name))
+    row = Character(
+        name=base_name,
+        slug=slug,
+        display_name=None,
+        status=STATUS_EDITING,
+        profile_json=profile,
+        default_language=source.default_language,
+        # Exclusive bindings are NOT copied — the clone picks its own.
+        default_voice_provider_id=None,
+        default_image_provider_id=source.default_image_provider_id,
+        main_reference_image_id=None,
+        face_locked=False,
+        full_body_reference_image_id=None,
+        full_body_locked=False,
+        version_number=1,
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
 def _to_summary(
     row: Character, image_count: int, video_count: int
 ) -> CharacterSummary:
@@ -227,6 +474,8 @@ def _to_summary(
         default_image_provider_id=row.default_image_provider_id,
         main_reference_image_id=row.main_reference_image_id,
         face_locked=bool(getattr(row, "face_locked", False)),
+        full_body_reference_image_id=getattr(row, "full_body_reference_image_id", None),
+        full_body_locked=bool(getattr(row, "full_body_locked", False)),
         image_count=image_count,
         video_count=video_count,
         version_number=row.version_number,
@@ -268,6 +517,8 @@ async def to_response(
         default_image_provider_id=row.default_image_provider_id,
         main_reference_image_id=row.main_reference_image_id,
         face_locked=bool(getattr(row, "face_locked", False)),
+        full_body_reference_image_id=getattr(row, "full_body_reference_image_id", None),
+        full_body_locked=bool(getattr(row, "full_body_locked", False)),
         version_number=row.version_number,
         image_count=image_count,
         video_count=video_count,

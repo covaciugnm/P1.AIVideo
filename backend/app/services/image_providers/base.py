@@ -64,6 +64,15 @@ class ImageGenerationInput:
     steps: int | None
     guidance_scale: float | None
     reference_image_path: str | None
+    # Phase IG-1 — identity-consistent generation. ``face_reference_path``
+    # anchors facial identity (PuLID / InstantID / IP-Adapter-FaceID);
+    # ``body_reference_path`` anchors silhouette/proportions. ``workflow_name``
+    # selects a ComfyUI template file under ``COMFYUI_WORKFLOW_DIR`` (e.g.
+    # "pulid_flux_consistent"); when unset the provider falls back to the
+    # single ``COMFYUI_WORKFLOW_PATH`` template (back-compat).
+    face_reference_path: str | None = None
+    body_reference_path: str | None = None
+    workflow_name: str | None = None
     extra: dict = field(default_factory=dict)
 
 

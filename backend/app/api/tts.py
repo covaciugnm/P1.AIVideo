@@ -126,8 +126,11 @@ async def tts_generate(
     )
 
     # Phase 10A-1 — route F5TTS-Ro to the optional HTTP wrapper service.
-    if provider_id == "f5tts_ro":
-        return await _generate_via_f5tts_ro(payload, session)
+    # Phase 20 — also accept per-voice IDs ("f5tts_ro_<voice_id>") so
+    # each row in the voice catalog routes to the same wrapper with
+    # voice-specific reference assets.
+    if provider_id == "f5tts_ro" or provider_id.startswith("f5tts_ro_"):
+        return await _generate_via_f5tts_ro(payload, session, provider_id)
 
     if provider_id != "piper":
         # Only piper + f5tts_ro are wired for direct preview. Other
@@ -375,6 +378,7 @@ def _concat_wavs(input_paths: list, output_path) -> None:
 async def _generate_via_f5tts_ro(
     payload: TTSGenerateRequest,
     session: AsyncSession,
+    provider_id: str = "f5tts_ro",
 ) -> TTSGenerateResponse:
     """Phase 10A-1 — route TTS generation to the optional ``tts-ro``
     Docker service over HTTP.
@@ -399,7 +403,6 @@ async def _generate_via_f5tts_ro(
     import urllib.parse
     import urllib.request
 
-    provider_id = "f5tts_ro"
     base_url = os.environ.get("F5TTS_RO_BASE_URL", "").strip()
     if not base_url:
         _raise_503(
@@ -410,9 +413,22 @@ async def _generate_via_f5tts_ro(
             "service. See docs/runbooks/f5tts-ro-runtime.md.",
         )
 
-    voice_id = payload.tts_model or os.environ.get(
-        "F5TTS_RO_DEFAULT_VOICE", "ro_default"
-    )
+    # Phase 20 — resolve the voice catalog entry. The new per-voice
+    # provider IDs ("f5tts_ro_ro_barbat_3_costel" etc.) carry their own
+    # reference assets and (sometimes) their own model checkpoint; the
+    # legacy "f5tts_ro" id falls back to F5TTS_RO_DEFAULT_VOICE.
+    from app.services.provider_registry import resolve_f5tts_ro_voice
+    voice_entry = resolve_f5tts_ro_voice(provider_id)
+    if voice_entry:
+        voice_id = voice_entry["id"]
+        voice_ref_audio = voice_entry.get("ref_audio_abs") or ""
+        voice_ref_text = voice_entry.get("ref_text_abs") or ""
+        voice_model = voice_entry.get("model_abs") or ""
+    else:
+        voice_id = payload.tts_model or os.environ.get(
+            "F5TTS_RO_DEFAULT_VOICE", "ro_default"
+        )
+        voice_ref_audio = voice_ref_text = voice_model = ""
 
     # Pick a destination path under the backend's UPLOAD_AUDIO_ROOT so
     # the audio artifact ends up on the same volume the operator can
@@ -451,6 +467,29 @@ async def _generate_via_f5tts_ro(
             "output_format": "wav",
             "language": payload.language or "ro",
         }
+        # Phase 20 — when the operator picked a per-voice provider id,
+        # the catalog knows where the reference assets live. Pass them
+        # explicitly so the wrapper service doesn't need to ship the
+        # same voices.yaml or guess paths. The wrapper expects:
+        #   reference_audio_path : absolute path inside its mount
+        #   reference_text       : the transcript string (NOT a path)
+        #   model_path           : optional, voice-specific checkpoint
+        # Reading the ref_text file here means the wrapper schema can
+        # stay backward-compatible — only model_path is a new field.
+        if voice_ref_audio:
+            req_body["reference_audio_path"] = voice_ref_audio
+        if voice_ref_text:
+            try:
+                req_body["reference_text"] = Path(voice_ref_text).read_text(
+                    encoding="utf-8"
+                ).strip()
+            except OSError as exc:
+                logger.warning(
+                    "f5tts_ro: failed to read ref_text %r: %s",
+                    voice_ref_text, exc,
+                )
+        if voice_model:
+            req_body["model_path"] = voice_model
         data = json.dumps(req_body).encode("utf-8")
         url = base_url.rstrip("/") + "/tts/generate"
         req = urllib.request.Request(

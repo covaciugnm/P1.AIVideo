@@ -21,6 +21,112 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.enums import CANONICAL_DAG_STAGES, JobStatus, StageStatus
 
+
+# Phase 21 — per-job pipeline stage counts. CANONICAL_DAG_STAGES is the
+# superset across all pipeline variants; using its full length as the
+# denominator made talking_head jobs (11 stages) plateau at 91.7%.
+# Use this helper everywhere we divide by "total stages".
+_STAGES_BY_JOB_TYPE: dict[str, int] = {
+    "talking_head": 11,    # current default pipeline
+    "scenes_only": 6,      # policy_gate + scriptwriter + scene_composer + qc + export_disclosure_validation + publisher
+    "news_presenter": 9,   # + face + identity_guard + pre_lipsync_auth
+}
+
+
+def _total_stages_for_job(job) -> int:  # type: ignore[no-untyped-def]
+    """Phase 21 — denominator for progress_percent and current_stage.
+
+    Falls back to ``len(CANONICAL_DAG_STAGES)`` for unknown job_types.
+    """
+    jt = getattr(job, "job_type", None) or "talking_head"
+    return _STAGES_BY_JOB_TYPE.get(jt, len(CANONICAL_DAG_STAGES))
+
+
+# Phase 21 — explicit stage lists per job_type. Mirrors the YAML files
+# in pipelines/ but lives in the backend so the progress endpoint can
+# render the right "pending/succeeded" status list without re-parsing
+# YAML on every request.
+_STAGE_NAMES_BY_JOB_TYPE: dict[str, tuple[str, ...]] = {
+    "talking_head": (
+        "policy_gate", "scriptwriter", "voice", "face",
+        "identity_guard", "pre_lipsync_auth", "lipsync", "editor",
+        "qc", "export_disclosure_validation", "publisher",
+    ),
+    "scenes_only": (
+        "policy_gate", "scriptwriter", "scene_composer",
+        "qc", "export_disclosure_validation", "publisher",
+    ),
+    "news_presenter": (
+        "policy_gate", "scriptwriter", "face",
+        "identity_guard", "pre_lipsync_auth", "scene_composer",
+        "qc", "export_disclosure_validation", "publisher",
+    ),
+}
+
+
+def _stage_names_for_job(job) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
+    """Phase 21 — return the canonical stage list for ``job``'s
+    pipeline variant. Falls back to the original talking_head list.
+    """
+    jt = getattr(job, "job_type", None) or "talking_head"
+    return _STAGE_NAMES_BY_JOB_TYPE.get(jt, _STAGE_NAMES_BY_JOB_TYPE["talking_head"])
+
+
+def _character_name_part(job) -> str:  # type: ignore[no-untyped-def]
+    """Phase 21/23 — the dotted character-name prefix used both in the
+    display name and as the alphabetical sort key. Prefers the frozen
+    snapshot so renames don't rewrite history; falls back to "Video"
+    when no character is bound."""
+    import re
+
+    snap = getattr(job, "character_snapshot", None) or {}
+    if isinstance(snap, dict):
+        ident = snap.get("identity") if isinstance(snap.get("identity"), dict) else {}
+        name = (
+            (ident or {}).get("display_name")
+            or (ident or {}).get("name")
+            or snap.get("display_name")
+            or snap.get("name")
+            or ""
+        )
+    else:
+        name = ""
+    name = str(name).strip()
+    if not name:
+        # Phase 21 iter 2 — when no character is bound, use a clean
+        # "Video" prefix instead of a brief snippet (the operator
+        # complained that brief-derived names looked weird).
+        name = "Video"
+    # Dot-separated, drop spaces/extra punctuation.
+    name = re.sub(r"\s+", ".", name)
+    name = re.sub(r"[^\w.\-]", "", name)  # keep word chars + . -
+    return re.sub(r"\.{2,}", ".", name).strip(".") or "Video"
+
+
+def _compose_display_name(job) -> str:  # type: ignore[no-untyped-def]
+    """Phase 21 — operator-facing identifier for the video, replacing
+    the raw UUID in the dashboard. Format:
+        "<CharacterName>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>"
+    where CharacterName is dotted (first.last) and timestamps come
+    from ``job.created_at``.
+    Example: ``Alexandra.Voicu.09.25.AM.2026.05.19``.
+    """
+    from datetime import timezone as _tz
+
+    created = job.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=_tz.utc)
+    # Operator-facing time in local Romanian timezone is not portable
+    # inside a Docker container; serve UTC components so the same row
+    # renders identically everywhere.
+    h12 = created.hour % 12 or 12
+    suffix = "AM" if created.hour < 12 else "PM"
+    ts_part = (
+        f"{h12:02d}.{created.minute:02d}.{suffix}"
+        f".{created.year:04d}.{created.month:02d}.{created.day:02d}"
+    )
+    return f"{_character_name_part(job)}.{ts_part}"
+
 from app.core.deps import get_db_session
 from app.models.artifact import Artifact
 from app.models.compliance import ComplianceEvent
@@ -39,7 +145,7 @@ from app.schemas.job_views import (
     StageProgress,
     StageTimelineEntry,
 )
-from app.services import job_service
+from app.services import character_service, job_service
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -51,25 +157,38 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 def _compute_progress_stats(
     stage_runs: list[StageRun],
+    job=None,  # type: ignore[no-untyped-def]
 ) -> tuple[int, int, int, str | None]:
-    """Return (completed, failed, total, current_stage)."""
-    total = len(CANONICAL_DAG_STAGES)
+    """Return (completed, failed, total, current_stage).
+
+    Phase 21 — when ``job`` is passed, the denominator reflects the
+    job's actual pipeline (talking_head=11, scenes_only=6,
+    news_presenter=9). Falls back to the superset for back-compat.
+    """
+    total = _total_stages_for_job(job) if job is not None else len(CANONICAL_DAG_STAGES)
     completed_names = {r.stage for r in stage_runs if r.status == StageStatus.succeeded}
     failed_names = {
         r.stage for r in stage_runs if r.status in (StageStatus.failed, StageStatus.rejected)
     }
     running = next((r.stage for r in stage_runs if r.status == StageStatus.running), None)
 
+    # Phase 21 — iterate only the stages for this job's pipeline when
+    # picking the "current" stage. talking_head jobs never run
+    # scene_composer; scenes_only / news_presenter jobs never run
+    # voice/face/lipsync/editor — without this filter the result
+    # would falsely advance through irrelevant stages.
+    iter_stages = _stage_names_for_job(job) if job is not None else CANONICAL_DAG_STAGES
+
     if running is not None:
         current = running
     elif failed_names:
-        # First failed/rejected stage in canonical order is the "current" one
-        # the operator should look at.
-        current = next((s for s in CANONICAL_DAG_STAGES if s in failed_names), None)
+        # First failed/rejected stage in this pipeline's order is the
+        # "current" one the operator should look at.
+        current = next((s for s in iter_stages if s in failed_names), None)
     elif len(completed_names) >= total:
         current = None  # job fully done
     else:
-        current = next((s for s in CANONICAL_DAG_STAGES if s not in completed_names), None)
+        current = next((s for s in iter_stages if s not in completed_names), None)
 
     return len(completed_names), len(failed_names), total, current
 
@@ -154,7 +273,7 @@ async def _latest_final_export(
 
 async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
     runs = await _stage_runs_for_job(session, job.id)
-    completed, failed, total, current = _compute_progress_stats(runs)
+    completed, failed, total, current = _compute_progress_stats(runs, job)
     artifact_count = await _artifact_count_for_job(session, job.id)
     pct = (completed / total * 100.0) if total > 0 else 0.0
 
@@ -194,6 +313,13 @@ async def _job_to_summary(session: AsyncSession, job: Job) -> JobSummary:
         subtitle_languages=job.subtitle_languages,
         # Phase 12 — character binding on the list row.
         character_id=job.character_id,
+        # Phase 21 — pipeline variant + per-scene plan on the row.
+        job_type=getattr(job, "job_type", None) or "talking_head",
+        scene_plan=list(getattr(job, "scene_plan", None) or []) or None,
+        # Phase 22 — output orientation.
+        orientation=getattr(job, "orientation", None) or "landscape",
+        # Phase 21 — operator-facing display name.
+        display_name=_compose_display_name(job),
     )
 
 
@@ -271,7 +397,10 @@ async def create_job(
         "jobs.create_endpoint.start target_dur=%s voice_mode=%s face_mode=%s character_id=%s",
         payload.target_duration_seconds, payload.voice_mode, payload.face_mode, payload.character_id,
     )
-    job = await job_service.create_job(session, payload)
+    try:
+        job = await job_service.create_job(session, payload)
+    except character_service.CharacterRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     logger.info("jobs.create_endpoint.done job_id=%s status=%s", job.id, job.status.value)
     return JobResponse.model_validate(job)
 
@@ -294,9 +423,13 @@ async def list_jobs(
     stmt = select(Job)
     if status is not None:
         stmt = stmt.where(Job.status == status)
-    stmt = stmt.order_by(Job.created_at.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
     jobs = list(result.scalars().all())
+    # Phase 23 — operator request: group by character name (alphabetical,
+    # case-insensitive) then by production date. The name lives in the
+    # frozen character_snapshot, so we sort in Python rather than SQL.
+    jobs.sort(key=lambda j: (_character_name_part(j).lower(), j.created_at))
+    jobs = jobs[offset : offset + limit]
     return [await _job_to_summary(session, j) for j in jobs]
 
 
@@ -323,7 +456,7 @@ async def get_job(
     base = JobResponse.model_validate(job).model_dump()
 
     runs = await _stage_runs_for_job(session, job_id)
-    completed, failed, total, current = _compute_progress_stats(runs)
+    completed, failed, total, current = _compute_progress_stats(runs, job)
     pct = (completed / total * 100.0) if total > 0 else 0.0
     artifact_count = await _artifact_count_for_job(session, job_id)
     event_count = await _compliance_event_count(session, job_id)
@@ -351,6 +484,7 @@ async def get_job(
         compliance_event_count=event_count,
         latest_qc_result=qc_dict,
         final_export_summary=fe_summary,
+        display_name=_compose_display_name(job),
     )
 
 
@@ -598,9 +732,14 @@ async def get_job_progress(
     job = await _load_job_or_404(session, job_id)
     runs = await _stage_runs_for_job(session, job_id)
     by_stage: dict[str, StageRun] = {r.stage: r for r in runs}
-    completed, failed, total, current = _compute_progress_stats(runs)
+    completed, failed, total, current = _compute_progress_stats(runs, job)
+    # Phase 21 — list only the stages that belong to this job's
+    # pipeline variant. Original talking_head jobs do NOT show
+    # scene_composer; scenes_only / news_presenter jobs do NOT show
+    # voice / face / lipsync / editor.
+    stage_names_for_job = _stage_names_for_job(job)
     stages = []
-    for name in CANONICAL_DAG_STAGES:
+    for name in stage_names_for_job:
         run = by_stage.get(name)
         if run is None:
             stages.append(

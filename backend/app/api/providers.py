@@ -17,8 +17,10 @@ containing tokens.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -192,3 +194,51 @@ async def health_check_provider(
         session, canonical, provider_id, info
     )
     return info.model_copy(update={"status": new_status, "notes": notes})
+
+
+# ---------------------------------------------------------------------------
+# Phase 20 — per-voice sample audio
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/tts/{provider_id}/sample.wav",
+    responses={
+        200: {"content": {"audio/wav": {}}},
+        404: {"description": "Voice not found in catalog"},
+    },
+)
+def get_tts_voice_sample(provider_id: str) -> FileResponse:
+    """Stream the F5 reference WAV for one voice.
+
+    The frontend dropdown puts a small play button next to each voice so
+    the operator can preview the timbre before committing to a job.
+    Currently only F5TTS-Ro per-voice IDs ("f5tts_ro_<voice_id>" and the
+    legacy alias "f5tts_ro") have a reference WAV on disk; other TTS
+    providers return 404 until they ship a sample.
+    """
+    if not provider_id.startswith("f5tts_ro"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"no sample available for provider {provider_id!r}",
+        )
+    voice = provider_registry.resolve_f5tts_ro_voice(provider_id)
+    if voice is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"unknown voice {provider_id!r}",
+        )
+    audio_path = Path(voice.get("ref_audio_abs") or "")
+    if not audio_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"voice {provider_id!r} has no reference WAV on disk "
+                f"(expected at {audio_path}). Re-run the voice asset stage."
+            ),
+        )
+    return FileResponse(
+        path=str(audio_path),
+        media_type="audio/wav",
+        filename=f"{provider_id}_sample.wav",
+    )

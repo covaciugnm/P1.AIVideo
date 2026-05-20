@@ -21,6 +21,7 @@ from app.services.image_providers.local_wrapper_stub import (
     LOCAL_WRAPPER_DEFINITIONS,
     LocalWrapperImageProviderStub,
 )
+from app.services.image_providers.kontext_stub import FluxKontextProvider
 from app.services.image_providers.mock_provider import MockImageProvider
 
 
@@ -30,6 +31,8 @@ def _build_registry() -> dict[str, ImageProvider]:
         out[d["provider_id"]] = LocalWrapperImageProviderStub.build(**d)
     for d in HOSTED_API_DEFINITIONS:
         out[d["provider_id"]] = HostedApiImageProviderStub.build(**d)
+    # Phase IG-5 — future reference-edit provider (clear "not configured").
+    out["flux_kontext"] = FluxKontextProvider()
     return out
 
 

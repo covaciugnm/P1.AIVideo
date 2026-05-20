@@ -119,3 +119,121 @@ def build_negative_constraints_en(profile_json: dict[str, Any] | None) -> str:
     if not profile_json:
         return ""
     return _val(profile_json, "appearance", "negative_visual_constraints") or ""
+
+
+# ---------------------------------------------------------------------------
+# Phase IG-2 — identity-locked builder for the ComfyUI consistent pipeline.
+#
+# Splits IMMUTABLE identity (from the profile) from MUTABLE scene params
+# (per request). Reuses ``build_person_description_en`` for the identity
+# descriptors so the two code paths stay consistent.
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass  # noqa: E402
+
+_IDENTITY_NEGATIVES = (
+    "different person, face swap, identity change, age change, younger, older, "
+    "distorted face, deformed face, asymmetric eyes, extra face, duplicate face, "
+    "plastic skin, waxy skin, distorted hands, extra fingers, extra limbs, "
+    "missing limbs, mutated, lowres, blurry, watermark, text"
+)
+_COMPLIANCE_NEGATIVE = "real person, celebrity, public figure, real-person likeness"
+
+
+@dataclass(frozen=True)
+class SceneParams:
+    """Mutable, per-request scene description."""
+
+    scene_prompt: str = ""
+    outfit_prompt: str = ""
+    location_prompt: str = ""
+    season: str = ""
+    mood: str = ""
+    pose: str = ""
+    framing: str = ""
+    negative_prompt_extra: str = ""
+
+
+def _join(parts: list[str | None]) -> str:
+    return ", ".join(p.strip() for p in parts if p and str(p).strip())
+
+
+def build_identity_block(profile_json: dict[str, Any] | None) -> str:
+    desc = build_person_description_en(profile_json)
+    lock = (
+        "IDENTITY LOCK: the same synthetic character; preserve facial identity, "
+        "apparent age range, face shape, eye shape, nose, mouth, jawline, skin "
+        "tone, hairstyle identity and natural body proportions; do not turn this "
+        "into a different person."
+    )
+    return f"{lock} CHARACTER: {desc}." if desc else lock
+
+
+def build_scene_block(profile_json: dict[str, Any] | None, scene: SceneParams) -> str:
+    p = profile_json or {}
+    sb = p.get("script_behaviour") if isinstance(p.get("script_behaviour"), dict) else {}
+    appe = p.get("appearance") if isinstance(p.get("appearance"), dict) else {}
+    outfit = scene.outfit_prompt or appe.get("clothing_style") or ""
+    location = scene.location_prompt or sb.get("default_background") or ""
+    return _join(
+        [
+            scene.scene_prompt,
+            f"wearing {outfit}" if outfit else None,
+            f"in {location}" if location else None,
+            scene.season,
+            scene.pose,
+            f"{scene.mood} mood" if scene.mood else None,
+        ]
+    )
+
+
+def build_style_block(profile_json: dict[str, Any] | None, scene: SceneParams) -> str:
+    p = profile_json or {}
+    sb = p.get("script_behaviour") if isinstance(p.get("script_behaviour"), dict) else {}
+    framing = scene.framing or sb.get("default_camera_framing") or "natural framing"
+    return _join(
+        [
+            "photorealistic, high detail, natural lighting, professional photography",
+            framing,
+            sb.get("default_mood"),
+        ]
+    )
+
+
+def build_negative_block(profile_json: dict[str, Any] | None, scene: SceneParams) -> str:
+    return _join(
+        [
+            _IDENTITY_NEGATIVES,
+            _COMPLIANCE_NEGATIVE,
+            build_negative_constraints_en(profile_json),
+            scene.negative_prompt_extra,
+        ]
+    )
+
+
+def build_consistent_prompt(
+    profile_json: dict[str, Any] | None, scene: SceneParams
+) -> tuple[str, str]:
+    """Return ``(positive, negative)`` for identity-consistent generation."""
+    positive = " ".join(
+        [
+            build_identity_block(profile_json),
+            f"SCENE: {build_scene_block(profile_json, scene)}.",
+            f"STYLE: {build_style_block(profile_json, scene)}.",
+            "REFERENCE USAGE: use the face reference for facial identity and the "
+            "full-body reference for body proportions and silhouette.",
+        ]
+    )
+    return positive.strip(), build_negative_block(profile_json, scene)
+
+
+def build_initial_prompt(
+    profile_json: dict[str, Any] | None,
+) -> tuple[str, str]:
+    """First-image prompt: identity descriptors only (no reference yet)."""
+    positive = (
+        f"{build_identity_block(profile_json)} "
+        "SCENE: neutral studio portrait, plain background. "
+        f"STYLE: {build_style_block(profile_json, SceneParams())}."
+    )
+    return positive.strip(), build_negative_block(profile_json, SceneParams())

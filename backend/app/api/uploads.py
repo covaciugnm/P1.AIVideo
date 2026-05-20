@@ -49,7 +49,7 @@ from app.schemas.uploads import (
     UploadTextRequest,
     UploadTextResponse,
 )
-from app.services import artifact_service, audio_conversion, job_service, upload_service
+from app.services import artifact_service, audio_conversion, character_service, job_service, upload_service
 
 
 uploads_router = APIRouter(prefix="/api/v1/uploads", tags=["uploads"])
@@ -643,11 +643,23 @@ async def create_job_from_inputs(
             # Phase 12 — forward optional character binding so the job
             # service can snapshot the persona at submit time.
             character_id=payload.character_id,
+            # Phase 21 — pipeline variant + per-scene plan.
+            job_type=payload.job_type,
+            scene_plan=(
+                [s.model_dump(mode="json") for s in payload.scene_plan]
+                if payload.scene_plan
+                else None
+            ),
+            # Phase 22 — output orientation.
+            orientation=payload.orientation,
         )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    job = await job_service.create_job(session, create_req)
+    try:
+        job = await job_service.create_job(session, create_req)
+    except character_service.CharacterRuleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # Phase 17G — fallback: if no script_text in the request body but
     # we have a provided audio artifact with TTS metadata, recover the
