@@ -55,6 +55,13 @@ class ScriptRequest(BaseModel):
     audience: str | None = None
     safety_constraints: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # Phase 21 iter 2 — output mode. "spoken_script" (default) produces
+    # a voiceable script; "image_description" produces a short visual
+    # prompt suitable for FLUX/SD3.5 (used by the talking-head form's
+    # "Generate image description" button to drive character image
+    # generation). Providers that don't understand the field treat the
+    # request as the default spoken_script mode.
+    mode: str = "spoken_script"
 
 
 class ScriptResult(BaseModel):

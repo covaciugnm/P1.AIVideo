@@ -197,10 +197,11 @@ async def _run_tts(state: DagState) -> StageOutput:
         )
 
     provider_id = _resolve_tts_provider_id(state)
-    if provider_id == "f5tts_ro":
+    if provider_id == "f5tts_ro" or provider_id.startswith("f5tts_ro_"):
         # Phase 11F-CDOROB — route to the model-tts-ro wrapper over
-        # HTTP. The orchestrator stays torch-free; all heavy ML work
-        # happens in the wrapper container with the cdorob checkpoint.
+        # HTTP. Phase 21 — also accept per-voice IDs
+        # ("f5tts_ro_<voice_id>"). The wrapper resolver looks up the
+        # specific voice and routes to the correct reference assets.
         return await _run_tts_via_f5tts_ro_wrapper(state)
 
     if provider_id != "piper":

@@ -100,8 +100,31 @@ def _safe_cleanup(p: Path) -> None:
         pass
 
 
-def _ffmpeg_remux(src: Path, dst: Path) -> None:
-    """Stream-copy remux of ``src`` to ``dst``. No re-encoding."""
+# Phase 22 — orientation → (width, height) for talking_head output.
+_ORIENTATION_DIMS: dict[str, tuple[int, int]] = {
+    "landscape": (1280, 720),
+    "portrait": (720, 1280),
+    "square": (1024, 1024),
+}
+
+
+def _ffmpeg_remux(
+    src: Path,
+    dst: Path,
+    burn_in_subtitle: Path | None = None,
+    orientation: str = "landscape",
+) -> None:
+    """Remux ``src`` to ``dst``.
+
+    Default path: stream-copy (no re-encode, fast).
+
+    Phase 21 — ``burn_in_subtitle`` re-encodes with a ``subtitles=``
+    filter so captions bake into pixels.
+    Phase 22 — non-square ``orientation`` adds a scale-fit + black-pad
+    filter so the (square) SadTalker output becomes a 9:16 portrait /
+    1:1 square reel. When both apply, the filters chain
+    (scale-pad → subtitles).
+    """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise StageRejection(
@@ -113,7 +136,51 @@ def _ffmpeg_remux(src: Path, dst: Path) -> None:
                 "talking_head local_path."
             ),
         )
-    cmd = [ffmpeg, "-y", "-i", str(src), "-c", "copy", str(dst)]
+    orient = (orientation or "landscape").lower()
+    # talking_head SadTalker output is square; only re-encode-pad when
+    # the operator picked portrait or square (square still benefits from
+    # a clean canonical size). Landscape keeps the fast stream-copy path
+    # unless subtitles force a re-encode.
+    needs_orient_pad = orient in ("portrait", "square")
+
+    cmd: list[str]
+    vf_parts: list[str] = []
+
+    if needs_orient_pad:
+        w, h = _ORIENTATION_DIMS.get(orient, _ORIENTATION_DIMS["landscape"])
+        vf_parts.append(
+            f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+            f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1"
+        )
+
+    if burn_in_subtitle is not None and burn_in_subtitle.is_file():
+        safe_name = f"_subs_{dst.stem}.{burn_in_subtitle.suffix.lstrip('.') or 'srt'}"
+        safe_path = dst.parent / safe_name
+        try:
+            safe_path.write_bytes(burn_in_subtitle.read_bytes())
+        except OSError as exc:
+            raise StageRejection(
+                StageName.editor.value,
+                f"editor_subtitle_copy_failed: {exc}",
+            ) from exc
+        escaped_path = str(safe_path).replace("\\", "\\\\").replace(":", r"\:")
+        vf_parts.append(
+            f"subtitles={escaped_path}"
+            ":force_style='FontName=DejaVu Sans,Fontsize=22,"
+            "PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,"
+            "BorderStyle=3,Outline=1,Shadow=0,Alignment=2,MarginV=30'"
+        )
+
+    if vf_parts:
+        cmd = [
+            ffmpeg, "-y", "-i", str(src),
+            "-vf", ",".join(vf_parts),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "copy",
+            str(dst),
+        ]
+    else:
+        cmd = [ffmpeg, "-y", "-i", str(src), "-c", "copy", str(dst)]
     try:
         proc = subprocess.run(  # noqa: S603 — arg list, no shell
             cmd,
@@ -148,13 +215,20 @@ def _build_real_reel_draft(
     talking_head: ArtifactRef,
     edit_plan_uri: str,
     edit_plan_checksum: str,
+    subtitle_burn_in_path: Path | None = None,
+    orientation: str = "landscape",
 ) -> ArtifactRef:
     src = Path(talking_head.local_path or "")
     out_dir = _artifacts_video_dir(job_id)
     out_path = out_dir / f"reel_draft_{uuid.uuid4().hex}.mp4"
-    _ffmpeg_remux(src, out_path)
+    _ffmpeg_remux(
+        src, out_path,
+        burn_in_subtitle=subtitle_burn_in_path,
+        orientation=orientation,
+    )
     size_bytes = out_path.stat().st_size
     checksum = _sha256_of_file(out_path)
+    burned_in = subtitle_burn_in_path is not None and subtitle_burn_in_path.is_file()
     return ArtifactRef(
         artifact_type=ArtifactType.video.value,
         uri=out_path.as_uri(),
@@ -166,15 +240,19 @@ def _build_real_reel_draft(
         width=talking_head.width,
         height=talking_head.height,
         extra={
-            "phase": "phase9d_real_editor_remux",
+            "phase": "phase21_editor_remux_with_subtitle_burnin",
             "real_editor_output": True,
-            "editor_mode": "ffmpeg_remux",
+            "editor_mode": "ffmpeg_burnin" if burned_in else "ffmpeg_remux",
             "input_video_uri": talking_head.uri,
             "input_video_checksum": talking_head.checksum_sha256,
             "input_video_local_path": talking_head.local_path,
             "edit_plan_uri": edit_plan_uri,
             "edit_plan_checksum": edit_plan_checksum,
             "watermark_burned_in": False,
+            "subtitles_burned_in": burned_in,
+            "subtitle_source_path": (
+                str(subtitle_burn_in_path) if subtitle_burn_in_path else None
+            ),
         },
     )
 
@@ -385,15 +463,25 @@ async def run(state: DagState) -> StageOutput:
     talking_head_ref = talking_head_output.artifacts["talking_head"]
     real_video_upstream = _has_real_upstream_video(talking_head_ref)
     if real_video_upstream:
+        # Phase 21 — burn in subtitles when the operator opted in AND
+        # the orchestrator was able to locate the sidecar SRT/VTT file.
+        burn_in_path: Path | None = None
+        if state.subtitle_burn_in and state.subtitle_artifact_local_path:
+            candidate = Path(state.subtitle_artifact_local_path)
+            if candidate.is_file():
+                burn_in_path = candidate
         reel_draft_ref = _build_real_reel_draft(
             job_id=str(state.job_id),
             talking_head=talking_head_ref,
             edit_plan_uri=edit_plan_ref.uri,
             edit_plan_checksum=plan_sha,
+            subtitle_burn_in_path=burn_in_path,
+            orientation=getattr(state, "orientation", "landscape"),
         )
         notes = (
-            "editor produced deterministic edit_plan and ffmpeg-remuxed a "
-            "real reel_draft from the upstream lipsync MP4"
+            "editor produced deterministic edit_plan and ffmpeg-"
+            + ("burned subtitles into" if burn_in_path else "remuxed")
+            + " a real reel_draft from the upstream lipsync MP4"
         )
     else:
         reel_draft_ref = _build_metadata_only_reel_draft(

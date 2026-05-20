@@ -146,19 +146,46 @@ async def _list_pending_job_ids(
 ) -> list[uuid.UUID]:
     """Return the next batch of jobs the worker should process.
 
-    The DAG runner itself drives jobs from ``pending_compliance`` all the
-    way to a terminal state; once a job reaches ``published`` /
-    ``rejected`` / ``failed`` it's excluded from this query."""
+    Phase 21 — atomically CLAIM each row via ``SELECT ... FOR UPDATE
+    SKIP LOCKED``. Without this, the 8 agent containers (each running
+    their own ``run_worker``) all picked up the same pending jobs in
+    parallel; the DAG then ran multiple times against the same job
+    and concurrent FLUX/TTS calls flooded the wrappers (cache misses,
+    GPU OOM, timeouts). The claim flips status to ``running`` inside
+    the same transaction so any sibling worker that races us skips
+    the row.
+
+    The DAG runner itself drives jobs from ``running`` all the way to
+    a terminal state; once a job reaches ``published`` / ``rejected``
+    / ``failed`` it's excluded from this query.
+    """
     from app.models.job import Job, JobStatus
+    from sqlalchemy import update
 
     async with sm() as session:
-        result = await session.execute(
-            select(Job.id)
-            .where(Job.status == JobStatus.pending_compliance)
-            .order_by(Job.created_at.asc())
-            .limit(limit)
-        )
-        return [row[0] for row in result.all()]
+        async with session.begin():
+            # 1. Pick row ids that are still pending_compliance and not
+            #    held by another worker.
+            subq = (
+                select(Job.id)
+                .where(Job.status == JobStatus.pending_compliance)
+                .order_by(Job.created_at.asc())
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+            ids = list((await session.execute(subq)).scalars().all())
+            if not ids:
+                return []
+            # 2. Flip to ``accepted`` so the rows become invisible to
+            #    siblings (they filter on status=pending_compliance).
+            # ``accepted`` is the normal post-policy-gate state, and
+            # the DAG runner is happy to (re-)set it.
+            await session.execute(
+                update(Job)
+                .where(Job.id.in_(ids))
+                .values(status=JobStatus.accepted)
+            )
+        return ids
 
 
 async def _process_one(
