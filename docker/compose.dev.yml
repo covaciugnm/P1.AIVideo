@@ -663,6 +663,13 @@ services:
       - ../models/image/sdxl/sdxl-base-1.0:/comfyui/models/checkpoints/sdxl-base-1.0:ro
       - ../models/image/flux:/comfyui/models/flux:ro
       - ../models/image/sd35:/comfyui/models/sd35:ro
+      # Phase IG-B (SDXL-InstantID identity pipeline): operator-supplied
+      # custom nodes + InstantID/ControlNet/insightface weights. No
+      # auto-download; see workflows/comfyui/README.md + Raport claude.
+      - ./model-comfyui/custom_nodes:/comfyui/custom_nodes
+      - ../models/image/instantid:/comfyui/models/instantid:ro
+      - ../models/image/controlnet:/comfyui/models/controlnet:ro
+      - ../models/image/insightface:/comfyui/models/insightface:ro
       # ComfyUI scratchpad for outputs + custom workflows the operator
       # might place.
       - artifacts_data:/comfyui/output

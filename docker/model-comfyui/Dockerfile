@@ -52,6 +52,17 @@ RUN python -m pip install \
     torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 && \
     python -m pip install -r requirements.txt
 
+# Phase IG-B — SDXL-InstantID custom-node deps. insightface builds C
+# extensions (needs a toolchain + cython/numpy). onnxruntime (CPU) is used
+# because the InstantID workflow runs face analysis with provider="CPU";
+# the diffusion itself stays on torch/CUDA. Avoids onnxruntime-gpu's lack of
+# a Blackwell (sm_120) wheel.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential python3.10-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m pip install "numpy<2" cython && \
+    python -m pip install insightface onnxruntime opencv-python-headless
+
 EXPOSE 8188
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
