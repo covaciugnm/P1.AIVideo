@@ -20,6 +20,7 @@ from app.models.feature_provider import FeatureProvider
 from app.models.job import Job, JobStatus
 from app.models.operator_settings import OperatorSettings
 from app.models.stage_run import StageRun
+from app.models.security_audit import SecurityAuditEvent
 from app.models.user import ROLES, USER_STATUSES, User
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "ROLES",
     "USER_STATUSES",
     "User",
+    "SecurityAuditEvent",
     "CHARACTER_IMAGE_STATUSES",
     "CHARACTER_STATUSES",
     "Character",

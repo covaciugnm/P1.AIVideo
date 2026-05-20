@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 from app.core.deps import get_db_session
+from app.core.security import require_super_admin
+from app.models.user import User
 from app.schemas.api_secret import (
     ApiSecretCreate,
     ApiSecretListResponse,
@@ -22,15 +24,20 @@ from app.schemas.api_secret import (
     ApiSecretTestResponse,
     ApiSecretUpdate,
 )
-from app.services import secrets_service
+from app.services import secrets_service, security_audit_service
 
 router = APIRouter(prefix="/api/v1/secrets", tags=["secrets"])
 
 
 @router.get("", response_model=ApiSecretListResponse)
 async def list_secrets(
+    request: Request,
+    actor: User | None = Depends(require_super_admin),
     session: AsyncSession = Depends(get_db_session),
 ) -> ApiSecretListResponse:
+    await security_audit_service.log_secret_event(
+        session, event_type="SECRET_LIST_VIEWED", result="success",
+        request=request, actor=actor)
     rows = await secrets_service.load_all(session)
     return ApiSecretListResponse(
         items=[secrets_service.to_response(r) for r in rows],

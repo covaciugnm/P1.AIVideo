@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     artifacts,
     audio_fit,
+    audit,
     auth,
     characters,
     export,
@@ -109,22 +110,29 @@ def create_app() -> FastAPI:
     _request_logger = logging.getLogger("app.request")
     _SKIP_PATHS = {"/healthz", "/api/v1/system/logs/backend"}
 
+    import uuid as _uuid
+
     @app.middleware("http")
-    async def _log_request(request, call_next):  # type: ignore[no-untyped-def]
+    async def _request_id_and_log(request, call_next):  # type: ignore[no-untyped-def]
+        # Correlation id: reuse a sanitized inbound X-Request-ID or mint one.
+        incoming = (request.headers.get("x-request-id") or "").strip()
+        rid = "".join(c for c in incoming if c.isalnum() or c in "-_")[:64] or _uuid.uuid4().hex
+        request.state.request_id = rid
         path = request.url.path
         method = request.method
         skip = path in _SKIP_PATHS
         mutating = method in {"POST", "PATCH", "PUT", "DELETE"}
         if not skip and mutating:
-            _request_logger.info("request.start %s %s", method, path)
+            _request_logger.info("request.start %s %s rid=%s", method, path, rid)
         t0 = time.perf_counter()
         response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
         ms = int((time.perf_counter() - t0) * 1000)
         status_code = response.status_code
         if not skip and (mutating or status_code >= 400):
             level = logging.WARNING if status_code >= 400 else logging.INFO
             _request_logger.log(
-                level, "request.end %s %s %d %dms", method, path, status_code, ms
+                level, "request.end %s %s %d %dms rid=%s", method, path, status_code, ms, rid
             )
         return response
     # --- Public routes (no auth): health + auth (login/register) ---
@@ -154,6 +162,7 @@ def create_app() -> FastAPI:
     # --- Super-admin-only routes: secrets + user management ---
     app.include_router(secrets.router, dependencies=[Depends(require_super_admin)])
     app.include_router(users.router)  # router-level require_super_admin inside
+    app.include_router(audit.router)  # router-level require_super_admin inside
     return app
 
 

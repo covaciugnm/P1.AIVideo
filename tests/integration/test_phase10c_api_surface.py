@@ -36,6 +36,7 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("POST", "/api/v1/users/{user_id}/suspend"),
     ("POST", "/api/v1/users/{user_id}/reactivate"),
     ("DELETE", "/api/v1/users/{user_id}"),
+    ("GET", "/api/v1/audit/security-events"),
     # Phase 12T — Technical Help (markdown report served from disk)
     ("GET", "/api/v1/system/technical-architecture"),
     ("GET", "/api/v1/system/technical-architecture.md"),

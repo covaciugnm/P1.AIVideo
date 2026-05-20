@@ -1,6 +1,11 @@
 // User-management API client (protected super admin only on the backend).
 import { getActiveApiBaseUrl } from "./settings";
 import { authHeaders, handleUnauthorized, type CurrentUser } from "./auth";
+import * as logBus from "./log-bus";
+
+function bc(event: string, meta?: Record<string, unknown>): void {
+  logBus.emit({ source: "frontend", level: "info", message: event, meta });
+}
 
 export type ManagedUser = CurrentUser & {
   readonly created_at?: string | null;
@@ -45,6 +50,7 @@ export function listUsers(status?: string, includeDeleted = false): Promise<User
 const jsonHeaders = { "Content-Type": "application/json" };
 
 export function approveUser(id: string, role: string): Promise<ManagedUser> {
+  bc("USER_APPROVE_CLICKED", { id, role });
   return req(`/api/v1/users/${id}/approve`, {
     method: "POST", headers: jsonHeaders, body: JSON.stringify({ role }),
   });
@@ -55,6 +61,7 @@ export function rejectUser(id: string, reason?: string): Promise<ManagedUser> {
   });
 }
 export function suspendUser(id: string, reason?: string): Promise<ManagedUser> {
+  bc("USER_SUSPEND_CLICKED", { id });
   return req(`/api/v1/users/${id}/suspend`, {
     method: "POST", headers: jsonHeaders, body: JSON.stringify({ reason: reason ?? null }),
   });
@@ -63,5 +70,6 @@ export function reactivateUser(id: string): Promise<ManagedUser> {
   return req(`/api/v1/users/${id}/reactivate`, { method: "POST" });
 }
 export function deleteUser(id: string): Promise<ManagedUser> {
+  bc("USER_DELETE_CLICKED", { id });
   return req(`/api/v1/users/${id}`, { method: "DELETE" });
 }

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -590,17 +590,22 @@ async def get_wrapper_status() -> WrapperStatusResponse:
 @router.get(
     "/system/logs/backend",
     response_model=BackendLogsResponse,
-    dependencies=[Depends(require_super_admin)],
 )
 async def get_backend_logs(
+    request: Request,
     since_seq: int | None = None,
     limit: int = 200,
+    actor=Depends(require_super_admin),
+    session: AsyncSession = Depends(get_db_session),
 ) -> BackendLogsResponse:
-    """Snapshot of the backend's in-memory log buffer.
+    """Snapshot of the backend's in-memory log buffer (super-admin only).
 
     Pass ``since_seq=<last-seen-seq>`` to receive only newer entries.
     Default ``limit=200`` keeps payloads modest for a polling sidebar.
     """
+    from app.services import security_audit_service
+    await security_audit_service.log_system_log_access(session, request=request, actor=actor)
+
     from app.core.log_buffer import get_buffer
 
     if limit < 1:

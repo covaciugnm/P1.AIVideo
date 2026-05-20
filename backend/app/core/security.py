@@ -62,13 +62,35 @@ async def require_active_user(
     return await _resolve_user(request, session)
 
 
+def _denied_event_for(path: str) -> str:
+    if "/secrets" in path:
+        return "SECRET_ACCESS_DENIED"
+    if "/system/logs/backend" in path:
+        return "BACKEND_LOGS_ACCESS_DENIED"
+    if "/users" in path:
+        return "USER_ADMIN_ACCESS_DENIED"
+    return "ACCESS_DENIED"
+
+
 async def require_super_admin(
     request: Request, session: AsyncSession = Depends(get_db_session)
 ) -> User | None:
     if not settings.p1_auth_enabled:
         return None
-    user = await _resolve_user(request, session)
+    from app.services import security_audit_service
+    path = str(getattr(request.url, "path", ""))
+    try:
+        user = await _resolve_user(request, session)
+    except HTTPException:
+        # Unauthenticated attempt on a super-admin route.
+        await security_audit_service.log_access_denied(
+            session, event_type=_denied_event_for(path), request=request,
+            reason="unauthenticated")
+        raise
     if not auth_service.is_protected_super_admin(user):
+        await security_audit_service.log_access_denied(
+            session, event_type=_denied_event_for(path), request=request, actor=user,
+            reason="insufficient_role")
         raise _FORBIDDEN
     return user
 
