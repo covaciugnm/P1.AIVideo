@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { AuthImage } from "@/components/AuthImage";
 import { HelpHint } from "@/components/HelpHint";
 import { ProviderStatusBadge } from "@/components/ProviderStatusBadge";
 import {
@@ -528,16 +529,11 @@ function ImageCard({
   const label = imageLabel(image, index, isMain, isFullBody);
   return (
     <div className={`imglib-card${isMain || isFullBody ? " imglib-ref" : ""}`}>
-      <a
-        href={characterImageContentUrl(character.id, image.id)}
-        target="_blank"
-        rel="noreferrer"
-        title={t("characters.images.openFull")}
-        style={{ display: "block", cursor: "zoom-in" }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={characterImageContentUrl(character.id, image.id)} alt={label.title} />
-      </a>
+      <AuthImage
+        src={characterImageContentUrl(character.id, image.id)}
+        alt={label.title}
+        style={{ width: "100%", height: "auto", borderRadius: 6 }}
+      />
       <div>
         {/* Video-style image name: <Name>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>. */}
         <p className="imglib-desc" style={{ fontFamily: "var(--mono-stack)", fontSize: 12 }}>
