@@ -22,6 +22,20 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     # Health / system / config
     ("GET", "/healthz"),
     ("GET", "/api/v1/system/status"),
+    # Security remediation — auth + user management
+    ("POST", "/api/v1/auth/register"),
+    ("POST", "/api/v1/auth/login"),
+    ("GET", "/api/v1/auth/me"),
+    ("POST", "/api/v1/auth/change-password"),
+    ("POST", "/api/v1/auth/logout"),
+    ("GET", "/api/v1/users"),
+    ("GET", "/api/v1/users/pending"),
+    ("GET", "/api/v1/users/{user_id}"),
+    ("POST", "/api/v1/users/{user_id}/approve"),
+    ("POST", "/api/v1/users/{user_id}/reject"),
+    ("POST", "/api/v1/users/{user_id}/suspend"),
+    ("POST", "/api/v1/users/{user_id}/reactivate"),
+    ("DELETE", "/api/v1/users/{user_id}"),
     # Phase 12T — Technical Help (markdown report served from disk)
     ("GET", "/api/v1/system/technical-architecture"),
     ("GET", "/api/v1/system/technical-architecture.md"),

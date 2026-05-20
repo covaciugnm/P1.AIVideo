@@ -30,3 +30,11 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 os.environ.setdefault("COMPLIANCE_SIGNING_KEY", "phase2-test-key-not-for-prod")
+# Security remediation: the legacy suite predates auth and calls product
+# endpoints unauthenticated. Default auth OFF here so guards no-op; the
+# dedicated auth tests flip ``settings.p1_auth_enabled`` on per-test.
+os.environ.setdefault("P1_AUTH_ENABLED", "false")
+os.environ.setdefault("P1_JWT_SECRET", "test-jwt-secret-not-for-prod-0123456789")
+os.environ.setdefault("P1_SUPER_ADMIN_PASSWORD", "TestAdminPass123!")
+# Keep heavy/identity model generation out of the local test storage.
+os.environ.setdefault("ARTIFACTS_LOCAL_ROOT", "/tmp/p1aivideo-test-artifacts")

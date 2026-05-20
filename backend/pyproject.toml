@@ -38,6 +38,10 @@ dependencies = [
   # extra (used by the test client); promote to runtime so the live
   # backend container can talk to wrapper services without rebuilding.
   "httpx>=0.27",
+  # Security remediation: authentication / RBAC. argon2-cffi ships manylinux
+  # wheels (no build toolchain needed); PyJWT is pure-Python.
+  "argon2-cffi>=23.1",
+  "PyJWT>=2.8",
 ]
 
 [project.optional-dependencies]

@@ -128,6 +128,7 @@ def _compose_display_name(job) -> str:  # type: ignore[no-untyped-def]
     return f"{_character_name_part(job)}.{ts_part}"
 
 from app.core.deps import get_db_session
+from app.core.security import require_operator_or_above
 from app.models.artifact import Artifact
 from app.models.compliance import ComplianceEvent
 from app.models.job import Job
@@ -388,7 +389,10 @@ async def _stage_artifact(
 # ---------------------------------------------------------------------------
 
 
-@router.post("", response_model=JobResponse, status_code=201)
+@router.post(
+    "", response_model=JobResponse, status_code=201,
+    dependencies=[Depends(require_operator_or_above)],
+)
 async def create_job(
     payload: JobCreateRequest,
     session: AsyncSession = Depends(get_db_session),

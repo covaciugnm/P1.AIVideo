@@ -35,6 +35,7 @@ from common.enums import (
 
 from app.core.config import settings
 from app.core.deps import get_db_session
+from app.core.security import require_super_admin
 from app.core.languages import (
     LANGUAGES,
     catalog_payload,
@@ -589,6 +590,7 @@ async def get_wrapper_status() -> WrapperStatusResponse:
 @router.get(
     "/system/logs/backend",
     response_model=BackendLogsResponse,
+    dependencies=[Depends(require_super_admin)],
 )
 async def get_backend_logs(
     since_seq: int | None = None,

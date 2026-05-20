@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     banned_topics_path: str = "configs/policies/banned_topics.example.yaml"
 
     # --- Compliance token (Phase 2) ---
-    compliance_signing_key: str = "phase2-noop-changeme"
+    # No hardcoded placeholder secret; supply via COMPLIANCE_SIGNING_KEY (.env).
+    compliance_signing_key: str = ""
     compliance_token_ttl_seconds: int = 3600
     allowed_lipsync_backend: str = "sadtalker"
 
@@ -104,6 +105,29 @@ class Settings(BaseSettings):
     scriptwriter_temperature: float = 0.7
     scriptwriter_prompt_version: str = "v1"
     llm_provider_config_path: str = "configs/llm/providers.example.yaml"
+
+    # --- Authentication / RBAC (security remediation) ---
+    # All P1_* env vars. When auth is enabled, P1_JWT_SECRET is required and
+    # the app refuses to start without it (see assert_auth_config).
+    p1_auth_enabled: bool = True
+    p1_jwt_secret: str = ""
+    p1_jwt_algorithm: str = "HS256"
+    p1_access_token_expire_minutes: int = 480
+    p1_super_admin_username: str = "P1.AIVideo-admin"
+    p1_super_admin_password: str = ""   # only in .env; required on first bootstrap
+    p1_super_admin_email: str = "admin@local.p1-aivideo"
+
+    def assert_auth_config(self) -> None:
+        """Fail fast (with a SAFE message — never echo secret values) when
+        auth is enabled but required secrets are missing."""
+        if not self.p1_auth_enabled:
+            return
+        if not self.p1_jwt_secret or len(self.p1_jwt_secret) < 16:
+            raise RuntimeError(
+                "P1_AUTH_ENABLED=true but P1_JWT_SECRET is missing or too short "
+                "(>=16 chars required). Set a strong secret in .env. "
+                "(value not shown)"
+            )
 
     @property
     def cors_origins(self) -> list[str]:
