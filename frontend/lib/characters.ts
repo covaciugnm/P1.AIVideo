@@ -299,7 +299,8 @@ export interface CharacterImageGenerateError {
     | "validation_failed"
     | "generation_failed"
     | "storage_failed"
-    | "rate_limited";
+    | "rate_limited"
+    | "circuit_open";
   readonly detail: string;
   readonly provider_id: string;
   readonly fallback: string | null;

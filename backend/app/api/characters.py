@@ -300,6 +300,7 @@ async def generate_image(
             "assets_missing": 503,
             "gpu_unavailable": 503,
             "rate_limited": 429,
+            "circuit_open": 429,
             "generation_failed": 502,
             "storage_failed": 500,
         }

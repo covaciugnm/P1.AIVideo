@@ -27,6 +27,8 @@ export function AuthImage({
     let obj: string | null = null;
     (async () => {
       try {
+        // allow-raw-fetch: needs the raw bytes (blob) with the bearer header;
+        // the JSON api client can't return binary image content.
         const res = await fetch(src, { headers: authHeaders(), cache: "no-store" });
         if (res.status === 401) { handleUnauthorized(); return; }
         if (!res.ok) { setFailed(true); return; }

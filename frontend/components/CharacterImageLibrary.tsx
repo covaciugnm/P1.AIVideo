@@ -128,38 +128,46 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
     };
     const pollId = window.setInterval(pollLogs, 1500);
     void pollLogs();
-    const body: CharacterImageGenerateRequest = {
-      prompt: prompt || null,
-      negative_prompt: negativePrompt || null,
-      provider_id: providerId,
-      seed: seed ? Number(seed) : null,
-      use_main_reference: useMainRef,
-    };
-    const result = await generateCharacterImage(character.id, body);
-    cancelled = true;
-    window.clearInterval(pollId);
-    // One final poll to grab tail entries that fired just before request returned.
-    await pollLogs();
-    setBusy(false);
-    if (!result.ok) {
-      const errKey =
-        result.error.error_code === "provider_not_configured"
-          ? "providerNotConfigured"
-          : result.error.error_code === "provider_not_implemented"
-          ? "providerNotImplemented"
-          : result.error.error_code === "runtime_missing"
-          ? "runtimeMissing"
-          : "genericFailure";
-      const msg =
-        errKey === "genericFailure"
-          ? t("characters.images.genericFailure", { detail: result.error.detail })
-          : t(`characters.images.${errKey}`, { provider: providerId });
-      setError(msg);
-      return;
+    // try/finally guarantees the log poller is ALWAYS stopped — even if the
+    // generation throws (timeout/network/429). Without this the interval
+    // leaked and kept hammering the logs endpoint every 1.5s (looked like a loop).
+    try {
+      const body: CharacterImageGenerateRequest = {
+        prompt: prompt || null,
+        negative_prompt: negativePrompt || null,
+        provider_id: providerId,
+        seed: seed ? Number(seed) : null,
+        use_main_reference: useMainRef,
+      };
+      const result = await generateCharacterImage(character.id, body);
+      if (!result.ok) {
+        const errKey =
+          result.error.error_code === "provider_not_configured"
+            ? "providerNotConfigured"
+            : result.error.error_code === "provider_not_implemented"
+            ? "providerNotImplemented"
+            : result.error.error_code === "runtime_missing"
+            ? "runtimeMissing"
+            : "genericFailure";
+        const msg =
+          result.error.error_code === "circuit_open"
+            ? result.error.detail
+            : errKey === "genericFailure"
+            ? t("characters.images.genericFailure", { detail: result.error.detail })
+            : t(`characters.images.${errKey}`, { provider: providerId });
+        setError(msg);
+        return;
+      }
+      await reloadImages();
+      await onReload();
+      setPrompt("");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      cancelled = true;
+      window.clearInterval(pollId);
+      setBusy(false);
     }
-    await reloadImages();
-    await onReload();
-    setPrompt("");
   };
 
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);

@@ -35,6 +35,55 @@ from app.services.image_providers import (
 
 logger = logging.getLogger(__name__)
 
+import time as _time
+
+# --- Generation circuit breaker -------------------------------------------
+# Stops a runaway retry storm: after N consecutive failures for the SAME
+# character within a window, further generate attempts are refused with a
+# clear error until the window elapses (or a success resets the counter).
+# Protects against UI double-clicks, client auto-retries and stuck engines.
+_CB_MAX = int(os.environ.get("IMAGE_MAX_CONSECUTIVE_FAILURES", "5"))
+_CB_WINDOW_S = float(os.environ.get("IMAGE_FAILURE_WINDOW_SECONDS", "600"))
+_CB_COOLDOWN_S = float(os.environ.get("IMAGE_CIRCUIT_COOLDOWN_SECONDS", "300"))
+# character_id(str) -> {"fails": int, "first": ts, "open_until": ts}
+_circuit: dict[str, dict[str, float]] = {}
+
+
+def _cb_guard(character_id: uuid.UUID) -> None:
+    """Raise if the breaker is OPEN for this character."""
+    st = _circuit.get(str(character_id))
+    if not st:
+        return
+    now = _time.time()
+    if st.get("open_until", 0) > now:
+        wait = int(st["open_until"] - now)
+        raise ProviderUnavailableError(
+            "circuit_open",
+            f"Image generation is temporarily disabled for this character after "
+            f"{_CB_MAX} consecutive failures. Check the engine/logs and retry in "
+            f"~{wait}s. (set IMAGE_MAX_CONSECUTIVE_FAILURES to tune)",
+        )
+
+
+def _cb_record_failure(character_id: uuid.UUID) -> None:
+    key = str(character_id)
+    now = _time.time()
+    st = _circuit.get(key)
+    if not st or (now - st.get("first", now)) > _CB_WINDOW_S:
+        st = {"fails": 0, "first": now, "open_until": 0.0}
+    st["fails"] += 1
+    if st["fails"] >= _CB_MAX:
+        st["open_until"] = now + _CB_COOLDOWN_S
+        logger.warning(
+            "image circuit OPEN for character %s after %d consecutive failures",
+            character_id, st["fails"],
+        )
+    _circuit[key] = st
+
+
+def _cb_record_success(character_id: uuid.UUID) -> None:
+    _circuit.pop(str(character_id), None)
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -446,6 +495,7 @@ async def generate_initial_character_image(
         image_audit.CHARACTER_IMAGE_GENERATION_REQUESTED,
         character.id, mode="initial",
     )
+    _cb_guard(character.id)
     assert_synthetic_only(character)
     sel = select_workflow("initial")
     workflow_name = workflow_override or sel.workflow_name
@@ -463,11 +513,13 @@ async def generate_initial_character_image(
     try:
         result = await provider.generate_text_to_image(inp)
     except ProviderUnavailableError as exc:
+        _cb_record_failure(character.id)
         image_audit.record(
             image_audit.IMAGE_PROVIDER_FAILURE,
             character.id, mode="initial", error_code=exc.error_code,
         )
         raise
+    _cb_record_success(character.id)
     return await _persist_generated_image(
         session, character, result,
         prompt=pos, negative_prompt=neg, provider_id="comfyui_local",
@@ -502,6 +554,7 @@ async def generate_consistent_character_image(
         image_audit.CHARACTER_IMAGE_GENERATION_REQUESTED,
         character.id, mode="consistent",
     )
+    _cb_guard(character.id)
     assert_synthetic_only(character)
     face_id = character.main_reference_image_id
     body_id = getattr(character, "full_body_reference_image_id", None)
@@ -541,11 +594,13 @@ async def generate_consistent_character_image(
     try:
         result = await provider.generate_text_to_image(inp)
     except ProviderUnavailableError as exc:
+        _cb_record_failure(character.id)
         image_audit.record(
             image_audit.IMAGE_PROVIDER_FAILURE,
             character.id, mode="consistent", error_code=exc.error_code,
         )
         raise
+    _cb_record_success(character.id)
     row = await _persist_generated_image(
         session, character, result,
         prompt=pos, negative_prompt=neg, provider_id="comfyui_local",
