@@ -6,6 +6,7 @@
 
 import * as logBus from "./log-bus";
 import { ApiError, humanizeApiDetail, getActiveApiBaseUrl } from "./api";
+import { authHeaders, handleUnauthorized } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Profile shape
@@ -334,9 +335,13 @@ async function request<T>(
     headers: {
       Accept: "application/json",
       ...(init.headers ?? {}),
+      ...authHeaders(),
     },
   });
   const elapsed = Math.round(performance.now() - t0);
+  if (response.status === 401) {
+    handleUnauthorized();
+  }
   if (response.status === 204) {
     logBus.emit({
       source: "api",

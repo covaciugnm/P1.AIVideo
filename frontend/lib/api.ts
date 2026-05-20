@@ -12,6 +12,7 @@
 
 import * as logBus from "./log-bus";
 import { getActiveApiBaseUrl } from "./settings";
+import { authHeaders, handleUnauthorized } from "./auth";
 import type {
   ArtifactResponse,
   ArtifactTypeInfo,
@@ -151,7 +152,8 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const url = `${baseUrl}${path}`;
   const init: RequestInit = {
     method,
-    headers: opts.headers,
+    // Attach the bearer token (if any) to every API call.
+    headers: { ...(opts.headers ?? {}), ...authHeaders() },
     signal: opts.signal,
     cache: "no-store",
   };
@@ -163,6 +165,10 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   try {
     const response = await fetch(url, init);
     const durationMs = Math.round(now() - started);
+    if (response.status === 401) {
+      // Token missing/expired/invalid → clear session + bounce to /login.
+      handleUnauthorized();
+    }
     if (!response.ok) {
       let detail = response.statusText;
       try {
