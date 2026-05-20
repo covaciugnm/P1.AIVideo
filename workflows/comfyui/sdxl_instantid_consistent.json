@@ -2,7 +2,7 @@
   "_comment": "P1.AIVideo — SDXL + InstantID identity-consistent workflow (FALLBACK provider, ~10GB VRAM, default on 24GB boxes). Conditions generation on the canonical FACE reference (__FACE_REF__) so the same synthetic person appears in a new scene/outfit. Node class names follow cubiq/ComfyUI_InstantID — adjust to your installed nodes (see README). Placeholders: __PROMPT__ __NEGATIVE__ __SEED__ __WIDTH__ __HEIGHT__ __STEPS__ __CFG__ __FACE_REF__.",
   "4": {
     "class_type": "CheckpointLoaderSimple",
-    "inputs": { "ckpt_name": "sd_xl_base_1.0.safetensors" }
+    "inputs": { "ckpt_name": "sdxl-base-1.0/sd_xl_base_1.0.safetensors" }
   },
   "10": {
     "class_type": "LoadImage",
