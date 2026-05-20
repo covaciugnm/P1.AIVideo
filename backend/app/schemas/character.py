@@ -380,7 +380,7 @@ class CharacterImageGenerateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    prompt: str | None = Field(default=None, max_length=4000)
+    prompt: str | None = Field(default=None, max_length=10000)
     negative_prompt: str | None = Field(default=None, max_length=2000)
     provider_id: str = Field(..., max_length=80)
     model_id: str | None = Field(default=None, max_length=160)
@@ -422,7 +422,7 @@ class CharacterGenerateConsistentRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    scene_prompt: str = Field(default="", max_length=2000)
+    scene_prompt: str = Field(default="", max_length=10000)
     outfit_prompt: str = Field(default="", max_length=1000)
     location_prompt: str = Field(default="", max_length=1000)
     season: str = Field(default="", max_length=80)
