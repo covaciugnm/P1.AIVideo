@@ -1,0 +1,138 @@
+[
+  {
+    "severity": "critical",
+    "title": "Identity-consistent image generation (the headline deliverable) is NOT functional",
+    "status": "PARTIAL",
+    "area": "comfyui",
+    "evidence": "ComfyUI container has only default custom_nodes (example_node.py.example, websocket_image_save.py) — no InstantID/PuLID nodes. `find models/ -iname '*instantid*' -o -iname '*pulid*' -o -iname '*antelope*' -o -iname '*ip-adapter*'` returns nothing. No model weights for InstantID/ControlNet/insightface on disk. All 5 characters have has_body=f (no canonical full-body ref), so generate-consistent returns HTTP 422 'requires a canonical face and full-body reference'.",
+    "files": ["docker/compose.dev.yml", "workflows/comfyui/sdxl_instantid_consistent.json", "backend/app/services/character_image_service.py"],
+    "reproduction_steps": [
+      "docker compose exec model-comfyui ls /comfyui/custom_nodes  -> only example + websocket",
+      "find models/ -iname '*instantid*'  -> empty",
+      "POST /api/v1/characters/{id}/images/generate-consistent  -> 422 (no full-body reference)"
+    ],
+    "recommended_fix": "Install ComfyUI InstantID (or PuLID-Flux) custom nodes + deps (insightface, onnxruntime); download InstantID ip-adapter + ControlNet + antelopev2 weights; add compose mounts for custom_nodes + instantid/controlnet/insightface; generate + promote a canonical full-body per character.",
+    "blocks_demo": true,
+    "blocks_production": true
+  },
+  {
+    "severity": "critical",
+    "title": "Video generation pipeline is non-operational at runtime (orchestrator + all agents stopped, jobs table emptied)",
+    "status": "NOT_VERIFIED",
+    "area": "video",
+    "evidence": "docker ps shows NO aivideo-orchestrator-1 or aivideo-agent-* containers (only an unrelated ai-home-orchestrator from a different project). `SELECT count(*) FROM jobs` = 0 (table emptied in a prior turn). Video DAG cannot run.",
+    "files": ["docker/compose.dev.yml", "agents/orchestrator/run_worker.py"],
+    "reproduction_steps": ["docker ps | grep -E 'orchestrator|agent-'  -> none (aivideo)", "psql -c 'SELECT count(*) FROM jobs' -> 0"],
+    "recommended_fix": "Intentional per operator (moving to 128GB GPU box). To re-enable: docker compose --profile gpu up -d orchestrator agent-*. Not a code defect.",
+    "blocks_demo": true,
+    "blocks_production": false
+  },
+  {
+    "severity": "high",
+    "title": "upload-reference + moderate endpoints have NO frontend wiring (dead backend capability)",
+    "status": "PARTIAL",
+    "area": "frontend",
+    "evidence": "lib/characters.ts exports uploadReferenceImage() + moderateReferenceImage(), and the backend routes exist (POST .../images/upload-reference, POST .../images/{id}/moderate). `rg uploadReferenceImage|moderateReferenceImage components app` returns ONLY the lib definition — no component calls them. The gated synthetic-attestation upload + moderation flow is unreachable from the UI.",
+    "files": ["frontend/lib/characters.ts", "frontend/components/CharacterImageLibrary.tsx", "backend/app/api/characters.py"],
+    "reproduction_steps": ["rg -n 'uploadReferenceImage|moderateReferenceImage' frontend/components frontend/app  -> no matches outside lib"],
+    "recommended_fix": "Add an Upload-reference control (file picker + synthetic attestation checkbox) and a moderation approve/reject control in CharacterImageLibrary.",
+    "blocks_demo": false,
+    "blocks_production": true
+  },
+  {
+    "severity": "high",
+    "title": "All recent work is UNCOMMITTED on main (86 changed files; last commit is 'Phase 12')",
+    "status": "OK",
+    "area": "backend",
+    "evidence": "git log -1 = '8a54cf1 Phase 12 ...'; git status --porcelain | wc -l = 86. Everything from Phase 21..IG-6 (image pipeline, migrations 0007-0010, lifecycle, clone) is uncommitted working-tree state on the main branch.",
+    "files": [".git"],
+    "reproduction_steps": ["git status --short | wc -l -> 86", "git log -1 --oneline"],
+    "recommended_fix": "Create a feature branch and commit in reviewable chunks; do not leave multi-phase work uncommitted on main.",
+    "blocks_demo": false,
+    "blocks_production": true
+  },
+  {
+    "severity": "high",
+    "title": "generate-consistent is blocked for every existing character (no canonical full-body reference set)",
+    "status": "PARTIAL",
+    "area": "backend",
+    "evidence": "psql: all 5 characters full_body_reference_image_id IS NULL (has_body=f). character_image_service.generate_consistent_character_image raises validation_failed when either canonical ref is missing.",
+    "files": ["backend/app/services/character_image_service.py"],
+    "reproduction_steps": ["POST generate-consistent on any character -> 422"],
+    "recommended_fix": "Generate a full-body candidate (generate-initial), then POST set-full-body-reference to promote it.",
+    "blocks_demo": true,
+    "blocks_production": false
+  },
+  {
+    "severity": "medium",
+    "title": "Mobile portrait 720x1280 published-job evidence no longer exists (jobs deleted)",
+    "status": "NOT_VERIFIED",
+    "area": "video",
+    "evidence": "Prior claim cited a published 720x1280 job; the jobs table is now empty (count=0). Orientation code exists (_ORIENTATION_DIMS in agents/editor + scene_composer) but the runtime artifact is gone.",
+    "files": ["agents/editor/handler.py", "agents/scene_composer/handler.py"],
+    "reproduction_steps": ["psql 'SELECT count(*) FROM jobs WHERE orientation=portrait' -> 0"],
+    "recommended_fix": "Re-run a portrait job after the video pipeline is restarted to re-establish evidence.",
+    "blocks_demo": false,
+    "blocks_production": false
+  },
+  {
+    "severity": "medium",
+    "title": "Duplicate /jobs route surface (legacy unprefixed + /api/v1/jobs)",
+    "status": "OK",
+    "area": "backend",
+    "evidence": "OpenAPI lists both /jobs/* and /api/v1/jobs/* (main.py includes jobs.router twice: once bare, once prefixed /api/v1). Two public surfaces for the same handlers.",
+    "files": ["backend/app/main.py", "backend/app/api/jobs.py"],
+    "reproduction_steps": ["curl openapi.json -> both /jobs and /api/v1/jobs present"],
+    "recommended_fix": "Deprecate the unprefixed /jobs alias once no client depends on it.",
+    "blocks_demo": false,
+    "blocks_production": false
+  },
+  {
+    "severity": "medium",
+    "title": "character_images.role backfilled to default for pre-existing canonical-face images",
+    "status": "PARTIAL",
+    "area": "backend",
+    "evidence": "All 6 existing images have role='generated_variation' (the migration 0010 server_default), including the 5 canonical-face references. Role label is therefore semantically inaccurate for older rows.",
+    "files": ["backend/alembic/versions/0010_phase_ig3_image_role_metadata.py"],
+    "reproduction_steps": ["psql 'SELECT role,count(*) FROM character_images GROUP BY role' -> all generated_variation"],
+    "recommended_fix": "One-off data backfill: set role='canonical_face' where id = characters.main_reference_image_id, etc.",
+    "blocks_demo": false,
+    "blocks_production": false
+  },
+  {
+    "severity": "medium",
+    "title": "model-comfyui compose lacks custom_nodes + InstantID/ControlNet/insightface mounts",
+    "status": "PARTIAL",
+    "area": "docker",
+    "evidence": "compose.dev.yml model-comfyui volumes mount only sdxl-base-1.0, flux, sd35 (ro) + artifacts_data. No custom_nodes mount, no instantid/controlnet/insightface model mounts. InstantID cannot be wired without editing compose.",
+    "files": ["docker/compose.dev.yml"],
+    "reproduction_steps": ["grep -A12 'model-comfyui:' docker/compose.dev.yml"],
+    "recommended_fix": "Add ../docker/model-comfyui/custom_nodes:/comfyui/custom_nodes and ../models/{instantid,controlnet,insightface} mounts.",
+    "blocks_demo": false,
+    "blocks_production": true
+  },
+  {
+    "severity": "low",
+    "title": "36 TODO/FIXME markers across 22 files",
+    "status": "OK",
+    "area": "backend",
+    "evidence": "rg 'TODO|FIXME|HACK|XXX' (excl venv/node_modules/.git) -> 36 occurrences / 22 files.",
+    "files": [],
+    "reproduction_steps": ["rg -c 'TODO|FIXME|HACK|XXX'"],
+    "recommended_fix": "Triage before production.",
+    "blocks_demo": false,
+    "blocks_production": false
+  },
+  {
+    "severity": "low",
+    "title": "Stray empty 'Raport' directory in project root",
+    "status": "OK",
+    "area": "backend",
+    "evidence": "ls -la shows a 'Raport' dir (empty) distinct from the requested 'Raport claude'.",
+    "files": ["Raport/"],
+    "reproduction_steps": ["ls -la Raport"],
+    "recommended_fix": "Remove if unused.",
+    "blocks_demo": false,
+    "blocks_production": false
+  }
+]
