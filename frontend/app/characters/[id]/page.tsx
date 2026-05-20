@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { CharacterForm, type CharacterFormValue } from "@/components/CharacterForm";
+import { CharacterIdentityProfile } from "@/components/CharacterIdentityProfile";
 import { CharacterImageLibrary } from "@/components/CharacterImageLibrary";
 import { CharacterVideoLinks } from "@/components/CharacterVideoLinks";
 import { ErrorMessage } from "@/components/ErrorMessage";
@@ -34,6 +35,7 @@ export default function CharacterDetailPage() {
   const id = params?.id;
   const [character, setCharacter] = useState<CharacterResponse | null>(null);
   const [tab, setTab] = useState<Tab>("profile");
+  const [editingProfile, setEditingProfile] = useState(false);
   const [form, setForm] = useState<CharacterFormValue | null>(null);
   const [availableVoices, setAvailableVoices] = useState<readonly string[] | null>(
     null,
@@ -205,19 +207,34 @@ export default function CharacterDetailPage() {
         ))}
       </div>
       {tab === "profile" && (
-        <>
-          <CharacterForm
-            value={form}
-            onChange={setForm}
-            availableVoices={availableVoices}
-            identityLocked={identityLocked}
-          />
-          <div style={{ marginTop: 16 }}>
-            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={busy}>
-              {busy ? t("common.submitting") : t("common.save")}
-            </button>
-          </div>
-        </>
+        editingProfile ? (
+          <>
+            <CharacterForm
+              value={form}
+              onChange={setForm}
+              availableVoices={availableVoices}
+              identityLocked={identityLocked}
+            />
+            <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+              <button type="button" className="btn btn-primary"
+                onClick={async () => { await handleSave(); setEditingProfile(false); }} disabled={busy}>
+                {busy ? t("common.submitting") : t("common.save")}
+              </button>
+              <button type="button" className="btn" onClick={() => setEditingProfile(false)} disabled={busy}>
+                {t("common.cancel")}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <button type="button" className="btn" onClick={() => setEditingProfile(true)}>
+                ✎ Editează profil
+              </button>
+            </div>
+            <CharacterIdentityProfile character={character} />
+          </>
+        )
       )}
       {tab === "images" && (
         <CharacterImageLibrary character={character} onReload={reload} />

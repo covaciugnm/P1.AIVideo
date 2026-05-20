@@ -53,6 +53,9 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progressLines, setProgressLines] = useState<string[]>([]);
+  // Phase 12 — generation controls live in a "+ Imagine Nouă" modal so the
+  // gallery itself shows only images + image actions.
+  const [showGen, setShowGen] = useState(false);
 
   const reloadImages = async () => {
     try {
@@ -213,12 +216,29 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
 
   return (
     <div className="image-library">
-      <h3>
-        {t("characters.images.gallery")}
-        <HelpHint slug="character-image-library" />
-      </h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ marginBottom: 2 }}>
+            {t("characters.images.gallery")}
+            <HelpHint slug="character-image-library" />
+          </h3>
+          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+            Imaginile de referință și variațiile vizuale ale personajului.
+          </p>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setShowGen(true)}>
+          + Imagine Nouă
+        </button>
+      </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      {showGen && (
+      <div className="modal-overlay" onClick={() => setShowGen(false)}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h3 style={{ margin: 0 }}>Generează imagine nouă pentru {character.display_name || character.name}</h3>
+        <button type="button" className="btn" onClick={() => setShowGen(false)}>Părăsește</button>
+      </div>
+      <div className="card" style={{ marginBottom: 16, marginTop: 12 }}>
         <label className="form-row">
           <span>
             {t("characters.images.provider")}
@@ -416,6 +436,9 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
           await onReload();
         }}
       />
+      </div>
+      </div>
+      )}
 
       {images.length === 0 ? (
         <p className="muted">{t("characters.images.noImages")}</p>
@@ -596,11 +619,9 @@ function ImageCard({
                 background: "var(--accent, #4a90e2)", color: "white",
                 borderRadius: 6,
               }}
-              title={t("characters.images.genVideoHint")}
+              title="Pipeline-ul video este momentan oprit / va fi activat pe serverul de 128GB. Acest buton pregătește un job video pe baza acestei imagini."
             >
-              🎬 {t("characters.images.genVideo")
-                .replace("{name}", character.display_name ?? character.name ?? "—")
-                .replace("{n}", String(n))}
+              🎬 Generează video pe baza acestei imagini
             </Link>
           );
         })()}
