@@ -100,6 +100,13 @@ class JobCreateRequest(BaseModel):
     # soft-deletes of the character never rewrite history.
     character_id: uuid.UUID | None = None
 
+    # Phase 21 — pipeline variant + per-scene plan. job_type defaults
+    # to talking_head so every pre-21 caller stays compatible.
+    job_type: str = Field(default="talking_head", max_length=32)
+    scene_plan: list[dict] | None = None
+    # Phase 22 — output orientation (landscape | portrait | square).
+    orientation: str = Field(default="landscape", max_length=16)
+
     # Phase 11A: language + subtitle metadata. All have safe defaults so
     # pre-11A payloads stay valid; the model_validator below normalises
     # subtitle_languages when subtitle_enabled=True but no list given.
@@ -232,6 +239,12 @@ class JobResponse(BaseModel):
     # Phase 12 — character binding + frozen snapshot.
     character_id: uuid.UUID | None = None
     character_snapshot: dict[str, Any] | None = None
+    # Phase 21 — pipeline variant + per-scene plan. Default makes
+    # pre-21 jobs deserialize as talking_head with no plan.
+    job_type: str = "talking_head"
+    scene_plan: list[dict] | None = None
+    # Phase 22 — output orientation.
+    orientation: str = "landscape"
     created_at: datetime
     updated_at: datetime
     # Phase 11B — editability hints derived from job.status. Lets the UI

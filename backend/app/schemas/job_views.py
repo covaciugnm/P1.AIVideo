@@ -60,6 +60,18 @@ class JobSummary(BaseModel):
     # can show "character: Maria Popescu" or filter without a per-row
     # detail fetch.
     character_id: uuid.UUID | None = None
+    # Phase 21 — pipeline variant + per-scene plan surfaced on list rows
+    # so the dashboard can colour-code video types and show plan length.
+    job_type: str = "talking_head"
+    scene_plan: list[dict] | None = None
+    # Phase 22 — output orientation.
+    orientation: str = "landscape"
+    # Phase 21 — human-readable identifier: "<Character name>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>".
+    # Computed at response time from character_snapshot + created_at,
+    # falls back to a sanitized brief snippet when no character. Used
+    # as the primary identifier column in the videos list (replaces
+    # the raw UUID for operator-facing display).
+    display_name: str = ""
 
     @model_validator(mode="after")
     def _populate_edit_policy(self) -> "JobSummary":
@@ -241,6 +253,14 @@ class JobDetail(BaseModel):
     # pre-Phase-12 jobs continue to deserialise cleanly.
     character_id: uuid.UUID | None = None
     character_snapshot: dict[str, Any] | None = None
+    # Phase 21 — pipeline variant + per-scene plan. Default makes
+    # pre-21 jobs deserialize as talking_head with no plan.
+    job_type: str = "talking_head"
+    scene_plan: list[dict] | None = None
+    # Phase 22 — output orientation.
+    orientation: str = "landscape"
+    # Phase 21 — operator-facing display identifier (mirrors JobSummary).
+    display_name: str = ""
     created_at: datetime
     updated_at: datetime
 

@@ -106,6 +106,19 @@ class ProviderInfo(BaseModel):
     warning: str = ""
     docs_url: str = ""
     is_custom: bool = False
+    # Phase 18 — optional voice gender for TTS providers. When the
+    # operator's character has a known gender, the frontend filters out
+    # TTS providers whose ``voice_gender`` does NOT match. Values:
+    # "male", "female", "neutral", or None (unspecified — never filtered).
+    voice_gender: str | None = None
+    # Phase 20 — voice-aware metadata. ``language`` is an ISO 639-1 code
+    # used to filter the TTS dropdown by selected video language;
+    # ``sample_text`` is a short showcase phrase rendered next to each
+    # voice; ``sample_audio_url`` resolves to the reference WAV the
+    # voice was trained against (served by /api/v1/providers/tts/{id}/sample.wav).
+    language: str | None = None
+    sample_text: str | None = None
+    sample_audio_url: str | None = None
 
 
 class ProvidersResponse(BaseModel):

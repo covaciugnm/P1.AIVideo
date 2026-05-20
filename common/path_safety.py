@@ -32,7 +32,13 @@ _DEFAULT_AUDIO_ROOTS = (
 _DEFAULT_IMAGE_ROOTS = (
     "/workspace/assets/input/images,"
     "/storage/inputs/images,"
-    "/app/assets/input/images"
+    "/app/assets/input/images,"
+    # Phase 21 iter 3 — character_image_service.generate_image() writes
+    # generated portraits under /storage/artifacts/characters/{id}/.
+    # Allow that subtree so the freshly-generated image can be used as
+    # the face artifact when submitting a talking-head job.
+    "/storage/artifacts/characters,"
+    "/storage/artifacts/flux"
 )
 
 

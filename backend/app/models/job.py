@@ -54,6 +54,33 @@ class Job(Base):
     # shape can evolve without schema migrations for every new field.
     # Nullable so every pre-8D test keeps passing.
     recovery_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Phase 21 — job-type discriminator. Three pipeline variants:
+    #   talking_head    : current (single portrait + lipsync) — default
+    #   scenes_only     : B-roll only; per-scene image + voiceover, no character
+    #   news_presenter  : hybrid; presenter (lipsync) + B-roll interleaved
+    # String column with a server-side default so every pre-21 row reads
+    # back as "talking_head" without a data migration.
+    job_type: Mapped[str] = mapped_column(
+        String(32), nullable=False,
+        server_default="talking_head", default="talking_head",
+    )
+    # Phase 21 — per-scene plan for scenes_only + news_presenter jobs.
+    # ``None`` for talking_head. JSON list of segments:
+    #   [{"scene_number": int, "kind": "presenter"|"broll",
+    #     "spoken_text": str, "visual_description": str|None,
+    #     "duration_s": float,
+    #     "image_artifact_id": uuid|None,   # populated after gen
+    #     "audio_artifact_id": uuid|None,   # populated after TTS
+    #     "clip_artifact_id":  uuid|None}]  # populated after per-scene render
+    scene_plan: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Phase 22 — output orientation / aspect ratio. "landscape" (16:9,
+    # default — back-compat), "portrait" (9:16 mobile reels), "square"
+    # (1:1). Drives FLUX render dimensions + ffmpeg scale/pad in the
+    # scene_composer and editor stages.
+    orientation: Mapped[str] = mapped_column(
+        String(16), nullable=False,
+        server_default="landscape", default="landscape",
+    )
     # Phase 11A — language + subtitle metadata.
     # ``video_language`` ISO-ish code (e.g. ``ro`` / ``en``); validated
     # against ``app.core.languages.LANGUAGES``.

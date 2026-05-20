@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -99,6 +99,39 @@ class UploadImageResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class SceneSpec(BaseModel):
+    """Phase 21 — one scene in the scenes_only / news_presenter plan.
+
+    A scene with ``kind="presenter"`` is voiced over the character's
+    still portrait with lipsync applied (mouth animated). ``kind="broll"``
+    is voiced over a FLUX-rendered scene image with a Ken-Burns zoom;
+    the character does not appear.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    scene_number: int = Field(..., ge=1, le=99)
+    kind: Literal["presenter", "broll"]
+    spoken_text: str = Field(..., min_length=1, max_length=4000)
+    # Required for broll scenes (it's the FLUX prompt); ignored for
+    # presenter scenes (which use the character portrait).
+    visual_description: str | None = Field(default=None, max_length=2000)
+    # 1..20 seconds per scene per the operator pin.
+    duration_s: float = Field(..., ge=1.0, le=20.0)
+    # Populated by the backend after the per-scene render finishes.
+    image_artifact_id: uuid.UUID | None = None
+    audio_artifact_id: uuid.UUID | None = None
+    clip_artifact_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _check_kind(self) -> "SceneSpec":
+        if self.kind == "broll" and not (self.visual_description or "").strip():
+            raise ValueError(
+                "broll scene requires a non-empty visual_description"
+            )
+        return self
+
+
 class JobFromInputsRequest(BaseModel):
     """Create a job by referencing previously-uploaded artifacts (or
     providing script_text inline). Compliance flags from the API stay
@@ -149,6 +182,22 @@ class JobFromInputsRequest(BaseModel):
     # character's profile_json onto ``jobs.character_snapshot`` at
     # submit time so subsequent edits/deletes never rewrite history.
     character_id: uuid.UUID | None = None
+
+    # Phase 21 — pipeline variant chooser.
+    #   "talking_head"  (default): single portrait + lipsync — back-compat
+    #   "scenes_only"  : voiceover over B-roll scene clips (no character)
+    #   "news_presenter": hybrid (presenter + B-roll interleaved)
+    # The talking_head path ignores ``scene_plan``; the other two REQUIRE it.
+    job_type: Literal["talking_head", "scenes_only", "news_presenter"] = "talking_head"
+
+    # Phase 21 — operator-edited scene plan for scenes_only / news_presenter.
+    # Each scene: {scene_number, kind: "presenter"|"broll", spoken_text,
+    # visual_description (broll only), duration_s (1.0..20.0)}.
+    scene_plan: list["SceneSpec"] | None = None
+
+    # Phase 22 — output orientation. landscape=16:9 (default), portrait=9:16
+    # (mobile reels), square=1:1.
+    orientation: Literal["landscape", "portrait", "square"] = "landscape"
 
     @field_validator("video_language", "transcript_language")
     @classmethod
@@ -202,6 +251,53 @@ class JobFromInputsRequest(BaseModel):
             if self.image_artifact_id is None:
                 raise ValueError(
                     "face_mode='provided_image' requires image_artifact_id"
+                )
+
+        # Phase 21 — scene_plan invariants per job_type.
+        if self.job_type in ("scenes_only", "news_presenter"):
+            if not self.scene_plan:
+                raise ValueError(
+                    f"job_type={self.job_type!r} requires a non-empty scene_plan"
+                )
+            if len(self.scene_plan) > 30:
+                raise ValueError(
+                    f"scene_plan is too long ({len(self.scene_plan)} scenes); "
+                    "max 30 to keep render time reasonable"
+                )
+            total = sum(s.duration_s for s in self.scene_plan)
+            if total > 600:
+                raise ValueError(
+                    f"scene_plan total duration {total:.1f}s exceeds the "
+                    "10-minute cap; trim scenes or shorten durations"
+                )
+            # scene_number uniqueness + ordering.
+            nums = [s.scene_number for s in self.scene_plan]
+            if len(set(nums)) != len(nums):
+                raise ValueError("scene_plan has duplicate scene_number values")
+            if self.job_type == "scenes_only":
+                if any(s.kind == "presenter" for s in self.scene_plan):
+                    raise ValueError(
+                        "scenes_only job_type cannot contain presenter "
+                        "segments — switch to news_presenter or remove them"
+                    )
+            elif self.job_type == "news_presenter":
+                # Hybrid REQUIRES at least one presenter scene; otherwise
+                # the operator probably meant scenes_only.
+                if not any(s.kind == "presenter" for s in self.scene_plan):
+                    raise ValueError(
+                        "news_presenter requires at least one presenter "
+                        "segment (use scenes_only for B-roll-only videos)"
+                    )
+                if self.character_id is None:
+                    raise ValueError(
+                        "news_presenter requires character_id (the "
+                        "presenter segments use the character portrait)"
+                    )
+        elif self.job_type == "talking_head":
+            if self.scene_plan:
+                raise ValueError(
+                    "talking_head job_type does not consume scene_plan — "
+                    "use scenes_only or news_presenter, or drop scene_plan"
                 )
 
         # Phase 11A: auto-populate subtitle_languages when subtitles are

@@ -446,6 +446,32 @@ class DagState(BaseModel):
     # defaults" (``settings.allowed_lipsync_backend`` etc.).
     provider_selection: dict[str, str | None] | None = None
 
+    # Phase 21 — subtitle settings forwarded to the editor stage so the
+    # ffmpeg remux step can burn captions onto the video when the
+    # operator opted in. Without these fields the burn-in checkbox in
+    # the UI was a no-op (the flag stayed on the Job row but never
+    # reached the editor).
+    video_language: str = "ro"
+    subtitle_languages: list[str] | None = None
+    subtitle_format: str = "srt"
+    subtitle_burn_in: bool = False
+    # Phase 21 — when set, subtitle text is rendered in this language
+    # (translated/transcribed from the spoken voice). Defaults to the
+    # video's spoken language; the operator can override per-job.
+    subtitle_text_language: str | None = None
+    # Phase 21 — absolute path to the SRT/VTT sidecar artifact (loaded
+    # by the orchestrator at DAG start). Editor reads this to burn
+    # captions into the final MP4 when subtitle_burn_in=True.
+    subtitle_artifact_local_path: str | None = None
+
+    # Phase 21 — pipeline variant + per-scene plan. The DAG runner
+    # selects the right stage_order based on ``job_type`` and the
+    # scene_composer stage consumes ``scene_plan``.
+    job_type: str = "talking_head"
+    scene_plan: list[dict] | None = None
+    # Phase 22 — output orientation (landscape | portrait | square).
+    orientation: str = "landscape"
+
     # Tracking
     completed_stages: list[str] = Field(default_factory=list)
     rejected: bool = False

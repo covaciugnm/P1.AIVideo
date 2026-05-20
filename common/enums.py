@@ -89,6 +89,12 @@ class StageName(str, enum.Enum):
     qc = "qc"
     export_disclosure_validation = "export_disclosure_validation"
     publisher = "publisher"
+    # Phase 21 — replaces voice+face+lipsync+editor for the
+    # scenes_only + news_presenter pipelines. Iterates state.scene_plan,
+    # generates per-scene image (FLUX) + audio (TTS) + per-scene clip
+    # (Ken-Burns broll OR lipsync presenter), then ffmpeg-concats them
+    # into the final reel_draft.
+    scene_composer = "scene_composer"
 
 
 # Canonical DAG stage list, in declared order. Reused by the API

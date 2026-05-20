@@ -16,6 +16,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -76,6 +77,16 @@ class Character(Base):
     # Flipped automatically the first time an image is accepted via
     # the accept_image endpoint (see backend/app/api/characters.py).
     face_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Phase 24 — a SECOND locked reference: the full-body portrait. The
+    # main_reference is the face; this one anchors the full-body look so
+    # B-roll / wide shots stay consistent. Locked once the character is
+    # activated, same as the face.
+    full_body_reference_image_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True
+    )
+    full_body_locked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     version_number: Mapped[int] = mapped_column(
@@ -142,7 +153,7 @@ class CharacterImage(Base):
     local_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     prompt: Mapped[str | None] = mapped_column(String(4000), nullable=True)
     negative_prompt: Mapped[str | None] = mapped_column(String(2000), nullable=True)
-    provider_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     model_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     seed: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     settings_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -152,13 +163,32 @@ class CharacterImage(Base):
     is_main_reference: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Phase IG-3 — identity-consistent pipeline metadata.
+    #   role: generated_initial | canonical_face | canonical_full_body
+    #         | generated_variation | rejected. Derived/maintained alongside
+    #         the character's main_reference/full_body bindings (single
+    #         source of truth stays the character row; this is the per-image
+    #         label for gallery + audit).
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="generated_variation",
+        server_default="generated_variation", index=True,
+    )
+    generation_params_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    identity_similarity_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    identity_drift_warning: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    reference_face_image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    reference_full_body_image_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True
+    )
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=_utcnow, nullable=False, server_default=func.now()
+        DateTime, default=_utcnow, nullable=False, server_default=func.now(), index=True
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

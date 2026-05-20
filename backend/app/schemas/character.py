@@ -24,7 +24,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-CharacterStatus = Literal["active", "inactive", "draft"]
+# Phase 23 lifecycle: editing↔active→retired (+ legacy inactive/draft kept
+# so historical rows still validate). "editing" and "active" reserve the
+# character's TTS voice; "retired" frees it.
+CharacterStatus = Literal["active", "inactive", "draft", "editing", "retired"]
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +52,10 @@ class CharacterIdentity(BaseModel):
     current_location: str | None = Field(default=None, max_length=200)
     social_status: str | None = Field(default=None, max_length=80)
     is_public_persona: bool = False
+    # Phase IG-5 — compliance flag. True ONLY when the character intentionally
+    # depicts a real, identifiable person (requires separate authorization).
+    # When True + SYNTHETIC_ONLY_ENFORCED, image generation is blocked.
+    is_real_person: bool = False
 
 
 class CharacterAppearance(BaseModel):
@@ -192,6 +199,22 @@ class CharacterUpdateRequest(BaseModel):
     default_image_provider_id: str | None = Field(default=None, max_length=80)
 
 
+class CharacterStatusRequest(BaseModel):
+    """Phase 23 — explicit lifecycle transition payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: CharacterStatus
+
+
+class CharacterCloneRequest(BaseModel):
+    """Phase 24 — optional payload for the clone endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    new_name: str | None = Field(default=None, max_length=200)
+
+
 class CharacterSummary(BaseModel):
     """Lightweight payload for list/dropdown views."""
 
@@ -208,6 +231,9 @@ class CharacterSummary(BaseModel):
     main_reference_image_id: uuid.UUID | None
     # Phase 16 — once True, main_reference_image_id is immutable.
     face_locked: bool = False
+    # Phase 24 — full-body reference image + its lock.
+    full_body_reference_image_id: uuid.UUID | None = None
+    full_body_locked: bool = False
     image_count: int = 0
     video_count: int = 0
     version_number: int
@@ -231,6 +257,8 @@ class CharacterResponse(BaseModel):
     default_image_provider_id: str | None
     main_reference_image_id: uuid.UUID | None
     face_locked: bool = False
+    full_body_reference_image_id: uuid.UUID | None = None
+    full_body_locked: bool = False
     version_number: int
     image_count: int = 0
     video_count: int = 0
@@ -324,6 +352,16 @@ class CharacterImageResponse(BaseModel):
     notes: str | None
     created_at: datetime
     updated_at: datetime
+    # Phase 21 iter 2 — when the image was just generated, the service
+    # also registers it as a global ``ArtifactType.image`` row so the
+    # talking-head pipeline (face_mode=provided_image) can consume it.
+    # ``None`` for older rows or when the dual registration failed.
+    artifact_id: uuid.UUID | None = None
+    # Phase IG-3 — identity-consistent pipeline metadata.
+    role: str = "generated_variation"
+    identity_similarity_score: float | None = None
+    identity_drift_warning: bool = False
+    generation_params_json: dict[str, Any] | None = None
 
 
 class CharacterImageListResponse(BaseModel):
@@ -363,6 +401,41 @@ class CharacterImageGenerateRequest(BaseModel):
         return v
 
 
+AspectRatio = Literal["portrait", "landscape", "square"]
+QualityPreset = Literal["draft", "standard", "high"]
+
+
+class CharacterGenerateInitialRequest(BaseModel):
+    """Phase IG-2 — first-image (text-to-image) generation request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    aspect_ratio: AspectRatio = "portrait"
+    quality_preset: QualityPreset = "standard"
+    seed: int | None = None
+    workflow_override: str | None = Field(default=None, max_length=80)
+
+
+class CharacterGenerateConsistentRequest(BaseModel):
+    """Phase IG-2 — identity-consistent generation request. Identity is
+    locked from the canonical references; these fields describe the SCENE."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scene_prompt: str = Field(default="", max_length=2000)
+    outfit_prompt: str = Field(default="", max_length=1000)
+    location_prompt: str = Field(default="", max_length=1000)
+    season: str = Field(default="", max_length=80)
+    mood: str = Field(default="", max_length=120)
+    pose: str = Field(default="", max_length=200)
+    framing: str = Field(default="", max_length=120)
+    aspect_ratio: AspectRatio = "portrait"
+    quality_preset: QualityPreset = "standard"
+    seed: int | None = None
+    provider_override: str | None = Field(default=None, max_length=80)
+    negative_prompt_extra: str = Field(default="", max_length=1000)
+
+
 class CharacterImageGenerateError(BaseModel):
     """Categorised error payload returned by ``/images/generate``."""
 
@@ -393,6 +466,8 @@ class CharacterImageActionResponse(BaseModel):
 
     image: CharacterImageResponse
     character_main_reference_image_id: uuid.UUID | None
+    # Phase 24 — companion full-body reference (set-full-body-reference).
+    character_full_body_reference_image_id: uuid.UUID | None = None
 
 
 # ---------------------------------------------------------------------------
