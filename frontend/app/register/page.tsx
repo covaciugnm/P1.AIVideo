@@ -1,18 +1,28 @@
 "use client";
 
-// Public registration page (security remediation). Never auto-logs-in.
+// Public registration page. Independent state from login; never auto-logs-in,
+// never stores token/password. Distinct field names so the browser cannot
+// copy login credentials into this form.
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { register } from "@/lib/auth";
 
+const EMPTY = { username: "", email: "", full_name: "", password: "", confirm: "" };
+
 export default function RegisterPage() {
-  const [form, setForm] = useState({ username: "", email: "", full_name: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ ...EMPTY });
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  // Start clean on mount; wipe passwords on unmount.
+  useEffect(() => {
+    setForm({ ...EMPTY });
+    return () => setForm((f) => ({ ...f, password: "", confirm: "" }));
+  }, []);
+
+  const set = (k: keyof typeof EMPTY, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,13 +35,25 @@ export default function RegisterPage() {
     setBusy(true);
     try {
       await register(form.username.trim(), form.email.trim(), form.full_name.trim(), form.password);
+      setForm({ ...EMPTY }); // clear everything (incl. passwords) after success
       setOk("Înregistrarea a fost trimisă. Contul trebuie aprobat de administrator înainte de autentificare.");
     } catch (err) {
+      setForm((f) => ({ ...f, password: "", confirm: "" }));
       setError((err as Error).message || "Înregistrare eșuată.");
     } finally {
       setBusy(false);
     }
   };
+
+  const field = (id: string, label: string, key: keyof typeof EMPTY, type = "text", ac = "off") => (
+    <div className="auth-field">
+      <label className="auth-label" htmlFor={id}>{label}</label>
+      <input
+        id={id} name={id} className="auth-input" type={type} autoComplete={ac}
+        value={form[key]} onChange={(e) => set(key, e.target.value)} disabled={busy}
+      />
+    </div>
+  );
 
   return (
     <div className="public-landing">
@@ -39,34 +61,29 @@ export default function RegisterPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/AIVideo.png" alt="P1.AIVideo" className="public-logo public-logo-sm" />
         <h1 className="public-title">P1.AIVideo</h1>
-        <p className="public-tagline">Register</p>
+        <p className="public-tagline">Înregistrare</p>
         {ok ? (
           <div data-testid="register-success">
             <p className="public-success">{ok}</p>
-            <div className="public-links"><Link href="/login">Back to sign in</Link></div>
+            <div className="public-links"><Link href="/login">Înapoi la autentificare</Link></div>
           </div>
         ) : (
-          <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <label className="form-row"><span>Username</span>
-              <input value={form.username} onChange={(e) => set("username", e.target.value)} disabled={busy} /></label>
-            <label className="form-row"><span>Email</span>
-              <input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} disabled={busy} /></label>
-            <label className="form-row"><span>Full name</span>
-              <input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} disabled={busy} /></label>
-            <label className="form-row"><span>Password</span>
-              <input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} disabled={busy} /></label>
-            <label className="form-row"><span>Confirm password</span>
-              <input type="password" value={form.confirm} onChange={(e) => set("confirm", e.target.value)} disabled={busy} /></label>
-            <p className="muted" style={{ fontSize: 12 }}>
-              Min 10 chars, with uppercase, lowercase, digit and a special character.
+          <form onSubmit={submit} className="auth-form" autoComplete="off">
+            {field("register-username", "Utilizator", "username")}
+            {field("register-email", "Email", "email", "email")}
+            {field("register-full-name", "Nume complet", "full_name")}
+            {field("register-password", "Parolă", "password", "password", "new-password")}
+            {field("register-confirm-password", "Confirmă parola", "confirm", "password", "new-password")}
+            <p className="auth-hint">
+              Minim 10 caractere, cu majusculă, minusculă, cifră și un caracter special.
             </p>
-            <button type="submit" className="btn btn-primary public-btn" disabled={busy}>
-              {busy ? "Submitting…" : "Register"}
+            <button type="submit" className="auth-button" disabled={busy}>
+              {busy ? "Se trimite…" : "Înregistrare"}
             </button>
             {error && <p data-testid="register-error" className="public-error">{error}</p>}
             <div className="public-links">
-              <Link href="/login">Sign in</Link>
-              <Link href="/">← Home</Link>
+              <Link href="/login">Autentificare</Link>
+              <Link href="/">← Acasă</Link>
             </div>
           </form>
         )}

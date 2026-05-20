@@ -17,19 +17,16 @@ export default function LandingPage() {
           P1.AIVideo este o platformă pentru generarea controlată de conținut video
           sintetic, construită pentru fluxuri profesionale de lucru cu personaje
           digitale, scripturi, voci TTS, imagini de referință, generare asistată de AI
-          și procese de verificare/compliance. Sistemul separă clar zona publică de
-          zona operațională internă, astfel încât accesul la date, joburi, personaje
-          și setări să fie permis doar utilizatorilor autentificați și aprobați.
+          și procese de verificare/compliance. Accesul la zona operațională este
+          permis doar utilizatorilor autentificați și aprobați.
         </p>
         <p className="public-desc public-desc-en">
-          A controlled synthetic video generation platform for professional workflows
-          with digital characters, scripts, TTS voices, reference images, AI-assisted
-          generation and compliance checks. Internal data and production tools are
-          available only to authenticated and approved users.
+          A controlled synthetic video generation platform — internal tools are
+          available only to authenticated, approved users.
         </p>
         <div className="public-actions">
-          <Link href="/login" className="btn btn-primary public-btn">Login</Link>
-          <Link href="/register" className="btn public-btn public-btn-ghost">Register</Link>
+          <Link href="/login" className="btn btn-primary public-btn">Autentificare</Link>
+          <Link href="/register" className="btn public-btn public-btn-ghost">Înregistrare</Link>
         </div>
       </div>
     </div>

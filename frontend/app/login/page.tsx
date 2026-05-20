@@ -1,13 +1,13 @@
 "use client";
 
-// Login page (security remediation). Public route — no internal shell.
+// Login page (public). No internal shell. Independent local state; the app
+// never persists the password (no localStorage/sessionStorage/global state).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { login, setSession } from "@/lib/auth";
 
-// Map the backend's English status messages to the requested Romanian copy.
 function roStatusMessage(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes("pending")) return "Contul este în așteptarea aprobării administratorului.";
@@ -25,12 +25,21 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Defensive: never carry credentials across mounts/navigation. Clear on
+  // mount and on unmount (the password must not survive a refresh in app state).
+  useEffect(() => {
+    setUsername("");
+    setPassword("");
+    return () => setPassword("");
+  }, []);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
       const res = await login(username.trim(), password);
+      setPassword(""); // drop it immediately after use
       setSession(res.access_token, res.user);
       router.push("/characters");
     } catch (err) {
@@ -42,26 +51,51 @@ export default function LoginPage() {
 
   return (
     <div className="public-landing">
-      <form onSubmit={submit} className="public-card public-form">
+      <form onSubmit={submit} className="public-card public-form" autoComplete="off">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/AIVideo.png" alt="P1.AIVideo" className="public-logo public-logo-sm" />
         <h1 className="public-title">P1.AIVideo</h1>
-        <p className="public-tagline">Sign in</p>
-        <label className="form-row">
-          <span>Username</span>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus disabled={busy} />
-        </label>
-        <label className="form-row">
-          <span>Password</span>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} />
-        </label>
-        <button type="submit" className="btn btn-primary public-btn" disabled={busy || !username || !password}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
+        <p className="public-tagline">Autentificare</p>
+
+        <div className="auth-form">
+          <div className="auth-field">
+            <label className="auth-label" htmlFor="login-username">Utilizator</label>
+            <input
+              id="login-username"
+              name="login-username"
+              className="auth-input"
+              type="text"
+              autoComplete="off"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={busy}
+              autoFocus
+            />
+          </div>
+
+          <div className="auth-field">
+            <label className="auth-label" htmlFor="login-password">Parolă</label>
+            <input
+              id="login-password"
+              name="login-password"
+              className="auth-input"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+            />
+          </div>
+
+          <button type="submit" className="auth-button" disabled={busy || !username || !password}>
+            {busy ? "Se autentifică…" : "Autentificare"}
+          </button>
+        </div>
+
         {error && <p data-testid="login-error" className="public-error">{error}</p>}
         <div className="public-links">
-          <Link href="/register">Register</Link>
-          <Link href="/">← Home</Link>
+          <Link href="/register">Înregistrare</Link>
+          <Link href="/">← Acasă</Link>
         </div>
       </form>
     </div>
