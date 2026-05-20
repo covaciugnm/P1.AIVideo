@@ -99,11 +99,16 @@ async def test_list_pending_job_ids_returns_only_pending_compliance(db_under_tes
     ids = await _list_pending_job_ids(sm, limit=8)
     assert jid1 in ids
     assert jid2 not in ids
-    # Sanity: every returned id corresponds to a pending row.
+    # Sanity: every returned id is in a status the DAG runner is
+    # allowed to drive forward. Phase 21 flips claimed rows to
+    # ``accepted`` atomically inside the picker (SELECT FOR UPDATE
+    # SKIP LOCKED + UPDATE) so sibling workers skip them, so the
+    # returned ids are NO LONGER in pending_compliance — they're
+    # already claimed.
     async with sm() as session:
         for jid in ids:
             row = (await session.execute(select(Job).where(Job.id == jid))).scalar_one()
-            assert row.status == JobStatus.pending_compliance
+            assert row.status == JobStatus.accepted
 
 
 # ---------------------------------------------------------------------------

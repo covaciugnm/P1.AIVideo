@@ -457,6 +457,9 @@ def test_no_identical_non_technical_pairs():
         "Hugging Face",
         # Phase 15B — short column label identical in RO/EN.
         "Provider",
+        # Phase 21 — talking-head + lipsync are technical/loanword
+        # terms used identically in both languages.
+        "Talking head + lipsync",
     }
     suspects: list[tuple[str, str]] = []
     for k, v_en in en.items():

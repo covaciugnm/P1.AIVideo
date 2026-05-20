@@ -17,7 +17,8 @@ FRONTEND = REPO_ROOT / "frontend"
 
 
 REQUIRED_PAGES = (
-    FRONTEND / "app" / "page.tsx",
+    # Phase 21 — app/page.tsx is now a server-side redirect with no
+    # UI; excluded from the useT() requirement.
     FRONTEND / "app" / "jobs" / "page.tsx",
     FRONTEND / "app" / "jobs" / "new" / "page.tsx",
     FRONTEND / "app" / "jobs" / "[jobId]" / "page.tsx",

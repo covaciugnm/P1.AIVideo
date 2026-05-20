@@ -119,7 +119,10 @@ async def test_burn_in_flag_records_not_implemented(app_client):
     assert r.status_code == 201
     arts = await app_client.get(f"/api/v1/jobs/{r.json()['id']}/artifacts")
     sub = next(a for a in arts.json() if a["artifact_type"] == "subtitle")
-    assert sub["metadata_summary"]["burn_in_status"] == "not_implemented"
+    # Phase 21 — burn-in is now wired through the orchestrator into the
+    # editor stage (ffmpeg subtitles= filter). The sidecar row records
+    # the operator's INTENT; the actual bake happens when the DAG runs.
+    assert sub["metadata_summary"]["burn_in_status"] == "queued_for_editor"
 
 
 async def test_no_subtitle_when_disabled(app_client):

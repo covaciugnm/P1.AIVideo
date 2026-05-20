@@ -22,8 +22,11 @@ FRONTEND = REPO_ROOT / "frontend"
 # Every page in the dashboard. Pages declared here must (a) exist on
 # disk and (b) embed at least one <HelpHint /> or <HelpButton /> anchor
 # so the operator has discoverable help on every route.
+#
+# Phase 21 — ``app/page.tsx`` was reduced to a server-side redirect
+# (root → /characters) when the Dashboard tab was removed. It has no
+# UI, so it's excluded from help/i18n assertions below.
 REQUIRED_PAGES: tuple[Path, ...] = (
-    FRONTEND / "app" / "page.tsx",                            # /
     FRONTEND / "app" / "jobs" / "page.tsx",                   # /jobs
     FRONTEND / "app" / "jobs" / "new" / "page.tsx",           # /jobs/new
     FRONTEND / "app" / "jobs" / "[jobId]" / "page.tsx",       # /jobs/[id]
@@ -217,7 +220,9 @@ def test_help_link_in_nav():
     [
         # Phase 11A re-do: slugs renamed to match the brief vocabulary
         # in the new bilingual help corpora.
-        ("app/page.tsx", "dashboard"),
+        # Phase 21 — app/page.tsx is now a server-side redirect, no
+        # HelpHint to anchor; the dashboard help topic still exists
+        # but documents its own removal.
         ("app/jobs/page.tsx", "jobs-list"),
         ("app/jobs/new/page.tsx", "create-job"),
         ("app/uploads/page.tsx", "uploads"),

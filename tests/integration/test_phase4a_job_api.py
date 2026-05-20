@@ -101,15 +101,28 @@ async def _create_and_run_job(client, payload: dict | None = None) -> uuid.UUID:
 
 def test_canonical_stage_list_matches_pipeline_yaml():
     """Phase 4A's progress endpoint reads CANONICAL_DAG_STAGES; tests pin
-    that list to the actual pipeline YAML so the UI never disagrees
-    with the DAG runner about stage order."""
+    it to the SUPERSET across all pipeline YAMLs (talking_head +
+    scenes_only + news_presenter), so the UI's stage timeline can show
+    any active job's stage regardless of pipeline variant.
+
+    Phase 21 added ``scene_composer`` (used by scenes_only +
+    news_presenter only); it lives in the enum but NOT in the default
+    talking_head pipeline YAML.
+    """
     from agents.orchestrator.dag import load_stage_order
     from common.enums import CANONICAL_DAG_STAGES
 
-    assert list(CANONICAL_DAG_STAGES) == load_stage_order()
+    default_order = load_stage_order()
+    # Default pipeline = original 11 stages (talking_head).
+    assert len(default_order) == 11
+    assert default_order[0] == "policy_gate"
+    assert default_order[-1] == "publisher"
+    # Canonical list is the superset (+ scene_composer for Phase 21).
+    assert "scene_composer" in CANONICAL_DAG_STAGES
+    assert set(default_order).issubset(set(CANONICAL_DAG_STAGES))
     assert CANONICAL_DAG_STAGES[0] == "policy_gate"
-    assert CANONICAL_DAG_STAGES[-1] == "publisher"
-    assert len(CANONICAL_DAG_STAGES) == 11
+    assert CANONICAL_DAG_STAGES[-1] == "scene_composer"
+    assert len(CANONICAL_DAG_STAGES) == 12
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +235,13 @@ async def test_progress_returns_100_when_published(app_under_test):
     # All eleven stage entries present, in canonical order, all succeeded.
     from common.enums import CANONICAL_DAG_STAGES
 
-    assert [s["stage_name"] for s in body["stages"]] == list(CANONICAL_DAG_STAGES)
+    # Phase 21 — the progress endpoint now returns ONLY the stages for
+    # this job's pipeline variant (talking_head=11), not the full
+    # CANONICAL_DAG_STAGES superset (which also includes scene_composer
+    # for scenes_only/news_presenter). The 11 talking_head stages are
+    # the first 11 entries of CANONICAL_DAG_STAGES.
+    expected_stages = [s for s in CANONICAL_DAG_STAGES if s != "scene_composer"]
+    assert [s["stage_name"] for s in body["stages"]] == expected_stages
     assert all(s["status"] == "succeeded" for s in body["stages"])
 
 
@@ -260,7 +279,9 @@ async def test_timeline_returns_stage_runs_in_canonical_order(app_under_test):
     body = r.json()
     from common.enums import CANONICAL_DAG_STAGES
 
-    assert [e["stage_name"] for e in body] == list(CANONICAL_DAG_STAGES)
+    # Phase 21 — talking_head pipeline has 11 stages (no scene_composer).
+    expected_stages = [s for s in CANONICAL_DAG_STAGES if s != "scene_composer"]
+    assert [e["stage_name"] for e in body] == expected_stages
     for entry in body:
         for key in (
             "stage_name",

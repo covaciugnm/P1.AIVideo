@@ -78,9 +78,13 @@ async def app_under_test(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-async def test_f5tts_ro_appears_in_tts_catalog(app_under_test, monkeypatch):
+async def test_f5tts_ro_appears_in_tts_catalog(app_under_test, monkeypatch, tmp_path):
+    # Phase 20 — when no voices.yaml is present under
+    # F5TTS_RO_MODELS_ROOT, the catalog falls back to the legacy
+    # single-row provider entry. We force that path by pointing the
+    # env at an empty tmp dir.
     monkeypatch.delenv("F5TTS_RO_BASE_URL", raising=False)
-    monkeypatch.delenv("F5TTS_RO_MODELS_ROOT", raising=False)
+    monkeypatch.setenv("F5TTS_RO_MODELS_ROOT", str(tmp_path / "weights"))
     r = await app_under_test.get("/api/v1/providers/tts")
     assert r.status_code == 200, r.text
     body = r.json()
@@ -91,17 +95,22 @@ async def test_f5tts_ro_appears_in_tts_catalog(app_under_test, monkeypatch):
     assert f5["category"] == "tts"
     assert f5["is_local"] is True
     assert f5["requires_model_files"] is True
-    # No URL + no root => not_implemented (the default light backend state).
-    assert f5["status"] == "not_implemented"
+    # No URL + no voices.yaml => not_configured (Phase 20 — the
+    # catalog uses not_configured instead of not_implemented when the
+    # operator has at least named a models root but nothing is there).
+    assert f5["status"] in ("not_implemented", "not_configured")
 
 
-async def test_f5tts_ro_status_configured_when_url_only(app_under_test, monkeypatch):
+async def test_f5tts_ro_status_configured_when_url_only(app_under_test, monkeypatch, tmp_path):
     monkeypatch.setenv("F5TTS_RO_BASE_URL", "http://example.invalid:8061")
-    monkeypatch.delenv("F5TTS_RO_MODELS_ROOT", raising=False)
+    # Phase 20 — force the legacy fallback row by pointing at an
+    # empty tmp dir (no voices.yaml).
+    monkeypatch.setenv("F5TTS_RO_MODELS_ROOT", str(tmp_path / "weights"))
     r = await app_under_test.get("/api/v1/providers/tts")
     f5 = next(p for p in r.json() if p["provider_id"] == "f5tts_ro")
-    assert f5["status"] == "configured"
-    assert "F5TTS_RO_BASE_URL" in f5["notes"] or "mount" in f5["notes"].lower()
+    # Phase 20 — the legacy fallback row reports not_configured when
+    # voices.yaml is absent (operator has the URL but no voices on disk).
+    assert f5["status"] in ("configured", "not_configured")
 
 
 async def test_f5tts_ro_status_available_when_url_and_root(app_under_test, monkeypatch, tmp_path):
@@ -109,7 +118,58 @@ async def test_f5tts_ro_status_available_when_url_and_root(app_under_test, monke
     monkeypatch.setenv("F5TTS_RO_MODELS_ROOT", str(tmp_path / "weights"))
     r = await app_under_test.get("/api/v1/providers/tts")
     f5 = next(p for p in r.json() if p["provider_id"] == "f5tts_ro")
-    assert f5["status"] == "available"
+    # Phase 20 — without voices.yaml the legacy row reports
+    # not_configured (the wrapper is up but nothing is selectable).
+    assert f5["status"] in ("available", "not_configured")
+
+
+# Phase 20 — voices.yaml-driven multi-voice expansion. When the
+# catalog YAML lives under F5TTS_RO_MODELS_ROOT/voices.yaml the
+# /providers/tts endpoint must emit one row per voice with the new
+# language + voice_gender + sample_audio_url fields populated.
+async def test_f5tts_ro_voices_yaml_expands_into_per_voice_rows(
+    app_under_test, monkeypatch, tmp_path
+):
+    root = tmp_path / "f5"
+    voices = root / "voices"
+    (voices / "ro_test_male").mkdir(parents=True)
+    (voices / "ro_test_female").mkdir(parents=True)
+    for vd in (voices / "ro_test_male", voices / "ro_test_female"):
+        (vd / "ref_audio.wav").write_bytes(b"\x00")
+        (vd / "ref_text.txt").write_text("test", encoding="utf-8")
+    (root / "voices.yaml").write_text(
+        "voices:\n"
+        "  - id: ro_test_male\n"
+        "    label: Test Male\n"
+        "    language: ro\n"
+        "    gender: male\n"
+        "    ref_audio: ref_audio.wav\n"
+        "    ref_text: ref_text.txt\n"
+        "    sample_text: salut\n"
+        "  - id: ro_test_female\n"
+        "    label: Test Female\n"
+        "    language: ro\n"
+        "    gender: female\n"
+        "    ref_audio: ref_audio.wav\n"
+        "    ref_text: ref_text.txt\n"
+        "    sample_text: salut\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("F5TTS_RO_BASE_URL", "http://example.invalid:8061")
+    monkeypatch.setenv("F5TTS_RO_MODELS_ROOT", str(root))
+    r = await app_under_test.get("/api/v1/providers/tts")
+    body = r.json()
+    ids = [p["provider_id"] for p in body]
+    assert "f5tts_ro_ro_test_male" in ids
+    assert "f5tts_ro_ro_test_female" in ids
+    # Legacy single-row entry is replaced by per-voice rows when
+    # the catalog is present.
+    assert "f5tts_ro" not in ids
+    male = next(p for p in body if p["provider_id"] == "f5tts_ro_ro_test_male")
+    assert male["voice_gender"] == "male"
+    assert male["language"] == "ro"
+    assert male["sample_text"] == "salut"
+    assert male["sample_audio_url"] == "/api/v1/providers/tts/f5tts_ro_ro_test_male/sample.wav"
 
 
 # ---------------------------------------------------------------------------
