@@ -19,30 +19,33 @@ export default function RegisterPage() {
     setError(null);
     setOk(null);
     if (form.password !== form.confirm) {
-      setError("Passwords do not match.");
+      setError("Parolele nu coincid.");
       return;
     }
     setBusy(true);
     try {
-      const res = await register(form.username.trim(), form.email.trim(), form.full_name.trim(), form.password);
-      setOk(res.message);
+      await register(form.username.trim(), form.email.trim(), form.full_name.trim(), form.password);
+      setOk("Înregistrarea a fost trimisă. Contul trebuie aprobat de administrator înainte de autentificare.");
     } catch (err) {
-      setError((err as Error).message || "Registration failed.");
+      setError((err as Error).message || "Înregistrare eșuată.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: 420, margin: "6vh auto", padding: 16 }}>
-      <h1>Register</h1>
-      {ok ? (
-        <div data-testid="register-success" style={{ marginTop: 12 }}>
-          <p style={{ color: "var(--accent, #54d39a)" }}>{ok}</p>
-          <p style={{ marginTop: 12 }}><Link href="/login">Back to sign in</Link></p>
-        </div>
-      ) : (
-        <>
+    <div className="public-landing">
+      <div className="public-card public-form">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/AIVideo.png" alt="P1.AIVideo" className="public-logo public-logo-sm" />
+        <h1 className="public-title">P1.AIVideo</h1>
+        <p className="public-tagline">Register</p>
+        {ok ? (
+          <div data-testid="register-success">
+            <p className="public-success">{ok}</p>
+            <div className="public-links"><Link href="/login">Back to sign in</Link></div>
+          </div>
+        ) : (
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <label className="form-row"><span>Username</span>
               <input value={form.username} onChange={(e) => set("username", e.target.value)} disabled={busy} /></label>
@@ -57,16 +60,17 @@ export default function RegisterPage() {
             <p className="muted" style={{ fontSize: 12 }}>
               Min 10 chars, with uppercase, lowercase, digit and a special character.
             </p>
-            <button type="submit" className="btn btn-primary" disabled={busy}>
+            <button type="submit" className="btn btn-primary public-btn" disabled={busy}>
               {busy ? "Submitting…" : "Register"}
             </button>
+            {error && <p data-testid="register-error" className="public-error">{error}</p>}
+            <div className="public-links">
+              <Link href="/login">Sign in</Link>
+              <Link href="/">← Home</Link>
+            </div>
           </form>
-          {error && <p data-testid="register-error" style={{ color: "var(--danger)", marginTop: 10 }}>{error}</p>}
-          <p style={{ marginTop: 16, fontSize: 13 }}>
-            Already have an account? <Link href="/login">Sign in</Link>
-          </p>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

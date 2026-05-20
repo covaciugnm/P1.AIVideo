@@ -111,12 +111,16 @@ def test_language_provider_in_app():
 
 
 def test_layout_renders_language_switcher():
-    layout = _read(FRONTEND / "app" / "layout.tsx")
-    # The switcher itself OR the localised nav wrapper that mounts it.
-    has = "LanguageSwitcher" in layout or "HeaderRight" in layout
+    # Security remediation: the authenticated app shell (header + nav +
+    # language switcher) moved out of layout.tsx into AppFrame.tsx, which
+    # layout.tsx delegates to. The switcher is still globally mounted.
+    shell = _read(FRONTEND / "app" / "layout.tsx") + _read(
+        FRONTEND / "components" / "AppFrame.tsx"
+    )
+    has = "LanguageSwitcher" in shell or "HeaderRight" in shell
     assert has, (
-        "app/layout.tsx must render the LanguageSwitcher (directly or via "
-        "HeaderRight) so the operator can change languages."
+        "The app shell (layout.tsx → AppFrame.tsx) must render the "
+        "LanguageSwitcher (directly or via HeaderRight)."
     )
 
 

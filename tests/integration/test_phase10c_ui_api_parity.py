@@ -131,13 +131,18 @@ def test_pages_anchor_help():
     the h1. The layout-mounted FAB is sufficient — we check the layout
     once.
     """
-    layout = _read(FRONTEND / "app" / "layout.tsx")
-    assert "<HelpButton" in layout, (
-        "Global HelpButton must be rendered in app/layout.tsx so every "
-        "page inherits the help FAB."
+    # Security remediation: the global help FAB moved into AppFrame.tsx
+    # (the authenticated shell that layout.tsx delegates to). Every
+    # authenticated page still inherits it.
+    shell = _read(FRONTEND / "app" / "layout.tsx") + _read(
+        FRONTEND / "components" / "AppFrame.tsx"
     )
-    assert "HelpOverlay" in layout, (
-        "HelpOverlay must be mounted at the layout level."
+    assert "<HelpButton" in shell, (
+        "Global HelpButton must be rendered in the app shell "
+        "(layout.tsx → AppFrame.tsx) so every page inherits the help FAB."
+    )
+    assert "HelpOverlay" in shell, (
+        "HelpOverlay must be mounted at the shell level (AppFrame.tsx)."
     )
 
     # Page-level hints next to h1 — checked individually to make

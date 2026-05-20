@@ -438,3 +438,75 @@ table.simple tbody tr:hover {
   .nav-links { font-size: 14px; gap: var(--space-2); }
   h1 { font-size: 20px; }
 }
+
+/* =============================================================================
+   Public (unauthenticated) pages — landing / login / register.
+   Palette derived from AIVideo.png (deep blue → bright blue → cyan accent).
+   ============================================================================= */
+:root {
+  --aiv-primary: #0050e0;
+  --aiv-secondary: #0030d0;
+  --aiv-accent: #00c8f0;
+  --aiv-bg: #0b1622;
+  --aiv-panel: #14233a;
+  --aiv-text: #e8f1fb;
+}
+.public-main { display: block; min-height: 100vh; }
+.public-landing {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(0, 200, 240, 0.12), transparent 60%),
+    linear-gradient(160deg, var(--aiv-bg) 0%, #0a1830 60%, var(--aiv-secondary) 240%);
+  color: var(--aiv-text);
+}
+.public-card {
+  width: 100%;
+  max-width: 560px;
+  background: rgba(20, 35, 58, 0.72);
+  border: 1px solid rgba(0, 200, 240, 0.22);
+  border-radius: 16px;
+  padding: 36px 32px;
+  text-align: center;
+  box-shadow: 0 18px 60px rgba(0, 20, 60, 0.45);
+  backdrop-filter: blur(6px);
+}
+.public-form { max-width: 420px; text-align: left; }
+.public-form .form-row { margin-top: 10px; }
+.public-form .form-row span { color: var(--aiv-text); font-size: 13px; }
+.public-form input {
+  background: rgba(11, 22, 34, 0.7);
+  border: 1px solid rgba(0, 200, 240, 0.25);
+  color: var(--aiv-text);
+  border-radius: 8px;
+}
+.public-logo { width: min(360px, 70%); height: auto; margin: 0 auto 8px; display: block; }
+.public-logo-sm { width: min(160px, 50%); }
+.public-title { margin: 8px 0 0; font-size: 30px; letter-spacing: 0.5px; color: var(--aiv-text); }
+.public-tagline { margin: 4px 0 14px; color: var(--aiv-accent); font-size: 14px; }
+.public-desc { color: rgba(232, 241, 251, 0.82); font-size: 14px; line-height: 1.6; margin: 10px 0; }
+.public-desc-en { color: rgba(232, 241, 251, 0.55); font-size: 13px; }
+.public-actions { display: flex; gap: 12px; justify-content: center; margin-top: 22px; flex-wrap: wrap; }
+.public-btn { min-width: 120px; padding: 10px 18px; border-radius: 10px; }
+.btn-primary.public-btn, .public-btn.btn-primary {
+  background: var(--aiv-primary); border-color: var(--aiv-primary); color: #fff;
+}
+.public-btn-ghost {
+  background: transparent; border: 1px solid var(--aiv-accent); color: var(--aiv-accent);
+}
+.public-error { color: #ff8a8a; margin-top: 10px; font-size: 13px; }
+.public-success { color: var(--aiv-accent); font-size: 14px; line-height: 1.6; }
+.public-links { display: flex; gap: 16px; justify-content: space-between; margin-top: 16px; font-size: 13px; }
+.public-links a { color: var(--aiv-accent); }
+.auth-splash {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  background: var(--aiv-bg);
+}
+@media (max-width: 480px) {
+  .public-card { padding: 24px 18px; }
+  .public-title { font-size: 24px; }
+}
