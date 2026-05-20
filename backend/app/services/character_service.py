@@ -8,9 +8,12 @@ so that ``jobs.character_id`` references don't dangle.
 """
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -422,6 +425,54 @@ async def soft_delete_character(
     await session.commit()
     await session.refresh(character)
     return character
+
+
+async def count_related(session: AsyncSession, character: Character) -> dict[str, int]:
+    """How many images / videos / jobs a hard purge would remove."""
+    from app.models.job import Job
+    cid = character.id
+    imgs = (await session.execute(
+        select(func.count()).select_from(CharacterImage).where(CharacterImage.character_id == cid)
+    )).scalar_one()
+    vids = (await session.execute(
+        select(func.count()).select_from(CharacterVideo).where(CharacterVideo.character_id == cid)
+    )).scalar_one()
+    jobs = (await session.execute(
+        select(func.count()).select_from(Job).where(Job.character_id == cid)
+    )).scalar_one()
+    return {"images": int(imgs), "videos": int(vids), "jobs": int(jobs)}
+
+
+async def purge_character(session: AsyncSession, character: Character) -> dict[str, int]:
+    """HARD delete: removes the character and EVERYTHING tied to it —
+    identity row, image rows + files on disk, versions, video rows, and the
+    associated job rows. Irreversible. Returns counts of what was removed."""
+    import shutil
+    from sqlalchemy import delete as sa_delete
+
+    from app.models.job import Job
+    from app.services.character_image_service import _character_image_dir
+
+    cid = character.id
+    counts = await count_related(session, character)
+
+    # 1) image files on disk (whole per-character dir)
+    try:
+        img_dir = _character_image_dir(cid)
+        if img_dir.exists():
+            shutil.rmtree(img_dir, ignore_errors=True)
+    except Exception as exc:  # noqa: BLE001 — file cleanup must not block the purge
+        logger.warning("purge: image dir cleanup failed for %s: %s", cid, exc)
+
+    # 2) DB rows (children first, then the character)
+    await session.execute(sa_delete(CharacterImage).where(CharacterImage.character_id == cid))
+    await session.execute(sa_delete(CharacterVideo).where(CharacterVideo.character_id == cid))
+    await session.execute(sa_delete(CharacterVersion).where(CharacterVersion.character_id == cid))
+    await session.execute(sa_delete(Job).where(Job.character_id == cid))
+    await session.delete(character)
+    await session.commit()
+    logger.info("characters.purge.done id=%s removed=%s", cid, counts)
+    return counts
 
 
 async def set_main_reference_image(

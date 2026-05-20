@@ -2,7 +2,7 @@
   "_comment": "P1.AIVideo — PuLID-FLUX identity-consistent workflow (PRIMARY provider, high quality, heavy VRAM → 128GB box). Conditions FLUX.1-dev on the canonical FACE reference (__FACE_REF__) via PuLID. Node class names follow balazik/cubiq ComfyUI_PuLID_Flux — adjust to your installed nodes (see README). Placeholders: __PROMPT__ __NEGATIVE__ __SEED__ __WIDTH__ __HEIGHT__ __STEPS__ __CFG__ __FACE_REF__.",
   "20": {
     "class_type": "UNETLoader",
-    "inputs": { "unet_name": "flux1-dev.safetensors", "weight_dtype": "fp8_e4m3fn" }
+    "inputs": { "unet_name": "flux1-dev-fp8.safetensors", "weight_dtype": "default" }
   },
   "21": {
     "class_type": "DualCLIPLoader",

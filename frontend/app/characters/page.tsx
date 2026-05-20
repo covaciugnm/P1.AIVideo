@@ -11,7 +11,9 @@ import { LoadingState } from "@/components/LoadingState";
 import { StatusBadge } from "@/components/StatusBadge";
 import {
   type CharacterSummary,
+  type DeleteImpact,
   deleteCharacter,
+  getDeleteImpact,
   listCharacters,
 } from "@/lib/characters";
 import { useT } from "@/lib/i18n/LanguageContext";
@@ -24,6 +26,26 @@ export default function CharactersPage() {
   const [error, setError] = useState<Error | null>(null);
   const [busyDeleteId, setBusyDeleteId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // Two-step destructive confirm: stage 1 shows impact, stage 2 final confirm.
+  const [deleteStage, setDeleteStage] = useState(0);
+  const [impact, setImpact] = useState<DeleteImpact | null>(null);
+
+  const startDelete = async (id: string) => {
+    setConfirmDeleteId(id);
+    setDeleteStage(1);
+    setImpact(null);
+    try {
+      setImpact(await getDeleteImpact(id));
+    } catch {
+      setImpact({ character: "", images: 0, videos: 0, jobs: 0 });
+    }
+  };
+
+  const cancelDelete = () => {
+    setConfirmDeleteId(null);
+    setDeleteStage(0);
+    setImpact(null);
+  };
 
   const reload = async () => {
     setLoading(true);
@@ -46,13 +68,13 @@ export default function CharactersPage() {
   const handleDelete = async (id: string) => {
     setBusyDeleteId(id);
     try {
-      await deleteCharacter(id);
+      await deleteCharacter(id, { hard: true }); // purge identity + images + videos + jobs
       await reload();
     } catch (err) {
       setError(err as Error);
     } finally {
       setBusyDeleteId(null);
-      setConfirmDeleteId(null);
+      cancelDelete();
     }
   };
 
@@ -114,21 +136,47 @@ export default function CharactersPage() {
                     <button
                       type="button"
                       className="btn btn-danger"
-                      onClick={() => setConfirmDeleteId(c.id)}
+                      onClick={() => startDelete(c.id)}
                       disabled={busyDeleteId === c.id}
                     >
                       {busyDeleteId === c.id ? t("common.loading") : t("characters.actions.delete")}
                     </button>
                     {confirmDeleteId === c.id && (
-                      <div style={{ marginTop: 8, padding: 8, background: "var(--surface-2)", borderRadius: 6 }}>
-                        <p style={{ marginBottom: 8 }}><strong>{t("characters.deleteConfirmTitle")}</strong></p>
-                        <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>{t("characters.deleteConfirmBody")}</p>
-                        <button type="button" className="btn btn-danger" onClick={() => handleDelete(c.id)}>
-                          {t("common.delete")}
-                        </button>{" "}
-                        <button type="button" className="btn" onClick={() => setConfirmDeleteId(null)}>
-                          {t("common.cancel")}
-                        </button>
+                      <div style={{ marginTop: 8, padding: 12, background: "var(--surface-2)", borderRadius: 6, border: "1px solid var(--danger)", maxWidth: 360, whiteSpace: "normal" }}>
+                        <p style={{ margin: "0 0 6px", fontWeight: 700, color: "var(--danger)" }}>
+                          ⚠ Ștergere definitivă — {c.display_name || c.name}
+                        </p>
+                        <p className="muted" style={{ fontSize: 12, margin: "0 0 8px" }}>
+                          Aceasta șterge IREVERSIBIL tot ce ține de personaj:
+                        </p>
+                        <ul className="muted" style={{ fontSize: 12, margin: "0 0 10px", paddingLeft: 18 }}>
+                          <li>Profilul de identitate</li>
+                          <li>{impact ? impact.images : "…"} imagini (inclusiv fișierele)</li>
+                          <li>{impact ? impact.videos : "…"} videoclipuri</li>
+                          <li>{impact ? impact.jobs : "…"} joburi asociate</li>
+                        </ul>
+                        {deleteStage === 1 ? (
+                          <>
+                            <button type="button" className="btn btn-danger" onClick={() => setDeleteStage(2)}>
+                              Continuă (1/2)
+                            </button>{" "}
+                            <button type="button" className="btn" onClick={cancelDelete}>
+                              {t("common.cancel")}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <p style={{ fontSize: 12, fontWeight: 700, margin: "0 0 8px" }}>
+                              Ești absolut sigur? Acțiunea nu poate fi anulată.
+                            </p>
+                            <button type="button" className="btn btn-danger" onClick={() => handleDelete(c.id)} disabled={busyDeleteId === c.id}>
+                              {busyDeleteId === c.id ? t("common.loading") : "Șterge definitiv tot (2/2)"}
+                            </button>{" "}
+                            <button type="button" className="btn" onClick={cancelDelete}>
+                              {t("common.cancel")}
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </td>

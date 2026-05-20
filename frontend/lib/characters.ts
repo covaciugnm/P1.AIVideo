@@ -431,12 +431,26 @@ export function updateCharacter(
 
 export function deleteCharacter(
   id: string,
-  signal?: AbortSignal,
+  opts?: { hard?: boolean; signal?: AbortSignal },
 ): Promise<CharacterResponse> {
-  return request<CharacterResponse>(`/api/v1/characters/${id}`, {
+  const qs = opts?.hard ? "?hard=true" : "";
+  return request<CharacterResponse>(`/api/v1/characters/${id}${qs}`, {
     method: "DELETE",
-    signal,
+    signal: opts?.signal,
     logLabel: "DELETE /api/v1/characters/:id",
+  });
+}
+
+export interface DeleteImpact {
+  readonly character: string;
+  readonly images: number;
+  readonly videos: number;
+  readonly jobs: number;
+}
+
+export function getDeleteImpact(id: string): Promise<DeleteImpact> {
+  return request<DeleteImpact>(`/api/v1/characters/${id}/delete-impact`, {
+    logLabel: "GET /api/v1/characters/:id/delete-impact",
   });
 }
 

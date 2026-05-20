@@ -183,13 +183,33 @@ async def transition_character_status(
     return await character_service.to_response(session, character)
 
 
+@router.get("/{character_id}/delete-impact")
+async def delete_impact(
+    character_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """What a HARD purge would remove (counts) — for the confirm dialog."""
+    character = await _load_character_or_404(session, character_id)
+    counts = await character_service.count_related(session, character)
+    return {"character": character.name, **counts}
+
+
 @router.delete("/{character_id}", response_model=CharacterResponse)
 async def delete_character(
     character_id: uuid.UUID,
+    hard: bool = False,
     session: AsyncSession = Depends(get_db_session),
 ) -> CharacterResponse:
-    logger.info("characters.delete.start id=%s", character_id)
+    """``hard=false`` (default): soft delete. ``hard=true``: PURGE everything
+    tied to the character — identity, images (+ files), versions, videos, jobs.
+    Irreversible."""
+    logger.info("characters.delete.start id=%s hard=%s", character_id, hard)
     character = await _load_character_or_404(session, character_id)
+    if hard:
+        snapshot = await character_service.to_response(session, character)
+        await character_service.purge_character(session, character)
+        logger.info("characters.purge.done id=%s", character_id)
+        return snapshot
     character = await character_service.soft_delete_character(session, character)
     logger.info("characters.delete.done id=%s", character.id)
     return await character_service.to_response(session, character)

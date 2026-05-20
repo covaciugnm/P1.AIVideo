@@ -2,7 +2,7 @@
   "_comment": "P1.AIVideo — PuLID-FLUX INITIAL (text-to-image) workflow. No identity reference exists yet, so this is plain FLUX.1-dev txt2img used to PROPOSE candidate faces for a new character. Placeholders: __PROMPT__ __SEED__ __WIDTH__ __HEIGHT__ __STEPS__. (FLUX ignores CFG/negative the same way SD does — kept minimal.) See README for model placement.",
   "20": {
     "class_type": "UNETLoader",
-    "inputs": { "unet_name": "flux1-dev.safetensors", "weight_dtype": "fp8_e4m3fn" }
+    "inputs": { "unet_name": "flux1-dev-fp8.safetensors", "weight_dtype": "default" }
   },
   "21": {
     "class_type": "DualCLIPLoader",

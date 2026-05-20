@@ -612,3 +612,8 @@ table.simple tbody tr:hover {
   padding: var(--space-2) var(--space-4);
   font-size: 14px; font-weight: 700; color: var(--text);
 }
+
+/* Character page button rows (tabs + lifecycle): equal-width buttons, both
+   rows span the same full width. Active = green (btn-success), never blue. */
+.char-btnrow { display: flex; gap: 8px; width: 100%; flex-wrap: wrap; }
+.char-btnrow > .btn { flex: 1 1 0; min-width: 120px; }

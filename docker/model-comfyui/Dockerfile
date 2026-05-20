@@ -62,6 +62,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m pip install "numpy<2" cython && \
     python -m pip install insightface onnxruntime opencv-python-headless
+# Phase IG-PuLID — PuLID-Flux custom-node deps. facenet-pytorch pins
+# torch<2.3, so install it WITHOUT deps to keep the cu128 torch 2.7.
+RUN python -m pip install facexlib ftfy timm && \
+    python -m pip install --no-deps facenet-pytorch
 
 EXPOSE 8188
 

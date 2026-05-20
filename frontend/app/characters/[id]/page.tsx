@@ -12,7 +12,6 @@ import { CharacterImageLibrary } from "@/components/CharacterImageLibrary";
 import { CharacterVideoLinks } from "@/components/CharacterVideoLinks";
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { LoadingState } from "@/components/LoadingState";
-import { StatusBadge } from "@/components/StatusBadge";
 import { useRouter } from "next/navigation";
 
 import {
@@ -136,10 +135,6 @@ export default function CharacterDetailPage() {
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <div>
           <h1>{character.display_name || character.name}</h1>
-          <div className="muted" style={{ fontSize: 12 }}>
-            {character.slug} · {t("characters.version", { version: character.version_number })}{" "}
-            · <StatusBadge status={character.status} />
-          </div>
         </div>
         <Link href="/characters" className="btn">{t("common.back")}</Link>
       </header>
@@ -148,11 +143,9 @@ export default function CharacterDetailPage() {
           state (disabled); black + enabled = the next reachable action;
           past states hidden. Clone is always available. */}
       <div
-        className="lifecycle-bar"
-        style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}
+        className="char-btnrow"
+        style={{ marginBottom: 10 }}
       >
-        <span className="lifecycle-title">{t("characters.lifecycle.label")}</span>
-
         {/* În Editare — visible only while editing (current = green). */}
         {isEditing && (
           <button type="button" className="btn btn-success" disabled>
@@ -194,7 +187,7 @@ export default function CharacterDetailPage() {
         </button>
       </div>
       {error && <ErrorMessage title={t("common.error")} message={error} />}
-      <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div className="char-btnrow" style={{ marginBottom: 16 }}>
         {(() => {
           // Tab gating: Identitate always; Biblioteca only when the character
           // is active (identity completed + activated); Video only after the
@@ -214,7 +207,7 @@ export default function CharacterDetailPage() {
             <button
               key={k}
               type="button"
-              className={`btn ${tab === k ? "btn-primary" : ""}`}
+              className={`btn ${tab === k ? "btn-success" : ""}`}
               onClick={() => tabEnabled[k] && setTab(k)}
               disabled={!tabEnabled[k]}
               title={tabHint[k]}

@@ -670,6 +670,13 @@ services:
       - ../models/image/instantid:/comfyui/models/instantid:ro
       - ../models/image/controlnet:/comfyui/models/controlnet:ro
       - ../models/image/insightface:/comfyui/models/insightface:ro
+      # PuLID-FLUX engine: FLUX.1-dev unet + text encoders + VAE + PuLID weights.
+      - ../models/unet:/comfyui/models/unet:ro
+      # clip is read-write: PuLID's EvaClipLoader downloads EVA-CLIP into
+      # models/clip/.cache on first run and caches it on the host afterward.
+      - ../models/clip:/comfyui/models/clip
+      - ../models/vae:/comfyui/models/vae:ro
+      - ../models/pulid:/comfyui/models/pulid:ro
       # ComfyUI scratchpad for outputs + custom workflows the operator
       # might place.
       - artifacts_data:/comfyui/output
