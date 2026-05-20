@@ -120,6 +120,9 @@ export function CharacterIdentityProfile({ character }: { readonly character: Ch
         <Row label="Ton" value={vo.tone} />
         <Row label="Accent" value={vo.accent} />
         <Row label="Limbă" value={vo.preferred_language} />
+        {/* Moved here from the removed Setări tab. */}
+        <Row label="Limbă implicită" value={character.default_language} />
+        <Row label="Provider imagine implicit" value={character.default_image_provider_id} />
       </Chapter>
 
       <Chapter title="E. Aspect fizic">

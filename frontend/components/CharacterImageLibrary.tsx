@@ -443,26 +443,52 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
       {images.length === 0 ? (
         <p className="muted">{t("characters.images.noImages")}</p>
       ) : (
-        <div className="image-grid">
-          {images.map((img) => (
-            <ImageCard
-              key={img.id}
-              image={img}
-              character={character}
-              onAction={handleAction}
-              onDelete={handleDelete}
-              busy={actionBusyId === img.id}
-              feedback={actionFeedback[img.id]}
-            />
-          ))}
+        <div className="imglib-grid">
+          {(() => {
+            // Face reference first, full-body reference second, rest after.
+            const face = images.find((i) => i.id === character.main_reference_image_id);
+            const body = images.find((i) => i.id === character.full_body_reference_image_id);
+            const rest = images.filter(
+              (i) => i.id !== character.main_reference_image_id &&
+                     i.id !== character.full_body_reference_image_id,
+            );
+            const ordered = [face, body, ...rest].filter(Boolean) as CharacterImageResponse[];
+            return ordered.map((img, idx) => (
+              <ImageCard
+                key={img.id}
+                image={img}
+                index={idx + 1}
+                character={character}
+                onAction={handleAction}
+                onDelete={handleDelete}
+                busy={actionBusyId === img.id}
+                feedback={actionFeedback[img.id]}
+              />
+            ));
+          })()}
         </div>
       )}
     </div>
   );
 }
 
+function imageLabel(
+  image: CharacterImageResponse, index: number, isMain: boolean, isFullBody: boolean,
+): { readonly title: string; readonly sub: string } {
+  if (isMain) return {
+    title: `Imagine ${index} — Imagine față de referință`,
+    sub: "Referință principală pentru trăsăturile feței, expresie și identitate vizuală.",
+  };
+  if (isFullBody) return {
+    title: `Imagine ${index} — Imagine corp de referință`,
+    sub: "Referință principală pentru proporții, postură, stil vestimentar și aspect general.",
+  };
+  return { title: `Imagine ${index} — Variație`, sub: "" };
+}
+
 function ImageCard({
   image,
+  index,
   character,
   onAction,
   onDelete,
@@ -470,6 +496,7 @@ function ImageCard({
   feedback,
 }: {
   readonly image: CharacterImageResponse;
+  readonly index: number;
   readonly character: CharacterResponse;
   readonly onAction: (
     image: CharacterImageResponse,
@@ -487,55 +514,41 @@ function ImageCard({
   const t = useT();
   const isMain = character.main_reference_image_id === image.id;
   const isFullBody = character.full_body_reference_image_id === image.id;
+  const label = imageLabel(image, index, isMain, isFullBody);
   return (
-    <div className="image-card card" style={{ marginBottom: 12 }}>
-      {/* Phase 16B — wrap image in <a target="_blank"> so clicking the
-          thumbnail opens the full-size image in a new tab. Tooltip
-          surfaces the prompt for quick context. */}
+    <div className={`imglib-card${isMain || isFullBody ? " imglib-ref" : ""}`}>
       <a
         href={characterImageContentUrl(character.id, image.id)}
         target="_blank"
         rel="noreferrer"
         title={t("characters.images.openFull")}
-        style={{ display: "inline-block", cursor: "zoom-in" }}
+        style={{ display: "block", cursor: "zoom-in" }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={characterImageContentUrl(character.id, image.id)}
-          alt={image.prompt ?? "character image"}
-          style={{ maxWidth: 220, borderRadius: 6, display: "block" }}
-        />
+        <img src={characterImageContentUrl(character.id, image.id)} alt={label.title} />
       </a>
-      <div style={{ marginTop: 8 }}>
-        {isMain && (
-          <span className="badge badge-success">{t("characters.images.mainReferenceBadge")}</span>
+      <div>
+        {/* Clean description — NOT the raw prompt. */}
+        <p className="imglib-desc"><strong>{label.title}</strong></p>
+        {label.sub && <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>{label.sub}</p>}
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "4px 0" }}>
+          {isMain && <span className="badge badge-success">{t("characters.images.mainReferenceBadge")}</span>}
+          {isFullBody && <span className="badge badge-success">{t("characters.images.fullBodyReferenceBadge")}</span>}
+          <span className="badge">{image.status}</span>
+          {typeof image.identity_similarity_score === "number" && (
+            <span className="badge badge-info">
+              {t("characters.images.identityScore", { score: image.identity_similarity_score.toFixed(3) })}
+              {image.identity_drift_warning ? " ⚠" : ""}
+            </span>
+          )}
+        </div>
+        {/* Raw generation prompt hidden behind a collapsible (not clutter). */}
+        {image.prompt && (
+          <details style={{ fontSize: 11, margin: "2px 0 6px" }}>
+            <summary className="muted" style={{ cursor: "pointer" }}>Detalii prompt</summary>
+            <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{image.prompt}</p>
+          </details>
         )}
-        {isFullBody && (
-          <span className="badge badge-success" style={{ marginLeft: 4 }}>
-            {t("characters.images.fullBodyReferenceBadge")}
-          </span>
-        )}
-        {image.role && (
-          <span className="badge" style={{ marginLeft: 4 }}>
-            {t(`characters.images.role_${image.role}`)}
-          </span>
-        )}
-        <p className="muted" style={{ fontSize: 11 }}>
-          {t("characters.images.generatedWith", { provider: image.provider_id ?? "?" })}
-        </p>
-        {typeof image.identity_similarity_score === "number" && (
-          <p className="muted" style={{ fontSize: 11 }}>
-            {t("characters.images.identityScore", {
-              score: image.identity_similarity_score.toFixed(3),
-            })}
-            {image.identity_drift_warning && (
-              <span style={{ color: "var(--danger)", marginLeft: 6 }}>
-                ⚠ {t("characters.images.driftWarning")}
-              </span>
-            )}
-          </p>
-        )}
-        {image.prompt && <p style={{ fontSize: 12 }}>{image.prompt}</p>}
         {/* Phase 17F — when accepted, lock all destructive buttons. */}
         {image.status === "accepted" ? (
           <div
@@ -598,10 +611,6 @@ function ImageCard({
             {feedback}
           </p>
         )}
-        <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-          Status: <strong>{image.status}</strong>{" "}
-          {image.is_main_reference && "★"}
-        </p>
         {/* Phase 17 — generate video using this image */}
         {(() => {
           const name = (character.display_name ?? character.name ?? "video")

@@ -26,7 +26,7 @@ import {
 } from "@/lib/characters";
 import { useT } from "@/lib/i18n/LanguageContext";
 
-type Tab = "profile" | "images" | "videos" | "settings";
+type Tab = "profile" | "images" | "videos";
 
 export default function CharacterDetailPage() {
   const params = useParams<{ id: string }>();
@@ -195,7 +195,7 @@ export default function CharacterDetailPage() {
       </div>
       {error && <ErrorMessage title={t("common.error")} message={error} />}
       <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {(["profile", "images", "videos", "settings"] as Tab[]).map((k) => (
+        {(["profile", "images", "videos"] as Tab[]).map((k) => (
           <button
             key={k}
             type="button"
@@ -245,21 +245,6 @@ export default function CharacterDetailPage() {
             {character.video_count} {t("characters.videosCount").toLowerCase()}
           </p>
           <CharacterVideoLinks characterId={character.id} />
-        </>
-      )}
-      {tab === "settings" && (
-        <>
-          <CharacterForm
-            value={form}
-            onChange={setForm}
-            availableVoices={availableVoices}
-            identityLocked={identityLocked}
-          />
-          <div style={{ marginTop: 16 }}>
-            <button type="button" className="btn btn-primary" onClick={handleSave} disabled={busy}>
-              {busy ? t("common.submitting") : t("common.save")}
-            </button>
-          </div>
         </>
       )}
     </div>
