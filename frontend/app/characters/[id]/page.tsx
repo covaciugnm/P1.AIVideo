@@ -192,11 +192,6 @@ export default function CharacterDetailPage() {
         >
           {t("characters.lifecycle.clone")}
         </button>
-        {identityLocked && (
-          <span className="muted" style={{ fontSize: 12 }}>
-            {t("characters.lifecycle.lockedHint")}
-          </span>
-        )}
       </div>
       {error && <ErrorMessage title={t("common.error")} message={error} />}
       <div className="tabs" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
