@@ -60,14 +60,15 @@ export default function CharactersPage() {
     <div>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h1>
-          {t("characters.title")}
+          <span title={t("characters.pageHelp")} style={{ cursor: "help" }}>
+            {t("characters.title")}
+          </span>
           <HelpHint slug="characters" />
         </h1>
         <Link href="/characters/new" className="btn btn-primary">
           {t("characters.addNew")}
         </Link>
       </header>
-      <p className="muted" style={{ marginBottom: 16 }}>{t("characters.pageHelp")}</p>
       {error && (
         <ErrorMessage
           title={t("jobs.failedToLoad")}

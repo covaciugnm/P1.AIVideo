@@ -472,6 +472,17 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
   );
 }
 
+// Image display name — same convention as videos: <Name>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>
+function imageDisplayName(character: CharacterResponse, createdAt?: string): string {
+  const name = (character.display_name || character.name || "Personaj")
+    .replace(/\s+/g, ".").replace(/[^\w.\-]/g, "").replace(/\.{2,}/g, ".").replace(/^\.|\.$/g, "") || "Personaj";
+  const d = createdAt ? new Date(createdAt) : new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const h12 = d.getUTCHours() % 12 || 12;
+  const ampm = d.getUTCHours() < 12 ? "AM" : "PM";
+  return `${name}.${pad(h12)}.${pad(d.getUTCMinutes())}.${ampm}.${d.getUTCFullYear()}.${pad(d.getUTCMonth() + 1)}.${pad(d.getUTCDate())}`;
+}
+
 function imageLabel(
   image: CharacterImageResponse, index: number, isMain: boolean, isFullBody: boolean,
 ): { readonly title: string; readonly sub: string } {
@@ -528,7 +539,10 @@ function ImageCard({
         <img src={characterImageContentUrl(character.id, image.id)} alt={label.title} />
       </a>
       <div>
-        {/* Clean description — NOT the raw prompt. */}
+        {/* Video-style image name: <Name>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>. */}
+        <p className="imglib-desc" style={{ fontFamily: "var(--mono-stack)", fontSize: 12 }}>
+          <strong>{imageDisplayName(character, image.created_at)}</strong>
+        </p>
         <p className="imglib-desc"><strong>{label.title}</strong></p>
         {label.sub && <p className="muted" style={{ fontSize: 12, margin: "0 0 4px" }}>{label.sub}</p>}
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "4px 0" }}>
