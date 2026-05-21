@@ -292,11 +292,12 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             setTextScriptLlmProvider((prev) => prev ?? pick.provider_id);
           }
         }
-        // Default video engine = best-quality RUNNABLE talking-head/lip-sync
-        // engine. Quality order (best first); fall back to first usable.
-        // Quality order (best first), among engines whose weights are present:
-        // Hallo2 (HD/4K) > MuseTalk > LivePortrait > wav2lip. echomimic last (no weights).
-        const VIDEO_QUALITY = ["hallo", "musetalk", "liveportrait", "wav2lip", "sadtalker", "echomimic"];
+        // Default video engine = best RUNNABLE talking-head/lip-sync engine;
+        // fall back to first usable. On a 24GB GPU MuseTalk is the sweet spot
+        // (good quality, ~6x faster than Hallo2 — ~32s vs ~190s per 3s audio);
+        // Hallo2 (HD/4K, best but slow/diffusion) next, then LivePortrait, then
+        // wav2lip (fast/weak). echomimic last (no weights). All verified e2e.
+        const VIDEO_QUALITY = ["musetalk", "hallo", "liveportrait", "wav2lip", "sadtalker", "echomimic"];
         const vids = (p.video_generator ?? []).filter(isUsableProvider);
         const bestVideo =
           VIDEO_QUALITY.map((id) => vids.find((v) => v.provider_id === id)).find(Boolean)
