@@ -587,6 +587,38 @@ async def get_wrapper_status() -> WrapperStatusResponse:
     )
 
 
+@router.get("/system/gpu")
+async def get_gpu_status() -> dict:
+    """Live GPU VRAM (proxied from the ComfyUI device stats). The light
+    backend has no GPU, so we read the GPU-enabled wrapper's view."""
+    import os
+    import httpx
+
+    base = os.environ.get("COMFYUI_BASE_URL", "http://aivideo-model-comfyui-1:8188")
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.get(f"{base}/system_stats")
+            r.raise_for_status()
+            devices = r.json().get("devices", [])
+        if not devices:
+            return {"available": False, "reason": "no_devices"}
+        d = devices[0]
+        total = int(d.get("vram_total", 0))
+        free = int(d.get("vram_free", 0))
+        used = max(0, total - free)
+        gb = lambda b: round(b / (1024 ** 3), 2)  # noqa: E731
+        return {
+            "available": True,
+            "name": d.get("name", ""),
+            "vram_total_gb": gb(total),
+            "vram_used_gb": gb(used),
+            "vram_free_gb": gb(free),
+            "used_percent": round(used / total * 100) if total else 0,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+
 @router.get(
     "/system/logs/backend",
     response_model=BackendLogsResponse,

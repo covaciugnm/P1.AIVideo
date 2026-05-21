@@ -21,6 +21,7 @@ from app.models.job import Job, JobStatus
 from app.models.operator_settings import OperatorSettings
 from app.models.stage_run import StageRun
 from app.models.security_audit import SecurityAuditEvent
+from app.models.tts_job import TtsJob
 from app.models.user import ROLES, USER_STATUSES, User
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "JobStatus",
     "OperatorSettings",
     "StageRun",
+    "TtsJob",
 ]
