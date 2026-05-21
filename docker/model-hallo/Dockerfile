@@ -24,7 +24,8 @@ RUN python -m pip install --extra-index-url https://download.pytorch.org/whl/cu1
 
 RUN git clone --depth 1 https://github.com/fudan-generative-vision/hallo2.git /opt/hallo-src && \
     cd /opt/hallo-src && python -m pip install --no-build-isolation \
-      "diffusers>=0.30" "transformers>=4.40" "accelerate>=1.0" "einops>=0.7" \
+      "diffusers==0.32.2" "transformers==4.39.2" "tokenizers<0.19" \
+      "accelerate>=0.28" "einops>=0.7" \
       "omegaconf>=2.3" "opencv-python-headless>=4.5" "librosa>=0.10" \
       "ffmpeg-python>=0.2" "scipy>=1.10" "decord>=0.6"
 # hallo2 inference runtime deps the line above misses (pydub/icecream/
