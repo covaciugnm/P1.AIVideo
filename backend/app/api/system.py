@@ -587,6 +587,33 @@ async def get_wrapper_status() -> WrapperStatusResponse:
     )
 
 
+@router.get("/system/services")
+async def list_services(actor=Depends(require_super_admin)) -> dict:
+    """Docker service catalog + per-service mode (off/mixed/permanent) +
+    live running state. Super-admin only."""
+    from app.services import docker_control
+    return {"services": docker_control.catalog(), "modes": list(docker_control.VALID_MODES)}
+
+
+@router.put("/system/services/{service}")
+async def set_service_mode(
+    service: str, body: dict, actor=Depends(require_super_admin),
+) -> dict:
+    """Set a service's mode. ``apply=true`` also starts/stops it to match."""
+    from app.services import docker_control
+    mode = str(body.get("mode", "")).strip()
+    try:
+        docker_control.set_mode(service, mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if body.get("apply"):
+        if mode == "permanent" and not docker_control.is_running(service):
+            docker_control.start(service)
+        elif mode == "off" and docker_control.is_running(service):
+            docker_control.stop(service)
+    return {"service": service, "mode": mode, "running": docker_control.is_running(service)}
+
+
 @router.get("/system/gpu")
 async def get_gpu_status() -> dict:
     """Live GPU VRAM (proxied from the ComfyUI device stats). The light

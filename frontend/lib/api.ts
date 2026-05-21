@@ -123,7 +123,7 @@ export function humanizeApiDetail(raw: unknown): string {
 }
 
 interface RequestOptions {
-  readonly method?: "GET" | "POST" | "PATCH" | "DELETE";
+  readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   readonly body?: BodyInit | null;
   readonly headers?: Record<string, string>;
   readonly signal?: AbortSignal;
@@ -710,6 +710,28 @@ export async function generateTts(
     }
     throw err;
   }
+}
+
+// --- Docker service control (on-demand start/stop, per-service mode) ------
+export interface DockerService {
+  readonly service: string;
+  readonly container: string;
+  readonly mode: "off" | "mixed" | "permanent";
+  readonly running: boolean;
+}
+
+export function getSystemServices(signal?: AbortSignal): Promise<{ services: DockerService[]; modes: string[] }> {
+  return request<{ services: DockerService[]; modes: string[] }>("/api/v1/system/services", { signal });
+}
+
+export function setServiceMode(
+  service: string, mode: string, apply = false,
+): Promise<{ service: string; mode: string; running: boolean }> {
+  return request("/api/v1/system/services/" + encodeURIComponent(service), {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ mode, apply }),
+  });
 }
 
 // --- Async TTS jobs (DB-backed background generation) ---------------------

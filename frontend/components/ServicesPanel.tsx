@@ -37,6 +37,68 @@ const CATEGORIES: readonly { key: keyof ProvidersResponse; title: string }[] = [
   { key: "image_processor", title: "Procesare imagini" },
 ];
 
+const MODE_LABELS: Record<string, string> = {
+  off: "Oprit", mixed: "Mixt", permanent: "Permanent",
+};
+
+function DockerServices() {
+  const [services, setServices] = useState<api.DockerService[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const reload = async () => {
+    try { setServices((await api.getSystemServices()).services); } catch { /* ignore */ }
+  };
+  useEffect(() => {
+    void reload();
+    const id = window.setInterval(reload, 8000); // live running state
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const change = async (svc: string, mode: string) => {
+    setBusy(svc);
+    try { await api.setServiceMode(svc, mode, true); await reload(); }
+    finally { setBusy(null); }
+  };
+
+  if (!services) return null;
+  return (
+    <section className={styles.group}>
+      <h4 className={styles.groupTitle}>Servicii Docker (GPU)</h4>
+      <p className={styles.intro}>
+        Oprit = niciodată · Mixt = pornit la cerere, oprit la 10s după sarcină · Permanent = mereu pornit.
+      </p>
+      <ul className={styles.list}>
+        {services.map((s) => (
+          <li key={s.service} className={styles.row} style={{ gridTemplateColumns: "14px 1fr auto" }}>
+            <span className={s.running ? styles.dotGreen : styles.dotRed} aria-hidden />
+            <span className={styles.name}>{s.service.replace("model-", "")}</span>
+            <span style={{ display: "inline-flex", gap: 4 }}>
+              {(["off", "mixed", "permanent"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className="btn"
+                  disabled={busy === s.service}
+                  onClick={() => change(s.service, m)}
+                  style={{
+                    fontSize: 11, padding: "3px 7px",
+                    background: s.mode === m ? "var(--accent-strong)" : "var(--surface-2)",
+                    color: s.mode === m ? "#fff" : "var(--text-muted)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  {MODE_LABELS[m]}
+                </button>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function ServicesPanel() {
   const [data, setData] = useState<ProvidersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +131,7 @@ export function ServicesPanel() {
       <p className={styles.intro}>
         Toate serviciile (open-source sau API). 🟢 funcțional · 🔴 de implementat.
       </p>
+      <DockerServices />
       {CATEGORIES.map(({ key, title }) => {
         const list = (data[key] ?? []) as readonly ProviderInfo[];
         if (list.length === 0) return null;

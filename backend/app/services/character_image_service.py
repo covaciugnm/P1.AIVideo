@@ -505,6 +505,8 @@ async def generate_initial_character_image(
     )
     pos, neg = build_initial_prompt(character.profile_json)
     provider = get_image_provider("comfyui_local")
+    from app.services import docker_control
+    await docker_control.ensure_started("model-comfyui")  # on-demand start (mixed mode)
     inp = ImageGenerationInput(
         prompt=pos, negative_prompt=neg, model_id=None, seed=seed,
         width=width, height=height, steps=steps, guidance_scale=guidance_scale,
@@ -520,6 +522,7 @@ async def generate_initial_character_image(
         )
         raise
     _cb_record_success(character.id)
+    docker_control.schedule_stop_if_mixed("model-comfyui")  # stop ~10s after success
     return await _persist_generated_image(
         session, character, result,
         prompt=pos, negative_prompt=neg, provider_id="comfyui_local",
@@ -583,6 +586,8 @@ async def generate_consistent_character_image(
         character.id, mode="consistent", workflow=workflow_name, tier=sel.tier,
     )
     provider = get_image_provider("comfyui_local")
+    from app.services import docker_control
+    await docker_control.ensure_started("model-comfyui")  # on-demand start (mixed mode)
     inp = ImageGenerationInput(
         prompt=pos, negative_prompt=neg, model_id=None, seed=seed,
         width=width, height=height, steps=steps, guidance_scale=guidance_scale,
@@ -601,6 +606,7 @@ async def generate_consistent_character_image(
         )
         raise
     _cb_record_success(character.id)
+    docker_control.schedule_stop_if_mixed("model-comfyui")  # stop ~10s after success
     row = await _persist_generated_image(
         session, character, result,
         prompt=pos, negative_prompt=neg, provider_id="comfyui_local",

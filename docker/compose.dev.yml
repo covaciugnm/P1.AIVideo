@@ -118,6 +118,10 @@ services:
       dockerfile: docker/backend/Dockerfile
     image: aivideo-backend:latest
     <<: *env-defaults
+    # Grant the non-root app user access to the mounted Docker socket
+    # (host 'docker' group gid) so on-demand container start/stop works.
+    group_add:
+      - "${DOCKER_GID:-984}"
     environment:
       # Connection strings point at the compose service names — not localhost.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-aivideo}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-aivideo}
@@ -209,6 +213,10 @@ services:
       # backend reads + substitutes these before POSTing to ComfyUI. See
       # workflows/comfyui/README.md.
       - ../workflows:/workflows:ro
+      # On-demand Docker control: the backend starts/stops GPU model
+      # containers (mixed mode) via the Engine socket. Grants host-level
+      # control — acceptable on the single-GPU dev box.
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 10s
