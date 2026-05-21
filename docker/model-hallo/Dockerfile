@@ -42,6 +42,12 @@ RUN python -m pip install --no-cache-dir "numpy<2" cython && \
     python -m pip install --no-cache-dir --no-deps "xformers==0.0.31" && \
     python -m pip install --no-cache-dir "numpy<2"
 
+# mediapipe (used by hallo2 face analysis) dlopen's OpenGL ES libs at runtime.
+# Late layer so it doesn't invalidate the heavy pip layers above.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgles2-mesa libegl1 libgl1-mesa-glx \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY docker/model-hallo/requirements.txt /opt/hallo-wrapper/requirements.txt
 RUN python -m pip install --no-cache-dir -r /opt/hallo-wrapper/requirements.txt
 COPY docker/model-hallo/server.py /opt/hallo-wrapper/server.py
