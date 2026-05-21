@@ -634,3 +634,8 @@ table.simple tbody tr:hover {
 /* Section headers inside the structured generation form. */
 .gen-group { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
   color: var(--accent); margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+
+/* Create-video: stack voice controls (label → select → full-width button). */
+.voice-row { display: flex; flex-direction: column; gap: 6px; align-items: stretch; margin-bottom: 10px; }
+.voice-row > button, .voice-row > .btn { width: 100%; }
+.voice-row select, .voice-row input { width: 100%; box-sizing: border-box; }

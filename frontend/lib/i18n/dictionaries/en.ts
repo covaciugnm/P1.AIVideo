@@ -328,7 +328,7 @@ export const DICTIONARY_EN: Dictionary = {
     listen: "Listen",
     uploadAudio: "Upload audio",
     uploadImage: "Upload image",
-    submit: "Create job",
+    submit: "Create video",
     submitting: "Creating job…",
     providerNotConfigured: "Provider is not configured.",
     providerRequiresGpu: "This provider requires a GPU.",

@@ -274,15 +274,23 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       try {
         const p = await api.getProviders(controller.signal);
         setProviders(p);
-        // Phase 24 — default the LLM to the backend's preferred provider
-        // (Qwen3.6 27b sorts first) when the operator has no saved
-        // Settings default. Other LLMs stay selectable in the dropdown.
+        // Default LLM = Qwen3.6 27b when available; else first usable.
+        // Applies to both the scenariu + text-script pickers.
         if (!settings.defaultLlmProvider) {
-          const firstUsableLlm = (p.llm ?? []).find(isUsableProvider);
-          if (firstUsableLlm) {
-            setLlmProvider((prev) => prev ?? firstUsableLlm.provider_id);
+          const usable = (p.llm ?? []).filter(isUsableProvider);
+          const qwen = usable.find((x) =>
+            /qwen\s*3\.?6/i.test(`${x.provider_id} ${x.label ?? ""}`),
+          );
+          const pick = qwen ?? usable[0];
+          if (pick) {
+            setLlmProvider((prev) => prev ?? pick.provider_id);
+            setTextScriptLlmProvider((prev) => prev ?? pick.provider_id);
           }
         }
+        // Default video engine = first runnable (quality-ranked by the
+        // backend catalog order, e.g. SadTalker before Wav2Lip).
+        const firstVideo = (p.video_generator ?? []).find(isUsableProvider);
+        if (firstVideo) setVideoProvider((prev) => prev ?? firstVideo.provider_id);
       } catch {
         // Providers panel is optional; the form still works.
       }
@@ -1504,10 +1512,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                 </span>
               )}
             </span>
-            {/* Phase 18 iter 2 + Phase 20 iter 2 — LLM Text scenariu
-                picker + Generate button on a SINGLE compact row. */}
-            <div className="field" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
-              <label title={t("createJob.textScriptProviderHelp")} style={{ margin: 0, whiteSpace: "nowrap" }}>
+            {/* Stacked: model picker on its own line, button full-width below. */}
+            <div className="field voice-row">
+              <label title={t("createJob.textScriptProviderHelp")} style={{ margin: 0 }}>
                 {t("createJob.textScriptProvider")}:
               </label>
               <select
@@ -1515,7 +1522,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                 value={textScriptLlmProvider ?? ""}
                 onChange={(e) => setTextScriptLlmProvider(e.target.value || null)}
                 title={t("createJob.textScriptProviderHelp")}
-                style={{ width: "auto", maxWidth: 320 }}
+                style={{ width: "100%" }}
               >
                 <option value="">{t("createJob.providerInherit")}</option>
                 {(providers?.llm ?? [])
@@ -1563,10 +1570,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               )}
             </div>
 
-            {/* Phase 18 iter 2 + Phase 20 iter 2 — TTS picker (gender +
-                language filter) + Generate audio button on a SINGLE row. */}
-            <div className="field" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
-              <label title={t("createJob.ttsProviderHelp")} style={{ margin: 0, whiteSpace: "nowrap" }}>
+            {/* Stacked: TTS (fixed for the character) → Generare Audio button. */}
+            <div className="field voice-row">
+              <label title={t("createJob.ttsProviderHelp")} style={{ margin: 0 }}>
                 {t("createJob.ttsProvider")}:
               </label>
               {lockedVoice ? (
@@ -1967,6 +1973,34 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             />
             <span>{t("createJob.consentConfirm")}</span>
           </label>
+        </div>
+      </section>
+      )}
+
+      {/* Video section (from-character flow): engine + lip-sync selectors,
+          default = first runnable ranked by quality; generate button to the right. */}
+      {fromCharacter && (
+      <section className="card">
+        <h2>Video</h2>
+        <div className="voice-row">
+          <label style={{ margin: 0 }}>Motor video</label>
+          <select
+            value={videoProvider ?? ""}
+            onChange={(e) => setVideoProvider(e.target.value || null)}
+            style={{ width: "100%" }}
+          >
+            <option value="">{t("createJob.providerInherit")}</option>
+            {(providers?.video_generator ?? [])
+              .filter((p) => isUsableProvider(p) || p.provider_id === videoProvider)
+              .map((p) => (
+                <option key={p.provider_id} value={p.provider_id}>
+                  {p.label} ({t(`providerStatuses.${p.status}` as never)})
+                </option>
+              ))}
+          </select>
+          <small className="muted" style={{ fontSize: 11 }}>
+            Lip-sync este realizat de motorul video selectat (ex. SadTalker / Wav2Lip).
+          </small>
         </div>
       </section>
       )}
