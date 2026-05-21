@@ -29,14 +29,44 @@ _STOP_DELAY = float(os.environ.get("SERVICE_STOP_DELAY_SECONDS", "10"))
 SERVICE_CONTAINERS: dict[str, str] = {
     "model-comfyui": "aivideo-model-comfyui-1",
     "model-wav2lip": "aivideo-model-wav2lip-1",
+    "model-hallo": "aivideo-model-hallo-1",
+    "model-musetalk": "aivideo-model-musetalk-1",
+    "model-liveportrait": "aivideo-model-liveportrait-1",
+    "model-echomimic": "aivideo-model-echomimic-1",
     "model-sadtalker": "aivideo-model-sadtalker-1",
     "model-tts-ro": "aivideo-model-tts-ro-1",
     "model-flux": "aivideo-model-flux-1",
+}
+# video provider_id -> docker service (for on-demand start at job creation).
+VIDEO_PROVIDER_SERVICE: dict[str, str] = {
+    "wav2lip": "model-wav2lip", "hallo": "model-hallo", "musetalk": "model-musetalk",
+    "liveportrait": "model-liveportrait", "echomimic": "model-echomimic", "sadtalker": "model-sadtalker",
+}
+# GPU consumers — only ONE should run at a time on a single GPU. tts-ro is CPU.
+GPU_SERVICES = {
+    "model-comfyui", "model-wav2lip", "model-hallo", "model-musetalk",
+    "model-liveportrait", "model-echomimic", "model-sadtalker", "model-flux",
+}
+# Internal readiness URLs (backend → container) to confirm the HTTP server is up.
+_READY_URL = {
+    "model-comfyui": "http://aivideo-model-comfyui-1:8188/system_stats",
+    "model-wav2lip": "http://aivideo-model-wav2lip-1:8080/health",
+    "model-hallo": "http://aivideo-model-hallo-1:8080/health",
+    "model-musetalk": "http://aivideo-model-musetalk-1:8080/health",
+    "model-liveportrait": "http://aivideo-model-liveportrait-1:8080/health",
+    "model-echomimic": "http://aivideo-model-echomimic-1:8080/health",
+    "model-sadtalker": "http://aivideo-model-sadtalker-1:8080/health",
+    "model-tts-ro": "http://aivideo-model-tts-ro-1:8080/health",
+    "model-flux": "http://aivideo-model-flux-1:8080/health",
 }
 VALID_MODES = ("off", "mixed", "permanent")
 _DEFAULT_MODES = {
     "model-comfyui": "mixed",
     "model-wav2lip": "mixed",
+    "model-hallo": "mixed",
+    "model-musetalk": "mixed",
+    "model-liveportrait": "mixed",
+    "model-echomimic": "mixed",
     "model-sadtalker": "off",
     "model-tts-ro": "permanent",
     "model-flux": "off",
@@ -126,21 +156,48 @@ def stop(service: str, t: int = 3) -> bool:
         return False
 
 
-async def ensure_started(service: str) -> bool:
-    """Start the service if its mode allows it (mixed/permanent). Waits for the
-    container to report running + a short warmup. Returns True if usable."""
-    mode = load_modes().get(service, "off")
+def _http_ready(service: str) -> bool:
+    url = _READY_URL.get(service)
+    if not url:
+        return True  # no probe defined → trust the running state
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=4) as r:
+            return r.status < 500
+    except Exception:
+        return False
+
+
+async def ensure_started(service: str, *, ready_timeout: float = 180.0) -> bool:
+    """Start the service if its mode allows it (mixed/permanent), serialising
+    the GPU: any OTHER running GPU service in 'mixed' mode is stopped first so
+    VRAM is free. Then wait until the container is running AND its HTTP server
+    answers (real readiness, not a fixed sleep). Returns True if usable."""
+    modes = load_modes()
+    mode = modes.get(service, "off")
     if mode == "off":
         return False
-    if is_running(service):
-        return True
-    await asyncio.to_thread(start, service)
-    # wait for running state (up to ~40s)
-    for _ in range(20):
-        if await asyncio.to_thread(is_running, service):
-            await asyncio.sleep(3)  # brief warmup for the HTTP server
+
+    # GPU serialisation — free VRAM by stopping other running mixed GPU services.
+    if service in GPU_SERVICES:
+        for other in GPU_SERVICES:
+            if other == service:
+                continue
+            if modes.get(other) == "mixed" and await asyncio.to_thread(is_running, other):
+                logger.info("gpu serialise: stopping %s before %s", other, service)
+                await asyncio.to_thread(stop, other)
+
+    if not await asyncio.to_thread(is_running, service):
+        await asyncio.to_thread(start, service)
+
+    # Wait for container running + HTTP readiness (cold start + model load).
+    deadline = asyncio.get_event_loop().time() + ready_timeout
+    while asyncio.get_event_loop().time() < deadline:
+        if await asyncio.to_thread(is_running, service) and await asyncio.to_thread(_http_ready, service):
+            logger.info("service %s ready", service)
             return True
-        await asyncio.sleep(2)
+        await asyncio.sleep(3)
+    logger.warning("service %s not ready within %ss", service, ready_timeout)
     return False
 
 

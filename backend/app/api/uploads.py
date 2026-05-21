@@ -661,6 +661,20 @@ async def create_job_from_inputs(
     except character_service.CharacterRuleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    # On-demand: start the chosen video engine now so it's ready by the time
+    # the lipsync stage runs (the DAG processes async). GPU is serialised
+    # inside ensure_started (stops other mixed GPU services first).
+    try:
+        import asyncio as _aio
+        from app.services import docker_control
+        vp = (payload.provider_selection.video_provider_id
+              if payload.provider_selection else None)
+        svc = docker_control.VIDEO_PROVIDER_SERVICE.get((vp or "").strip())
+        if svc:
+            _aio.create_task(docker_control.ensure_started(svc))
+    except Exception as exc:  # noqa: BLE001 — best-effort; never block job creation
+        logger.warning("video engine on-demand start skipped: %s", exc)
+
     # Phase 17G — fallback: if no script_text in the request body but
     # we have a provided audio artifact with TTS metadata, recover the
     # script_text from the audio artifact's metadata_json so subtitles
