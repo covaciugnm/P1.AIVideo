@@ -257,6 +257,9 @@ export interface GenerateConsistentRequest {
   readonly outfit_prompt?: string;
   readonly location_prompt?: string;
   readonly season?: string;
+  readonly time_of_day?: string;
+  readonly weather?: string;
+  readonly head_wear?: string;
   readonly mood?: string;
   readonly pose?: string;
   readonly framing?: string;

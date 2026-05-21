@@ -584,7 +584,7 @@ function ImageCard({
             )}
           </div>
         ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+          <div className="imglib-actions">
             <button type="button" className="btn btn-secondary" onClick={() => onAction(image, "accept")} disabled={busy}>
               {busy ? "…" : t("characters.images.accept")}
             </button>
@@ -637,19 +637,16 @@ function ImageCard({
           const n = (character.video_count ?? 0) + 1;
           const brief = `${name}_video_${n}`;
           return (
+            <div className="imglib-actions" style={{ marginTop: 6 }}>
             <Link
               href={`/jobs/new?character_id=${character.id}&brief=${encodeURIComponent(brief)}`}
-              className="btn btn-primary"
-              style={{
-                display: "inline-block", marginTop: 8,
-                padding: "8px 12px", fontSize: 13, textDecoration: "none",
-                background: "var(--accent, #4a90e2)", color: "white",
-                borderRadius: 6,
-              }}
+              className="btn btn-primary imglib-action-wide"
+              style={{ textDecoration: "none", background: "var(--accent, #4a90e2)", color: "white" }}
               title="Pipeline-ul video este momentan oprit / va fi activat pe serverul de 128GB. Acest buton pregătește un job video pe baza acestei imagini."
             >
               🎬 Generează video pe baza acestei imagini
             </Link>
+            </div>
           );
         })()}
       </div>
@@ -676,9 +673,12 @@ function IdentityGenPanel({
     outfit_prompt: "",
     location_prompt: "",
     season: "",
+    time_of_day: "",
+    weather: "",
+    head_wear: "",
     mood: "",
     pose: "",
-    framing: "",
+    framing: "full body, full length",
     aspect_ratio: "portrait",
     quality_preset: "standard",
   });
@@ -712,23 +712,36 @@ function IdentityGenPanel({
     }
   };
 
-  const field = (
+  // Dropdown of common options + a free-text field for anything custom.
+  // Each option is [Romanian label, English value-for-the-prompt].
+  const combo = (
     label: string,
     value: string,
+    options: readonly (readonly [string, string])[],
     onChange: (v: string) => void,
-    placeholder = "",
-  ) => (
-    <label className="form-row">
-      <span>{label}</span>
-      <input
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={busy}
-      />
-    </label>
-  );
+  ) => {
+    const known = options.some(([, v]) => v === value);
+    return (
+      <div className="gen-field">
+        <span className="gen-label">{label}</span>
+        <select
+          value={known ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={busy}
+        >
+          <option value="">—</option>
+          {options.map(([ro, v]) => <option key={v} value={v}>{ro}</option>)}
+        </select>
+        <input
+          type="text"
+          value={known ? "" : value}
+          placeholder="sau scrie liber…"
+          onChange={(e) => onChange(e.target.value)}
+          disabled={busy}
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="card" style={{ marginTop: 16, padding: 12 }}>
@@ -754,13 +767,66 @@ function IdentityGenPanel({
         )}
       </div>
 
-      {field(t("characters.identity.scene"), scene.scene_prompt ?? "", (v) => set({ scene_prompt: v }))}
-      {field(t("characters.identity.outfit"), scene.outfit_prompt ?? "", (v) => set({ outfit_prompt: v }))}
-      {field(t("characters.identity.location"), scene.location_prompt ?? "", (v) => set({ location_prompt: v }))}
-      {field(t("characters.identity.season"), scene.season ?? "", (v) => set({ season: v }))}
-      {field(t("characters.identity.mood"), scene.mood ?? "", (v) => set({ mood: v }))}
-      {field(t("characters.identity.pose"), scene.pose ?? "", (v) => set({ pose: v }))}
-      {field(t("characters.identity.framing"), scene.framing ?? "", (v) => set({ framing: v }))}
+      {/* Tip poză — separates upper-body vs full-body sets/datasets. */}
+      <div className="gen-field">
+        <span className="gen-label">Tip poză</span>
+        <select
+          value={scene.framing}
+          onChange={(e) => set({ framing: e.target.value })}
+          disabled={busy}
+          style={{ gridColumn: "2 / span 2" }}
+        >
+          <option value="upper body, medium close-up">Corp superior (bust)</option>
+          <option value="full body, full length">Corp întreg</option>
+        </select>
+      </div>
+
+      {combo("Anotimp", scene.season ?? "", [
+        ["Primăvară", "spring"], ["Vară", "summer"], ["Toamnă", "autumn"], ["Iarnă", "winter"],
+      ], (v) => set({ season: v }))}
+      {combo("Ora din zi", scene.time_of_day ?? "", [
+        ["Dimineață", "morning"], ["Prânz", "midday"], ["După-amiază", "afternoon"],
+        ["Seară", "evening"], ["Noapte", "night"], ["Răsărit", "sunrise"], ["Apus", "sunset"],
+      ], (v) => set({ time_of_day: v }))}
+      {combo("Vreme / fenomene", scene.weather ?? "", [
+        ["Senin", "clear sky"], ["Înnorat", "overcast"], ["Ploaie", "rain"], ["Vânt", "windy"],
+        ["Ninsoare", "snow"], ["Ceață", "fog"], ["Furtună", "storm"], ["Soare puternic", "bright sunlight"],
+      ], (v) => set({ weather: v }))}
+      {combo("Îmbrăcăminte corp", scene.outfit_prompt ?? "", [
+        ["Casual", "casual outfit"], ["Business", "business suit"], ["Elegant", "elegant dress"],
+        ["Sport", "sportswear"], ["Tradițional", "traditional clothing"], ["Palton/iarnă", "winter coat"],
+        ["Vară lejer", "light summer clothing"],
+      ], (v) => set({ outfit_prompt: v }))}
+      {combo("Acoperământ cap", scene.head_wear ?? "", [
+        ["Fără", "no headwear"], ["Pălărie", "hat"], ["Șapcă", "cap"], ["Eșarfă/batic", "headscarf"],
+        ["Căciulă", "wool beanie"], ["Ochelari", "glasses"], ["Ochelari de soare", "sunglasses"],
+      ], (v) => set({ head_wear: v }))}
+      {combo("Fundal", scene.location_prompt ?? "", [
+        ["Studio simplu", "plain studio background"], ["Stradă urbană", "urban street"], ["Parc", "park"],
+        ["Birou", "modern office"], ["Interior casă", "home interior"], ["Plajă", "beach"],
+        ["Munte", "mountains"], ["Cafenea", "cafe"], ["Natură", "nature landscape"],
+      ], (v) => set({ location_prompt: v }))}
+      {combo("Stare / expresie", scene.mood ?? "", [
+        ["Zâmbet", "smiling"], ["Serios", "serious"], ["Trist", "sad"], ["Râde", "laughing"],
+        ["Plânge", "crying"], ["Gânditor", "thoughtful"], ["Surprins", "surprised"],
+        ["Încrezător", "confident"], ["Calm", "calm"], ["Furios", "angry"], ["Visător", "dreamy"],
+      ], (v) => set({ mood: v }))}
+      {combo("Postură", scene.pose ?? "", [
+        ["În picioare", "standing"], ["Așezat", "sitting"], ["Mergând", "walking"],
+        ["Sprijinit", "leaning"], ["Din profil", "side profile"], ["Trei sferturi", "three-quarter view"],
+      ], (v) => set({ pose: v }))}
+
+      <label className="form-row" style={{ marginTop: 8 }}>
+        <span>Descriere suplimentară (opțional)</span>
+        <textarea
+          value={scene.scene_prompt ?? ""}
+          onChange={(e) => set({ scene_prompt: e.target.value })}
+          placeholder="Orice detalii relevante care nu sunt acoperite mai sus…"
+          rows={3}
+          disabled={busy}
+          style={{ width: "100%", boxSizing: "border-box" }}
+        />
+      </label>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
         <label className="form-row" style={{ margin: 0 }}>

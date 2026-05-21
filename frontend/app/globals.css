@@ -617,3 +617,16 @@ table.simple tbody tr:hover {
    rows span the same full width. Active = green (btn-success), never blue. */
 .char-btnrow { display: flex; gap: 8px; width: 100%; flex-wrap: wrap; }
 .char-btnrow > .btn { flex: 1 1 0; min-width: 120px; }
+
+/* Structured image-generation form: label | dropdown | free-text. */
+.gen-field { display: grid; grid-template-columns: 130px 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 8px; }
+.gen-label { font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.gen-field select, .gen-field input { width: 100%; box-sizing: border-box; }
+@media (max-width: 560px) {
+  .gen-field { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* Image-card action buttons: uniform width, tidy 2-per-row grid. */
+.imglib-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+.imglib-actions > .btn, .imglib-actions > a { width: 100%; box-sizing: border-box; text-align: center; font-size: 12.5px; padding: 7px 8px; }
+.imglib-actions > .imglib-action-wide { grid-column: 1 / -1; }

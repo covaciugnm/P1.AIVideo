@@ -148,6 +148,9 @@ class SceneParams:
     outfit_prompt: str = ""
     location_prompt: str = ""
     season: str = ""
+    time_of_day: str = ""
+    weather: str = ""
+    head_wear: str = ""
     mood: str = ""
     pose: str = ""
     framing: str = ""
@@ -179,10 +182,13 @@ def build_scene_block(profile_json: dict[str, Any] | None, scene: SceneParams) -
         [
             scene.scene_prompt,
             f"wearing {outfit}" if outfit else None,
+            f"with {scene.head_wear}" if scene.head_wear else None,
             f"in {location}" if location else None,
             scene.season,
+            scene.time_of_day,
+            f"{scene.weather} weather" if scene.weather else None,
             scene.pose,
-            f"{scene.mood} mood" if scene.mood else None,
+            f"{scene.mood} expression" if scene.mood else None,
         ]
     )
 
