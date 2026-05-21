@@ -11,8 +11,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 DEBIAN_FRONTEND=noninteractive 
     PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 HF_HUB_OFFLINE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-venv python3-pip git ca-certificates curl \
-    ffmpeg libgl1 libglib2.0-0 libsndfile1 \
+    python3.10 python3.10-venv python3-pip python3.10-dev git ca-certificates curl \
+    build-essential ffmpeg libgl1 libglib2.0-0 libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 RUN ln -sf /usr/bin/python3.10 /usr/local/bin/python && \
     ln -sf /usr/bin/python3.10 /usr/local/bin/python3 && \
@@ -26,7 +26,18 @@ RUN git clone --depth 1 https://github.com/fudan-generative-vision/hallo2.git /o
     cd /opt/hallo-src && python -m pip install --no-build-isolation \
       "diffusers>=0.30" "transformers>=4.40" "accelerate>=1.0" "einops>=0.7" \
       "omegaconf>=2.3" "opencv-python-headless>=4.5" "librosa>=0.10" \
-      "ffmpeg-python>=0.2" "scipy>=1.10" "numpy>=1.24,<2" "decord>=0.6"
+      "ffmpeg-python>=0.2" "scipy>=1.10" "decord>=0.6"
+# hallo2 inference runtime deps the line above misses (pydub/icecream/
+# audio-separator/onnxruntime/av/moviepy/insightface/lpips/mediapipe). We
+# deliberately SKIP the repo's xformers/bitsandbytes pins (they'd downgrade
+# torch 2.7). numpy pinned <2 LAST so audio-separator can't pull numpy 2.x
+# and break torch/cv2.
+# numpy<2 + cython FIRST (insightface compiles C extensions against them).
+RUN python -m pip install --no-cache-dir "numpy<2" cython && \
+    python -m pip install --no-cache-dir \
+      pydub icecream "audio-separator>=0.17" onnxruntime-gpu av moviepy \
+      insightface lpips mediapipe && \
+    python -m pip install --no-cache-dir "numpy<2"
 
 COPY docker/model-hallo/requirements.txt /opt/hallo-wrapper/requirements.txt
 RUN python -m pip install --no-cache-dir -r /opt/hallo-wrapper/requirements.txt
