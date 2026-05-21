@@ -294,9 +294,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
         }
         // Default video engine = best-quality RUNNABLE talking-head/lip-sync
         // engine. Quality order (best first); fall back to first usable.
-        // Engines WITH weights first (wav2lip is proven end-to-end); hallo +
-        // echomimic last because their weights aren't present on disk yet.
-        const VIDEO_QUALITY = ["wav2lip", "musetalk", "liveportrait", "sadtalker", "hallo", "echomimic"];
+        // Quality order (best first), among engines whose weights are present:
+        // Hallo2 (HD/4K) > MuseTalk > LivePortrait > wav2lip. echomimic last (no weights).
+        const VIDEO_QUALITY = ["hallo", "musetalk", "liveportrait", "wav2lip", "sadtalker", "echomimic"];
         const vids = (p.video_generator ?? []).filter(isUsableProvider);
         const bestVideo =
           VIDEO_QUALITY.map((id) => vids.find((v) => v.provider_id === id)).find(Boolean)
