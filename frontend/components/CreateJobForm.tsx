@@ -173,6 +173,8 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   // language coverage.
   const [selectedCharGender, setSelectedCharGender] = useState<string | null>(null);
   const [selectedCharLanguages, setSelectedCharLanguages] = useState<readonly string[]>([]);
+  // Character's fixed TTS voice (when arriving from a character). null = not locked.
+  const [lockedVoice, setLockedVoice] = useState<string | null>(null);
   useEffect(() => {
     if (!characterId) {
       setSelectedCharGender(null);
@@ -189,6 +191,12 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           | undefined;
         if (typeof identity?.gender === "string") setSelectedCharGender(identity.gender.toLowerCase());
         else setSelectedCharGender(null);
+        // TTS is unique per character — lock it to the character's voice when
+        // the operator arrived from that character.
+        if (fromCharacter && full?.default_voice_provider_id) {
+          setLockedVoice(full.default_voice_provider_id);
+          setTtsProvider(full.default_voice_provider_id);
+        }
         // Build the language set: native_language plus spoken_languages,
         // de-duplicated, lower-cased. Empty list when the operator hasn't
         // filled either field — falls back to all TTS-supported languages.
@@ -201,6 +209,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       } catch { /* ignore */ }
     })();
     return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId]);
 
   // Phase 17 — prefill from URL query params:
@@ -1528,6 +1537,11 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               <label title={t("createJob.ttsProviderHelp")} style={{ margin: 0, whiteSpace: "nowrap" }}>
                 {t("createJob.ttsProvider")}:
               </label>
+              {lockedVoice ? (
+                <span title="Vocea TTS este unică pentru acest personaj" style={{ fontWeight: 600 }}>
+                  🔒 {(providers?.tts ?? []).find((p) => p.provider_id === lockedVoice)?.label ?? lockedVoice}
+                </span>
+              ) : (
               <select
                 className={styles.select}
                 value={ttsProvider ?? ""}
@@ -1571,6 +1585,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                     );
                   })}
               </select>
+              )}
               <button
                 type="button"
                 className="btn"
