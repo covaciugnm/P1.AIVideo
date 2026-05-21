@@ -1679,6 +1679,10 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             {/* Phase 20 — per-voice sample preview. Full-width row,
                 shown only when a voice with sample_audio_url is picked. */}
             {(() => {
+              // Hide the per-voice sample bar when the voice is locked (from
+              // a character) — it was an empty/duplicate player; the real
+              // audio bar appears after generation below.
+              if (lockedVoice) return null;
               const sel = (providers?.tts ?? []).find((p) => p.provider_id === ttsProvider);
               if (!sel?.sample_audio_url) return null;
               const baseUrl = api.getActiveApiBaseUrl();
