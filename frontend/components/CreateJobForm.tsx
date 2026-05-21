@@ -2095,9 +2095,13 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               <>
                 <AuthVideo src={api.artifactContentUrl(videoArtifactId)} />
                 <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <a className="btn btn-primary" href={api.artifactContentUrl(videoArtifactId, { download: true })} download={fname}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => { void api.downloadArtifact(videoArtifactId, fname).catch((e) => setError((e as Error).message)); }}
+                  >
                     ⬇ Salvează videoclipul
-                  </a>
+                  </button>
                   <code style={{ fontSize: 11 }}>{fname}</code>
                 </div>
               </>

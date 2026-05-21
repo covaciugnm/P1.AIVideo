@@ -759,6 +759,27 @@ export function getTtsJob(jobId: string): Promise<TtsJobStatus> {
   return request<TtsJobStatus>(`/api/v1/tts/jobs/${jobId}`);
 }
 
+/** Download an artifact through an authenticated fetch (a plain <a download>
+ * can't send the bearer token → the endpoint returns 401). Fetches the bytes
+ * with the token, then triggers a browser download under ``filename``. */
+export async function downloadArtifact(artifactId: string, filename: string): Promise<void> {
+  const res = await fetch(artifactContentUrl(artifactId, { download: true }), {
+    // allow-raw-fetch: needs the raw bytes with the bearer header to download.
+    headers: authHeaders(),
+    cache: "no-store",
+  });
+  if (res.status === 401) { handleUnauthorized(); return; }
+  if (!res.ok) throw new Error(`Descărcare eșuată (${res.status})`);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 export function artifactContentUrl(
   artifactId: string,
   options?: { readonly download?: boolean },
