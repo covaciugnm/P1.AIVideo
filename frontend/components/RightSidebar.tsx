@@ -15,6 +15,7 @@ import { BackendLogsPanel } from "./BackendLogsPanel";
 import { KeysPanel } from "./KeysPanel";
 import { LogsPanel } from "./LogsPanel";
 import { ProviderTestPanel } from "./ProviderTestPanel";
+import { ServicesPanel } from "./ServicesPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { SidebarTabs } from "./SidebarTabs";
 import styles from "./RightSidebar.module.css";
@@ -104,6 +105,14 @@ export function RightSidebar() {
           >
             <span className={styles.railLabel}>{t("sidebar.keys")}</span>
           </button>
+          <button
+            type="button"
+            className={`${styles.railTab} ${state.activeTab === "services" ? styles.railTabActive : ""}`}
+            onClick={() => update({ collapsed: false, activeTab: "services" })}
+            title={t("sidebar.services")}
+          >
+            <span className={styles.railLabel}>{t("sidebar.services")}</span>
+          </button>
         </div>
       ) : (
         <>
@@ -117,6 +126,7 @@ export function RightSidebar() {
             {hydrated && state.activeTab === "settings" && <SettingsPanel />}
             {hydrated && state.activeTab === "test1" && <ProviderTestPanel />}
             {hydrated && state.activeTab === "keys" && <KeysPanel />}
+            {hydrated && state.activeTab === "services" && <ServicesPanel />}
           </div>
         </>
       )}

@@ -186,7 +186,7 @@ export interface Dictionary {
     string
   >>;
   readonly sidebar: Readonly<Record<
-    "logs" | "backend" | "settings" | "test1" | "keys" | "activity" | "collapse" | "expand",
+    "logs" | "backend" | "settings" | "test1" | "keys" | "services" | "activity" | "collapse" | "expand",
     string
   >>;
   readonly backendLogs: Readonly<Record<

@@ -80,7 +80,7 @@ export const SIDEBAR_STORAGE_KEY = "aivideo:sidebar:v1";
 // because the loader rejects anything outside the union and falls back.
 // Phase 12X added the "keys" tab — DB-backed API credentials store.
 // Phase 13 added the "backend" tab — live tail of backend INFO/progress logs.
-export type SidebarTabId = "logs" | "backend" | "settings" | "test1" | "keys";
+export type SidebarTabId = "logs" | "backend" | "settings" | "test1" | "keys" | "services";
 
 export interface SidebarState {
   readonly collapsed: boolean;

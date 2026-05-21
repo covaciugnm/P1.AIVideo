@@ -607,6 +607,7 @@ export const DICTIONARY_RO: Dictionary = {
     settings: "Setări",
     test1: "Test1",
     keys: "Chei",
+    services: "Servicii",
     activity: "Activitate",
     collapse: "Restrânge bara",
     expand: "Extinde bara",

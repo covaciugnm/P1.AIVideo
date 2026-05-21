@@ -603,7 +603,13 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     const controller = new AbortController();
     ttsAbortRef.current = controller;
     setTtsBusy(true);
-    setTtsStatus(t("createJob.generateAudioBusy"));
+    // Live elapsed timer so the operator sees progress — F5 TTS can take
+    // ~40-60s (CPU / GPU-contended), which otherwise looks frozen.
+    const t0 = Date.now();
+    setTtsStatus("Se generează audio… 0s (poate dura ~40-60s)");
+    const timer = window.setInterval(() => {
+      setTtsStatus(`Se generează audio… ${Math.round((Date.now() - t0) / 1000)}s (poate dura ~40-60s)`);
+    }, 1000);
     logBus.emit({
       source: "frontend",
       level: "info",
@@ -617,6 +623,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       },
       controller.signal,
     );
+    window.clearInterval(timer);
     setTtsBusy(false);
     if (!res.ok) {
       // Phase 8G-2 + Phase 10A-1 — operator-friendly copy keyed on both

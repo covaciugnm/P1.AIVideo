@@ -1,0 +1,33 @@
+.wrap { display: flex; flex-direction: column; gap: 14px; }
+.intro { font-size: 12px; color: var(--text-muted); margin: 0 0 2px; }
+.muted { color: var(--text-muted); font-size: 13px; }
+.error { color: var(--danger); font-size: 13px; }
+
+.group { display: flex; flex-direction: column; gap: 4px; }
+.groupTitle {
+  margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--accent);
+  padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.count { color: var(--text-muted); font-weight: 400; }
+
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.row {
+  display: grid;
+  grid-template-columns: 14px 96px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.row:last-child { border-bottom: none; }
+
+.dotGreen, .dotRed {
+  width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+}
+.dotGreen { background: var(--success, #2e7d32); box-shadow: 0 0 4px var(--success, #2e7d32); }
+.dotRed { background: var(--danger, #f06a6a); }
+
+.stage { color: var(--text-muted); font-family: var(--mono-stack); font-size: 11px; }
+.name { color: var(--text); word-break: break-word; }

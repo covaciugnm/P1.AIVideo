@@ -608,6 +608,7 @@ export const DICTIONARY_EN: Dictionary = {
     settings: "Settings",
     test1: "Test1",
     keys: "Keys",
+    services: "Services",
     activity: "Activity",
     collapse: "Collapse sidebar",
     expand: "Expand sidebar",
