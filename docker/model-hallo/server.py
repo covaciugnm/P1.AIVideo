@@ -101,28 +101,60 @@ async def generate(body: HalloRequest):
     if st == "assets_missing":
         return _err(503, "assets_missing", f"weights missing under {_models_root()}")
 
+    import glob
+    import shutil
+
     out = Path(body.output_path)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         return _err(500, "storage_failed", str(exc))
 
-    # Hallo2 inference: scripts/inference_long.py
+    # hallo2's inference_long.py has NO --save_path; it reads everything from a
+    # YAML config (model paths relative to ./pretrained_models, plus save_path)
+    # and --source_image/--driving_audio override the inputs. So we: (1) point
+    # ./pretrained_models at our weights, (2) write a temp config whose
+    # save_path is a writable work dir, (3) run, (4) move the produced mp4 to out.
+    src = _source_dir()
+    pm = src / "pretrained_models"
+    if not pm.exists():
+        try:
+            pm.symlink_to(_models_root())
+        except OSError:
+            pass
+    work = out.parent / "hallo_work"
+    cfg_path = out.parent / "hallo_config.yaml"
+    try:
+        from omegaconf import OmegaConf
+        cfg = OmegaConf.load(str(src / "configs" / "inference" / "long.yaml"))
+        cfg.save_path = str(work)
+        cfg.cache_path = str(out.parent / ".hallo_cache")
+        OmegaConf.save(cfg, str(cfg_path))
+    except Exception as exc:  # noqa: BLE001
+        return _err(500, "generation_failed", f"config build failed: {exc}")
+
     cmd = [
-        sys.executable, str(_source_dir() / "scripts" / "inference_long.py"),
+        sys.executable, str(src / "scripts" / "inference_long.py"),
+        "-c", str(cfg_path),
         "--source_image", body.image_path,
         "--driving_audio", body.audio_path,
-        "--save_path", str(out),
     ]
     t0 = time.perf_counter()
     try:
-        proc = subprocess.run(cmd, cwd=str(_source_dir()),
+        proc = subprocess.run(cmd, cwd=str(src),
                               capture_output=True, text=True,
                               timeout=int(os.environ.get("HALLO_INFER_TIMEOUT", "1800")))
         elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
             return _err(500, "generation_failed",
                         f"inference exit={proc.returncode}: {proc.stderr[-300:]}")
+        # Find the produced mp4 under the work dir and move it to ``out``.
+        produced = sorted(glob.glob(str(work / "**" / "*.mp4"), recursive=True),
+                          key=lambda p: Path(p).stat().st_size if Path(p).is_file() else 0)
+        if not produced:
+            return _err(500, "generation_failed",
+                        f"inference finished but no mp4 under {work}. tail: {proc.stdout[-200:]}")
+        shutil.move(produced[-1], str(out))
         return {"status": "completed", "output_path": str(out),
                 "size_bytes": out.stat().st_size if out.is_file() else 0,
                 "duration_seconds": elapsed}
