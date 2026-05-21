@@ -25,6 +25,7 @@ import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
 import { HelpHint } from "./HelpHint";
 import { AuthImage } from "./AuthImage";
+import { AuthVideo } from "./AuthVideo";
 import { ProgressBar } from "./ProgressBar";
 import { ProviderStatusBadge } from "./ProviderStatusBadge";
 import { useSettings } from "./SettingsContext";
@@ -745,6 +746,10 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   }, [fromCharacter]);
 
   const [submitting, setSubmitting] = useState(false);
+  // Inline video generation (like the audio flow): poll the job + show progress
+  // + final player, instead of navigating away to the job page.
+  const [videoJob, setVideoJob] = useState<{ id: string; status: string; progress: number } | null>(null);
+  const [videoArtifactId, setVideoArtifactId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const durMin = uiOptions.duration_bounds.min_seconds;
@@ -883,25 +888,42 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       },
     });
 
+    setVideoArtifactId(null);
     try {
       const job = await api.createJobFromInputs(body);
-      logBus.emit({
-        source: "frontend",
-        level: "success",
-        message: `create-job succeeded → ${job.id}`,
-        meta: { jobId: job.id, status: job.status },
-      });
-      router.push(`/jobs/${job.id}`);
+      logBus.emit({ source: "frontend", level: "success", message: `create-job → ${job.id}`, meta: { jobId: job.id } });
+      // Stay on the page: poll the job inline (progress) until it finishes,
+      // then show the video player + download (mirrors the audio flow).
+      setVideoJob({ id: job.id, status: String(job.status), progress: 0 });
+      const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+      const DONE = ["published", "completed", "failed", "rejected"];
+      const DEADLINE = Date.now() + 1_800_000; // 30 min cap
+      let status = String(job.status);
+      let lastReason = "";
+      while (!DONE.includes(status) && Date.now() < DEADLINE) {
+        await sleep(4000);
+        try {
+          const cur = await api.getJob(job.id);
+          status = String(cur.status);
+          lastReason = (cur as { rejection_reason?: string }).rejection_reason ?? "";
+          setVideoJob({ id: job.id, status, progress: Math.round(cur.progress_percent ?? 0) });
+        } catch { /* transient */ }
+      }
+      if (status === "published" || status === "completed") {
+        try {
+          const arts = await api.getJobArtifacts(job.id);
+          const vid = arts.find((a) => a.artifact_type === "video" || String(a.mime_type).includes("video"));
+          if (vid) setVideoArtifactId(vid.artifact_id);
+        } catch { /* ignore */ }
+      } else {
+        setError(`Generarea video s-a oprit (${status}). ${lastReason}`);
+      }
     } catch (err) {
       const raw = err instanceof ApiError ? err.detail : String(err);
       const msg = localizeApiDetail(t, err);
       setError(msg);
-      logBus.emit({
-        source: "frontend",
-        level: "error",
-        message: "create-job failed",
-        meta: { error: msg, raw },
-      });
+      logBus.emit({ source: "frontend", level: "error", message: "create-job failed", meta: { error: msg, raw } });
+    } finally {
       setSubmitting(false);
     }
   };
@@ -2034,11 +2056,53 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={!canSubmit}
+          disabled={!canSubmit || submitting}
         >
           {submitting ? t("createJob.submitting") : t("createJob.submit")}
         </button>
       </div>
+
+      {/* Inline video generation status + player (no redirect). */}
+      {videoJob && (
+        <section className="card" style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 6 }}>
+            <span style={{ fontSize: 14 }}>
+              {videoArtifactId ? "🟢" : (videoJob.status === "failed" || videoJob.status === "rejected") ? "🔴" : "🟡"}
+            </span>
+            <span className="muted">
+              {videoArtifactId
+                ? "Video gata"
+                : videoJob.status === "failed" || videoJob.status === "rejected"
+                ? `Oprit (${videoJob.status})`
+                : `Se generează videoclipul… ${videoJob.status} ${videoJob.progress}%`}
+            </span>
+          </div>
+          {!videoArtifactId && videoJob.status !== "failed" && videoJob.status !== "rejected" && (
+            <ProgressBar percent={videoJob.progress || 5} />
+          )}
+          {videoArtifactId && (() => {
+            // Unique standard name: <Name>.<HH.MM>.<AM|PM>.<YYYY.MM.DD>.mp4
+            const nm = (selectedCharacter?.display_name || selectedCharacter?.name || "video")
+              .replace(/\s+/g, ".").replace(/[^\w.\-]/g, "").replace(/\.{2,}/g, ".").replace(/^\.|\.$/g, "") || "video";
+            const d = new Date();
+            const pad = (n: number) => String(n).padStart(2, "0");
+            const h12 = d.getHours() % 12 || 12;
+            const ap = d.getHours() < 12 ? "AM" : "PM";
+            const fname = `${nm}.${pad(h12)}.${pad(d.getMinutes())}.${ap}.${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}.mp4`;
+            return (
+              <>
+                <AuthVideo src={api.artifactContentUrl(videoArtifactId)} />
+                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <a className="btn btn-primary" href={api.artifactContentUrl(videoArtifactId, { download: true })} download={fname}>
+                    ⬇ Salvează videoclipul
+                  </a>
+                  <code style={{ fontSize: 11 }}>{fname}</code>
+                </div>
+              </>
+            );
+          })()}
+        </section>
+      )}
     </form>
   );
 }
