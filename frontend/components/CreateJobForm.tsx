@@ -25,6 +25,7 @@ import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
 import { HelpHint } from "./HelpHint";
 import { AuthImage } from "./AuthImage";
+import { ProgressBar } from "./ProgressBar";
 import { ProviderStatusBadge } from "./ProviderStatusBadge";
 import { useSettings } from "./SettingsContext";
 import { UploadCard } from "./UploadCard";
@@ -82,6 +83,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const [providers, setProviders] = useState<ProvidersResponse | null>(null);
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsStatus, setTtsStatus] = useState<string | null>(null);
+  const [ttsElapsed, setTtsElapsed] = useState(0); // seconds, for the progress bar
   // Phase 8G-2 — capture the generated TTS artifact so we can render
   // an inline preview after a successful Generate Audio click.
   const [ttsArtifact, setTtsArtifact] = useState<{
@@ -606,9 +608,10 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     // Live elapsed timer so the operator sees progress — F5 TTS can take
     // ~40-60s (CPU / GPU-contended), which otherwise looks frozen.
     const t0 = Date.now();
-    setTtsStatus("Se generează audio… 0s (poate dura ~40-60s)");
+    setTtsElapsed(0);
+    setTtsStatus("Se generează audio… (poate dura ~40-60s)");
     const timer = window.setInterval(() => {
-      setTtsStatus(`Se generează audio… ${Math.round((Date.now() - t0) / 1000)}s (poate dura ~40-60s)`);
+      setTtsElapsed(Math.round((Date.now() - t0) / 1000));
     }, 1000);
     logBus.emit({
       source: "frontend",
@@ -1662,12 +1665,17 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               </span>
               <span className="muted">
                 {ttsBusy
-                  ? "Se generează audio…"
+                  ? `Se generează audio… ${ttsElapsed}s`
                   : ttsArtifact
                   ? `Audio gata — ${(brief || "audio").replace(/[^a-zA-Z0-9_.-]+/g, "_")}`
                   : "Audio negenerat"}
               </span>
             </div>
+            {(ttsBusy || ttsArtifact) && (
+              <ProgressBar
+                percent={ttsBusy ? Math.min(95, Math.round((ttsElapsed / 50) * 100)) : 100}
+              />
+            )}
             {/* Phase 20 — per-voice sample preview. Full-width row,
                 shown only when a voice with sample_audio_url is picked. */}
             {(() => {
