@@ -234,11 +234,12 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     const ctrl = new AbortController();
     void (async () => {
       try {
-        const { listCharacterImages } = await import("@/lib/characters");
-        const r = await listCharacterImages(cid, ctrl.signal);
-        const img = r.items.find((i) => i.id === iid);
-        if (img?.artifact_id) {
-          setGeneratedImageArtifactId(img.artifact_id);
+        // Register the source photo as an artifact so it becomes the job's
+        // portrait (the lip-sync source).
+        const { characterImageAsArtifact } = await import("@/lib/characters");
+        const res = await characterImageAsArtifact(cid, iid, ctrl.signal);
+        if (res?.artifact_id) {
+          setGeneratedImageArtifactId(res.artifact_id);
           setGeneratedImageUrl(`${api.getActiveApiBaseUrl()}/api/v1/characters/${cid}/images/${iid}/content`);
         }
       } catch { /* ignore */ }

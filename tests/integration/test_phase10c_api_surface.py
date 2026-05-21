@@ -106,6 +106,7 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("POST", "/api/v1/characters/{character_id}/status"),
     ("POST", "/api/v1/characters/{character_id}/clone"),
     ("GET", "/api/v1/characters/{character_id}/delete-impact"),
+    ("POST", "/api/v1/characters/{character_id}/images/{image_id}/as-artifact"),
     ("DELETE", "/api/v1/characters/{character_id}"),
     ("GET", "/api/v1/characters/{character_id}/script-context"),
     ("GET", "/api/v1/characters/{character_id}/images"),

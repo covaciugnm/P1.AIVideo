@@ -445,6 +445,17 @@ export function deleteCharacter(
   });
 }
 
+export function characterImageAsArtifact(
+  characterId: string,
+  imageId: string,
+  signal?: AbortSignal,
+): Promise<{ artifact_id: string }> {
+  return request<{ artifact_id: string }>(
+    `/api/v1/characters/${characterId}/images/${imageId}/as-artifact`,
+    { method: "POST", signal, logLabel: "POST /api/v1/characters/:id/images/:iid/as-artifact" },
+  );
+}
+
 export interface DeleteImpact {
   readonly character: string;
   readonly images: number;

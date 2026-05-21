@@ -612,6 +612,45 @@ async def set_main_reference(
     )
 
 
+@router.post("/{character_id}/images/{image_id}/as-artifact")
+async def character_image_as_artifact(
+    character_id: uuid.UUID,
+    image_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Register a character image file as an Artifact (idempotent) so it can be
+    used directly as a video job's portrait (lip-sync source). Returns its
+    artifact_id, caching it on the CharacterImage row."""
+    import hashlib
+    from pathlib import Path
+
+    from common.enums import ArtifactType
+    from app.services import artifact_service, character_image_service
+
+    character = await _load_character_or_404(session, character_id)
+    image = await character_image_service.get_image(session, character.id, image_id)
+    if image is None or not image.file_path:
+        raise HTTPException(status_code=404, detail="image not found")
+    p = Path(image.file_path)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="image file missing on disk")
+    data = p.read_bytes()
+    artifact = await artifact_service.register_artifact(
+        session,
+        artifact_type=ArtifactType.image.value,
+        uri=str(p),
+        local_path=str(p),
+        mime_type="image/png",
+        checksum_sha256=hashlib.sha256(data).hexdigest(),
+        size_bytes=len(data),
+        width=image.width,
+        height=image.height,
+        metadata_json={"character_id": str(character.id), "character_image_id": str(image.id)},
+    )
+    await session.commit()
+    return {"artifact_id": str(artifact.id)}
+
+
 @router.post(
     "/{character_id}/images/{image_id}/set-full-body-reference",
     response_model=CharacterImageActionResponse,
