@@ -57,6 +57,8 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
   // Phase 12 — generation controls live in a "+ Imagine Nouă" modal so the
   // gallery itself shows only images + image actions.
   const [showGen, setShowGen] = useState(false);
+  // Separate "Imagine AI" modal — free natural-language description mode.
+  const [showAiGen, setShowAiGen] = useState(false);
 
   const reloadImages = async () => {
     try {
@@ -235,10 +237,23 @@ export function CharacterImageLibrary({ character, onReload }: Props) {
             Imaginile de referință și variațiile vizuale ale personajului.
           </p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setShowGen(true)}>
-          + Imagine Nouă
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" className="btn btn-primary" onClick={() => setShowGen(true)}>
+            + Imagine Nouă
+          </button>
+          <button type="button" className="btn" onClick={() => setShowAiGen(true)} title="Creează o imagine descriind liber în limbaj natural; AI compune restul.">
+            ✨ Imagine AI
+          </button>
+        </div>
       </div>
+
+      {showAiGen && (
+        <AiImagePanel
+          character={character}
+          onClose={() => setShowAiGen(false)}
+          onGenerated={async () => { await reloadImages(); await onReload(); }}
+        />
+      )}
 
       {showGen && (
       <div className="modal-overlay" onClick={() => setShowGen(false)}>
@@ -945,6 +960,104 @@ function IdentityGenPanel({
 
       {status && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>{status}</p>}
       {error && <p style={{ color: "var(--danger)", marginTop: 6 }}>{error}</p>}
+    </div>
+  );
+}
+
+// "Imagine AI" — separate modal, free natural-language image creation.
+// Complements the structured "+ Imagine Nouă" form: here the operator just
+// describes the desired image in plain language and AI composes the rest.
+function AiImagePanel({
+  character,
+  onClose,
+  onGenerated,
+}: {
+  readonly character: CharacterResponse;
+  readonly onClose: () => void;
+  readonly onGenerated: () => Promise<void> | void;
+}) {
+  const [text, setText] = useState("");
+  const [framing, setFraming] = useState("upper body, medium close-up");
+  const [aspect, setAspect] = useState<"portrait" | "landscape" | "square">("portrait");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const generate = async () => {
+    if (!text.trim()) { setError("Scrie o descriere a imaginii."); return; }
+    setBusy(true); setError(null); setStatus("Se generează…");
+    try {
+      await generateConsistentImage(character.id, {
+        scene_prompt: text.trim(),
+        framing,
+        aspect_ratio: aspect,
+        quality_preset: "standard",
+      });
+      setStatus("Gata.");
+      await onGenerated();
+      setText("");
+    } catch (err) {
+      setError((err as Error).message);
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ margin: 0 }}>✨ Imagine AI — {character.display_name || character.name}</h3>
+          <button type="button" className="btn" onClick={onClose}>Părăsește</button>
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          Identitatea personajului (față + corp) este păstrată automat din referințe.
+          Descrie liber scena, ținuta, atmosfera, acțiunea — AI compune restul.
+        </p>
+
+        <div className="gen-field" style={{ marginTop: 10 }}>
+          <span className="gen-label">Tip poză</span>
+          <select value={framing} onChange={(e) => setFraming(e.target.value)} disabled={busy} style={{ gridColumn: "2 / span 2" }}>
+            <option value="extreme close-up portrait">Prim-plan strâns (față)</option>
+            <option value="upper body, medium close-up">Corp superior (bust)</option>
+            <option value="half body, waist up">Bust lărgit</option>
+            <option value="three-quarter body, knees up">Trei sferturi</option>
+            <option value="full body, full length">Corp întreg</option>
+            <option value="wide environmental shot, full body">Plan larg (corp + mediu)</option>
+          </select>
+        </div>
+        <div className="gen-field">
+          <span className="gen-label">Format</span>
+          <select value={aspect} onChange={(e) => setAspect(e.target.value as typeof aspect)} disabled={busy} style={{ gridColumn: "2 / span 2" }}>
+            <option value="portrait">Portret 9:16</option>
+            <option value="landscape">Peisaj 16:9</option>
+            <option value="square">Pătrat 1:1</option>
+          </select>
+        </div>
+
+        <label className="form-row" style={{ marginTop: 8 }}>
+          <span>Descriere imagine (limbaj natural)</span>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={10000}
+            rows={7}
+            disabled={busy}
+            placeholder="Ex: pe o stradă din Paris toamna, la apus, poartă un palton bej, zâmbește ușor, frunze căzând, lumină caldă, atmosferă cinematică…"
+            style={{ width: "100%", boxSizing: "border-box" }}
+          />
+        </label>
+        <div className="muted" style={{ fontSize: 11, textAlign: "right" }}>{text.length}/10000</div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button type="button" className="btn btn-primary" onClick={generate} disabled={busy || !text.trim()}>
+            {busy ? "Se generează…" : "Generează imagine"}
+          </button>
+        </div>
+        {status && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>{status}</p>}
+        {error && <p style={{ color: "var(--danger)", marginTop: 6 }}>{error}</p>}
+      </div>
     </div>
   );
 }
