@@ -630,3 +630,7 @@ table.simple tbody tr:hover {
 .imglib-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
 .imglib-actions > .btn, .imglib-actions > a { width: 100%; box-sizing: border-box; text-align: center; font-size: 12.5px; padding: 7px 8px; }
 .imglib-actions > .imglib-action-wide { grid-column: 1 / -1; }
+
+/* Section headers inside the structured generation form. */
+.gen-group { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  color: var(--accent); margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }

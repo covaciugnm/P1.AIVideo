@@ -685,6 +685,10 @@ function IdentityGenPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  // Extra photographic aspects (no dedicated backend column) — composed into
+  // scene_prompt at submit so the prompt stays rich without schema churn.
+  const [extras, setExtras] = useState<Record<string, string>>({});
+  const setExtra = (k: string, v: string) => setExtras((e) => ({ ...e, [k]: v }));
 
   const set = (patch: Partial<GenerateConsistentRequest>) =>
     setScene((s) => ({ ...s, ...patch }));
@@ -700,7 +704,12 @@ function IdentityGenPanel({
           quality_preset: scene.quality_preset,
         });
       } else {
-        await generateConsistentImage(character.id, scene);
+        // Compose the extra aspects + free text into scene_prompt.
+        const composedScene = [
+          ...Object.values(extras).filter(Boolean),
+          (scene.scene_prompt ?? "").trim(),
+        ].filter(Boolean).join(", ");
+        await generateConsistentImage(character.id, { ...scene, scene_prompt: composedScene });
       }
       setStatus(t("characters.identity.done"));
       await onGenerated();
@@ -767,54 +776,124 @@ function IdentityGenPanel({
         )}
       </div>
 
-      {/* Tip poză — separates upper-body vs full-body sets/datasets. */}
+      {/* ── Cameră & încadrare ── */}
+      <div className="gen-group">Cameră &amp; încadrare</div>
       <div className="gen-field">
         <span className="gen-label">Tip poză</span>
-        <select
-          value={scene.framing}
-          onChange={(e) => set({ framing: e.target.value })}
-          disabled={busy}
-          style={{ gridColumn: "2 / span 2" }}
-        >
+        <select value={scene.framing} onChange={(e) => set({ framing: e.target.value })} disabled={busy} style={{ gridColumn: "2 / span 2" }}>
+          <option value="extreme close-up portrait">Prim-plan strâns (față)</option>
           <option value="upper body, medium close-up">Corp superior (bust)</option>
+          <option value="half body, waist up">Bust lărgit (până la brâu)</option>
+          <option value="three-quarter body, knees up">Trei sferturi (până la genunchi)</option>
           <option value="full body, full length">Corp întreg</option>
+          <option value="wide environmental shot, full body">Plan larg (corp + mediu)</option>
         </select>
       </div>
+      {combo("Unghi cameră", extras.camera_angle ?? "", [
+        ["La nivelul ochilor", "eye-level angle"], ["De jos", "low angle"], ["De sus", "high angle"],
+        ["Plonjat (bird's eye)", "birds-eye view"], ["Înclinat (dutch)", "dutch angle"],
+      ], (v) => setExtra("camera_angle", v))}
+      {combo("Obiectiv", extras.lens ?? "", [
+        ["Portret 85mm", "85mm portrait lens, shallow depth of field"], ["50mm", "50mm lens"],
+        ["35mm", "35mm lens"], ["Wide 24mm", "24mm wide-angle lens"], ["Tele 135mm", "135mm telephoto, compressed"],
+      ], (v) => setExtra("lens", v))}
+      {combo("Profunzime câmp", extras.dof ?? "", [
+        ["Fundal blurat (bokeh)", "shallow depth of field, creamy bokeh"], ["Tot clar", "deep focus, everything sharp"],
+      ], (v) => setExtra("dof", v))}
 
+      {/* ── Scenă & mediu ── */}
+      <div className="gen-group">Scenă &amp; mediu</div>
+      {combo("Interior/exterior", extras.setting ?? "", [["Interior", "indoor"], ["Exterior", "outdoor"]], (v) => setExtra("setting", v))}
+      {combo("Fundal / locație", scene.location_prompt ?? "", [
+        ["Studio simplu", "plain studio background"], ["Stradă urbană", "urban street"], ["Parc", "park"],
+        ["Birou modern", "modern office"], ["Interior casă", "home interior"], ["Plajă", "beach"],
+        ["Munte", "mountains"], ["Cafenea", "cafe"], ["Pădure", "forest"], ["Oraș noaptea", "city at night"],
+        ["Bibliotecă", "library"], ["Restaurant", "restaurant"], ["Peisaj natural", "nature landscape"],
+      ], (v) => set({ location_prompt: v }))}
       {combo("Anotimp", scene.season ?? "", [
         ["Primăvară", "spring"], ["Vară", "summer"], ["Toamnă", "autumn"], ["Iarnă", "winter"],
       ], (v) => set({ season: v }))}
       {combo("Ora din zi", scene.time_of_day ?? "", [
         ["Dimineață", "morning"], ["Prânz", "midday"], ["După-amiază", "afternoon"],
-        ["Seară", "evening"], ["Noapte", "night"], ["Răsărit", "sunrise"], ["Apus", "sunset"],
+        ["Seară", "evening"], ["Noapte", "night"], ["Răsărit", "sunrise"], ["Apus", "golden hour sunset"],
       ], (v) => set({ time_of_day: v }))}
       {combo("Vreme / fenomene", scene.weather ?? "", [
-        ["Senin", "clear sky"], ["Înnorat", "overcast"], ["Ploaie", "rain"], ["Vânt", "windy"],
+        ["Senin", "clear sky"], ["Înnorat", "overcast"], ["Ploaie", "rain"], ["Vânt", "windy, hair moving"],
         ["Ninsoare", "snow"], ["Ceață", "fog"], ["Furtună", "storm"], ["Soare puternic", "bright sunlight"],
       ], (v) => set({ weather: v }))}
+      {combo("Iluminare", extras.lighting ?? "", [
+        ["Naturală", "natural light"], ["Oră de aur", "warm golden-hour light"], ["Studio soft", "soft studio softbox lighting"],
+        ["Dramatică/contrast", "dramatic high-contrast lighting"], ["Contre-jour", "backlight, rim light"],
+        ["Neon", "neon lighting"], ["Lumânare", "candlelight, warm"], ["Înnorat difuz", "soft overcast light"],
+      ], (v) => setExtra("lighting", v))}
+      {combo("Atmosferă", extras.atmosphere ?? "", [
+        ["Senină", "serene atmosphere"], ["Dramatică", "dramatic atmosphere"], ["Confortabilă", "cozy atmosphere"],
+        ["Energică", "energetic atmosphere"], ["Melancolică", "melancholic atmosphere"], ["Lux/elegant", "luxurious elegant atmosphere"],
+      ], (v) => setExtra("atmosphere", v))}
+
+      {/* ── Persoană: expresie & postură ── */}
+      <div className="gen-group">Persoană — expresie &amp; postură</div>
+      {combo("Stare / expresie", scene.mood ?? "", [
+        ["Zâmbet", "smiling"], ["Zâmbet larg", "broad happy smile"], ["Serios", "serious"], ["Trist", "sad"],
+        ["Râde", "laughing"], ["Plânge", "crying, teary"], ["Gânditor", "thoughtful"], ["Surprins", "surprised"],
+        ["Încrezător", "confident"], ["Calm", "calm, relaxed"], ["Furios", "angry"], ["Visător", "dreamy"], ["Neutru", "neutral expression"],
+      ], (v) => set({ mood: v }))}
+      {combo("Privire", extras.gaze ?? "", [
+        ["Spre cameră", "looking at the camera"], ["În lateral", "looking away to the side"],
+        ["În jos", "looking down"], ["În sus", "looking up"], ["Ochii închiși", "eyes closed"],
+      ], (v) => setExtra("gaze", v))}
+      {combo("Postură", scene.pose ?? "", [
+        ["În picioare", "standing"], ["Așezat", "sitting"], ["Mergând", "walking"], ["Sprijinit", "leaning"],
+        ["Din profil", "side profile"], ["Trei sferturi", "three-quarter view"], ["Întins", "reclining"],
+      ], (v) => set({ pose: v }))}
+      {combo("Gesturi / mâini", extras.gesture ?? "", [
+        ["Relaxate", "hands relaxed"], ["Brațe încrucișate", "arms crossed"], ["Mână la bărbie", "hand on chin"],
+        ["Salută", "waving"], ["Mâini în buzunare", "hands in pockets"], ["Ține un obiect", "holding an object"],
+      ], (v) => setExtra("gesture", v))}
+
+      {/* ── Vestimentație & styling ── */}
+      <div className="gen-group">Vestimentație &amp; styling</div>
       {combo("Îmbrăcăminte corp", scene.outfit_prompt ?? "", [
-        ["Casual", "casual outfit"], ["Business", "business suit"], ["Elegant", "elegant dress"],
-        ["Sport", "sportswear"], ["Tradițional", "traditional clothing"], ["Palton/iarnă", "winter coat"],
-        ["Vară lejer", "light summer clothing"],
+        ["Casual", "casual outfit"], ["Business", "business suit"], ["Elegant/seară", "elegant evening dress"],
+        ["Smart casual", "smart casual blazer"], ["Sport", "sportswear"], ["Tradițional", "traditional clothing"],
+        ["Palton iarnă", "winter coat"], ["Vară lejer", "light summer clothing"], ["Trench", "trench coat"],
       ], (v) => set({ outfit_prompt: v }))}
       {combo("Acoperământ cap", scene.head_wear ?? "", [
         ["Fără", "no headwear"], ["Pălărie", "hat"], ["Șapcă", "cap"], ["Eșarfă/batic", "headscarf"],
         ["Căciulă", "wool beanie"], ["Ochelari", "glasses"], ["Ochelari de soare", "sunglasses"],
       ], (v) => set({ head_wear: v }))}
-      {combo("Fundal", scene.location_prompt ?? "", [
-        ["Studio simplu", "plain studio background"], ["Stradă urbană", "urban street"], ["Parc", "park"],
-        ["Birou", "modern office"], ["Interior casă", "home interior"], ["Plajă", "beach"],
-        ["Munte", "mountains"], ["Cafenea", "cafe"], ["Natură", "nature landscape"],
-      ], (v) => set({ location_prompt: v }))}
-      {combo("Stare / expresie", scene.mood ?? "", [
-        ["Zâmbet", "smiling"], ["Serios", "serious"], ["Trist", "sad"], ["Râde", "laughing"],
-        ["Plânge", "crying"], ["Gânditor", "thoughtful"], ["Surprins", "surprised"],
-        ["Încrezător", "confident"], ["Calm", "calm"], ["Furios", "angry"], ["Visător", "dreamy"],
-      ], (v) => set({ mood: v }))}
-      {combo("Postură", scene.pose ?? "", [
-        ["În picioare", "standing"], ["Așezat", "sitting"], ["Mergând", "walking"],
-        ["Sprijinit", "leaning"], ["Din profil", "side profile"], ["Trei sferturi", "three-quarter view"],
-      ], (v) => set({ pose: v }))}
+      {combo("Încălțăminte", extras.footwear ?? "", [
+        ["Adidași", "sneakers"], ["Pantofi eleganți", "formal shoes"], ["Cizme", "boots"],
+        ["Tocuri", "high heels"], ["Sandale", "sandals"], ["Mocasini", "loafers"],
+      ], (v) => setExtra("footwear", v))}
+      {combo("Accesorii", extras.accessories ?? "", [
+        ["Fără", "no accessories"], ["Colier", "necklace"], ["Cercei", "earrings"], ["Ceas", "wristwatch"],
+        ["Eșarfă", "scarf"], ["Geantă", "handbag"], ["Curea", "belt"],
+      ], (v) => setExtra("accessories", v))}
+      {combo("Machiaj", extras.makeup ?? "", [
+        ["Natural", "natural makeup"], ["Fără", "no makeup"], ["Elegant/glam", "glamorous makeup"], ["Îndrăzneț", "bold makeup"],
+      ], (v) => setExtra("makeup", v))}
+      {combo("Paletă culori ținută", extras.color_palette ?? "", [
+        ["Neutre", "neutral tones"], ["Monocrom", "monochrome outfit"], ["Calde", "warm tones"],
+        ["Reci", "cool tones"], ["Vibrante", "vibrant colors"], ["Pasteluri", "pastel colors"],
+      ], (v) => setExtra("color_palette", v))}
+
+      {/* ── Stil foto & acțiune ── */}
+      <div className="gen-group">Stil foto &amp; acțiune</div>
+      {combo("Stil fotografic", extras.photo_style ?? "", [
+        ["Editorial", "editorial photography"], ["Corporate headshot", "corporate headshot"], ["Fashion", "high-fashion editorial"],
+        ["Documentar", "documentary candid"], ["Cinematic", "cinematic film still"], ["Film vintage", "vintage film look"],
+        ["Lifestyle", "lifestyle photography"], ["B&W", "black and white photography"],
+      ], (v) => setExtra("photo_style", v))}
+      {combo("Acțiune", extras.action ?? "", [
+        ["Pozează", "posing for the camera"], ["Citește", "reading a book"], ["Lucrează la laptop", "working on a laptop"],
+        ["Bea cafea", "drinking coffee"], ["Vorbește la telefon", "talking on the phone"], ["Se plimbă", "walking outdoors"],
+        ["Gătește", "cooking"], ["Conduce", "driving"],
+      ], (v) => setExtra("action", v))}
+      {combo("Recuzită", extras.props ?? "", [
+        ["Fără", "no props"], ["Ceașcă cafea", "coffee cup"], ["Carte", "book"], ["Laptop", "laptop"],
+        ["Telefon", "smartphone"], ["Umbrelă", "umbrella"], ["Flori", "flowers"], ["Ochelari în mână", "holding glasses"],
+      ], (v) => setExtra("props", v))}
 
       <label className="form-row" style={{ marginTop: 8 }}>
         <span>Descriere suplimentară (opțional)</span>
