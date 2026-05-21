@@ -328,7 +328,7 @@ export const DICTIONARY_RO: Dictionary = {
     uploadAudio: "Încarcă audio",
     uploadImage: "Încarcă imagine",
     submit: "Creează video",
-    submitting: "Se creează jobul…",
+    submitting: "Se creează videoclipul…",
     providerNotConfigured: "Furnizorul nu este configurat.",
     providerRequiresGpu: "Acest furnizor necesită un GPU.",
     providerRequiresModelFiles: "Acest furnizor necesită fișiere de model pe disc.",
