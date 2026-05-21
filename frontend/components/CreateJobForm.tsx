@@ -1635,6 +1635,20 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
                 <small className="muted" style={{ fontSize: 12 }}>{ttsStatus}</small>
               )}
             </div>
+            {/* Audio generation status: 🔴 not generated / 🟡 generating /
+                🟢 done, followed by the audio title. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, fontSize: 13 }}>
+              <span style={{ fontSize: 14 }}>
+                {ttsBusy ? "🟡" : ttsArtifact ? "🟢" : "🔴"}
+              </span>
+              <span className="muted">
+                {ttsBusy
+                  ? "Se generează audio…"
+                  : ttsArtifact
+                  ? `Audio gata — ${(brief || "audio").replace(/[^a-zA-Z0-9_.-]+/g, "_")}`
+                  : "Audio negenerat"}
+              </span>
+            </div>
             {/* Phase 20 — per-voice sample preview. Full-width row,
                 shown only when a voice with sample_audio_url is picked. */}
             {(() => {
