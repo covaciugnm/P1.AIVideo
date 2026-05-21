@@ -33,10 +33,13 @@ RUN git clone --depth 1 https://github.com/fudan-generative-vision/hallo2.git /o
 # torch 2.7). numpy pinned <2 LAST so audio-separator can't pull numpy 2.x
 # and break torch/cv2.
 # numpy<2 + cython FIRST (insightface compiles C extensions against them).
+# moviepy pinned 1.0.3 (hallo2 uses the removed moviepy.editor API). xformers
+# 0.0.31 with --no-deps so it matches torch 2.7.1 WITHOUT upgrading torch.
 RUN python -m pip install --no-cache-dir "numpy<2" cython && \
     python -m pip install --no-cache-dir \
-      pydub icecream "audio-separator>=0.17" onnxruntime-gpu av moviepy \
+      pydub icecream "audio-separator>=0.17" onnxruntime-gpu av "moviepy==1.0.3" \
       insightface lpips mediapipe && \
+    python -m pip install --no-cache-dir --no-deps "xformers==0.0.31" && \
     python -m pip install --no-cache-dir "numpy<2"
 
 COPY docker/model-hallo/requirements.txt /opt/hallo-wrapper/requirements.txt
