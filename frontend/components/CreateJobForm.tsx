@@ -24,6 +24,7 @@ import { localizeApiDetail } from "@/lib/i18n/formatters";
 import { AudioPreview } from "./AudioPreview";
 import { ErrorMessage } from "./ErrorMessage";
 import { HelpHint } from "./HelpHint";
+import { AuthImage } from "./AuthImage";
 import { ProviderStatusBadge } from "./ProviderStatusBadge";
 import { useSettings } from "./SettingsContext";
 import { UploadCard } from "./UploadCard";
@@ -208,6 +209,11 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   //   library. Runs once at mount, only when fields are empty so we
   //   don't clobber operator edits.
   const searchParams = useSearchParams();
+  // Arriving from a character's image gallery (?character_id&image_id) puts the
+  // form in a locked, simplified mode: character fixed + source photo shown;
+  // only Text-audio + Video sections visible; everything else uses defaults.
+  const fromCharacter = Boolean(searchParams?.get("character_id"));
+  const sourceImageId = searchParams?.get("image_id") || null;
   const prefillAppliedRef = useRef(false);
   useEffect(() => {
     if (prefillAppliedRef.current) return;
@@ -967,6 +973,25 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           )}
         </h2>
         <p className="muted" style={{ fontSize: 12 }}>{t("videoCharacter.helpHint")}</p>
+        {fromCharacter ? (
+          /* Locked: came from a character. Show name (read-only) + the source
+             photo we started from (if any). The character cannot be changed. */
+          <div className="field" style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+            {sourceImageId && characterId && (
+              <AuthImage
+                src={`${api.getActiveApiBaseUrl()}/api/v1/characters/${characterId}/images/${sourceImageId}/content`}
+                alt="poza sursă"
+                style={{ width: 110, height: "auto", borderRadius: 8, border: "1px solid var(--border)" }}
+              />
+            )}
+            <div>
+              <strong>{selectedCharacter?.display_name || selectedCharacter?.name || characterId}</strong>
+              <div className="muted" style={{ fontSize: 12 }}>
+                🔒 Personaj fix · {selectedCharacter?.default_language ?? "—"}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="field">
           <select
             value={characterId}
@@ -995,7 +1020,8 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             </p>
           )}
         </div>
-        {selectedCharacter && (
+        )}
+        {!fromCharacter && selectedCharacter && (
           <div className="card" style={{ marginTop: 8, padding: 8 }}>
             <strong>{t("characters.summary.title")}: {selectedCharacter.display_name || selectedCharacter.name}</strong>
             <div className="muted" style={{ fontSize: 12 }}>
