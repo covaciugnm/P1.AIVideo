@@ -613,6 +613,11 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
     const timer = window.setInterval(() => {
       setTtsElapsed(Math.round((Date.now() - t0) / 1000));
     }, 1000);
+    // Hard cap so it never spins forever — F5 on CPU is ~27s per ~180-char
+    // chunk, so long paragraphs blow past any reasonable wait. Abort + advise.
+    const CAP_MS = 180_000;
+    let timedOut = false;
+    const killTimer = window.setTimeout(() => { timedOut = true; controller.abort(); }, CAP_MS);
     logBus.emit({
       source: "frontend",
       level: "info",
@@ -627,7 +632,16 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       controller.signal,
     );
     window.clearInterval(timer);
+    window.clearTimeout(killTimer);
     setTtsBusy(false);
+    if (timedOut) {
+      setTtsStatus(null);
+      setError(
+        "Generarea audio a depășit 3 minute și a fost oprită. Textul e prea lung pentru F5 pe CPU — " +
+        "folosește un text mai scurt (1-3 propoziții) sau activează F5 pe GPU pentru text lung.",
+      );
+      return;
+    }
     if (!res.ok) {
       // Phase 8G-2 + Phase 10A-1 — operator-friendly copy keyed on both
       // the error code AND the selected provider, so F5TTS-Ro shows
