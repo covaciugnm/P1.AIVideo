@@ -712,6 +712,31 @@ export async function generateTts(
   }
 }
 
+// --- Async TTS jobs (DB-backed background generation) ---------------------
+export interface TtsJobStatus {
+  readonly id: string;
+  readonly status: "queued" | "running" | "done" | "error";
+  readonly chunks_done: number;
+  readonly chunks_total: number;
+  readonly artifact_id: string | null;
+  readonly provider_id: string;
+  readonly voice_id: string | null;
+  readonly error_code: string | null;
+  readonly error_message: string | null;
+}
+
+export function generateTtsAsync(body: TTSGenerateRequest): Promise<TtsJobStatus> {
+  return request<TtsJobStatus>("/api/v1/tts/generate-async", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+}
+
+export function getTtsJob(jobId: string): Promise<TtsJobStatus> {
+  return request<TtsJobStatus>(`/api/v1/tts/jobs/${jobId}`);
+}
+
 export function artifactContentUrl(
   artifactId: string,
   options?: { readonly download?: boolean },

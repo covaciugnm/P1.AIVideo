@@ -84,6 +84,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   const [ttsBusy, setTtsBusy] = useState(false);
   const [ttsStatus, setTtsStatus] = useState<string | null>(null);
   const [ttsElapsed, setTtsElapsed] = useState(0); // seconds, for the progress bar
+  const [ttsChunks, setTtsChunks] = useState<{ done: number; total: number } | null>(null);
   // Phase 8G-2 — capture the generated TTS artifact so we can render
   // an inline preview after a successful Generate Audio click.
   const [ttsArtifact, setTtsArtifact] = useState<{
@@ -624,77 +625,53 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       message: `tts-generate start (provider=${ttsProvider ?? "default"})`,
       meta: { provider_id: ttsProvider ?? "default" },
     });
-    const res = await api.generateTts(
-      {
+    window.clearTimeout(killTimer); // async job survives long runs; no hard cap
+    void timedOut;
+    const sleep = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+    try {
+      // Submit a background job, then poll for progress (chunk N/M) until done.
+      const job = await api.generateTtsAsync({
         script_text: scriptText.trim(),
         tts_provider_id: ttsProvider ?? "piper",
-      },
-      controller.signal,
-    );
-    window.clearInterval(timer);
-    window.clearTimeout(killTimer);
-    setTtsBusy(false);
-    if (timedOut) {
-      setTtsStatus(null);
-      setError(
-        "Generarea audio a depășit 3 minute și a fost oprită. Textul e prea lung pentru F5 pe CPU — " +
-        "folosește un text mai scurt (1-3 propoziții) sau activează F5 pe GPU pentru text lung.",
-      );
-      return;
-    }
-    if (!res.ok) {
-      // Phase 8G-2 + Phase 10A-1 — operator-friendly copy keyed on both
-      // the error code AND the selected provider, so F5TTS-Ro shows
-      // Romanian-specific guidance instead of Piper-only instructions.
-      const isF5 = (ttsProvider ?? "piper").startsWith("f5tts_ro");
-      const niceMsg = isF5
-        ? t(`niceErrors.f5_${res.error.code.replace("tts_", "")}` as any)
-        : t(`niceErrors.piper_${res.error.code.replace("tts_", "")}` as any);
-
-      // Fallback to raw message if key lookup fails (path missing in Dictionary).
-      const finalMsg = niceMsg.includes("niceErrors.")
-        ? res.error.message
-        : niceMsg;
-
-      setTtsStatus(finalMsg);
-      setTtsArtifact(null);
-      logBus.emit({
-        source: "frontend",
-        level: res.httpStatus === 503 ? "warning" : "error",
-        message: `tts-generate ${res.error.code}`,
-        meta: { code: res.error.code, status: res.httpStatus },
       });
-    } else {
-      const v = res.value;
-      // Phase 8G-2 — capture the generated artifact + render preview.
-      setTtsArtifact({
-        artifact_id: v.artifact_id,
-        provider_id: v.provider_id,
-        voice_id: v.voice_id,
-        mime_type: v.mime_type,
-        size_bytes: v.size_bytes,
-        duration_seconds: v.duration_seconds,
-        sample_rate: v.sample_rate,
-        channels: v.channels,
-      });
-      setTtsStatus(
-        t("createJob.ttsGeneratedStatus", {
-          duration: v.duration_seconds.toFixed(2),
-          rate: v.sample_rate,
-          channels: v.channels,
-          size: (v.size_bytes / 1024).toFixed(1),
-        }),
-      );
-      logBus.emit({
-        source: "frontend",
-        level: "success",
-        message: "tts-generate succeeded",
-        meta: {
-          artifact_id: v.artifact_id,
-          provider_id: v.provider_id,
-          duration_seconds: v.duration_seconds,
-        },
-      });
+      setTtsChunks({ done: job.chunks_done, total: job.chunks_total });
+      let final = job;
+      const POLL_DEADLINE = Date.now() + 1_200_000; // 20 min safety cap
+      while (final.status === "queued" || final.status === "running") {
+        if (controller.signal.aborted || Date.now() > POLL_DEADLINE) break;
+        await sleep(2000);
+        try {
+          final = await api.getTtsJob(job.id);
+          setTtsChunks({ done: final.chunks_done, total: final.chunks_total });
+        } catch { /* transient — keep polling */ }
+      }
+      window.clearInterval(timer);
+      setTtsBusy(false);
+      if (final.status === "done" && final.artifact_id) {
+        setTtsArtifact({
+          artifact_id: final.artifact_id,
+          provider_id: final.provider_id,
+          voice_id: final.voice_id ?? "",
+          mime_type: "audio/wav",
+          size_bytes: 0,
+          duration_seconds: 0,
+          sample_rate: 0,
+          channels: 0,
+        });
+        setTtsStatus(null);
+        logBus.emit({ source: "frontend", level: "success", message: "tts-async done", meta: { artifact_id: final.artifact_id } });
+      } else if (final.status === "error") {
+        setTtsArtifact(null);
+        setTtsStatus(null);
+        setError(final.error_message || "Generarea audio a eșuat.");
+      } else {
+        setTtsStatus(null);
+        setError("Generarea audio a depășit timpul de așteptare. Verifică starea jobului mai târziu.");
+      }
+    } catch (err) {
+      window.clearInterval(timer);
+      setTtsBusy(false);
+      setError((err as Error).message);
     }
   };
   const [audioArtifact, setAudioArtifact] = useState<UploadAudioResponse | null>(
@@ -1679,7 +1656,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
               </span>
               <span className="muted">
                 {ttsBusy
-                  ? `Se generează audio… ${ttsElapsed}s`
+                  ? `Se generează audio… ${ttsChunks && ttsChunks.total > 0 ? `bucata ${ttsChunks.done}/${ttsChunks.total} · ` : ""}${ttsElapsed}s`
                   : ttsArtifact
                   ? `Audio gata — ${(brief || "audio").replace(/[^a-zA-Z0-9_.-]+/g, "_")}`
                   : "Audio negenerat"}
@@ -1687,7 +1664,13 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             </div>
             {(ttsBusy || ttsArtifact) && (
               <ProgressBar
-                percent={ttsBusy ? Math.min(95, Math.round((ttsElapsed / 50) * 100)) : 100}
+                percent={
+                  !ttsBusy
+                    ? 100
+                    : ttsChunks && ttsChunks.total > 0
+                    ? Math.min(99, Math.round((ttsChunks.done / ttsChunks.total) * 100))
+                    : Math.min(95, Math.round((ttsElapsed / 50) * 100))
+                }
               />
             )}
             {/* Phase 20 — per-voice sample preview. Full-width row,

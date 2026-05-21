@@ -88,6 +88,9 @@ REQUIRED_ENDPOINTS: tuple[tuple[str, str], ...] = (
     # Generation
     ("POST", "/api/v1/script/generate"),
     ("POST", "/api/v1/tts/generate"),
+    ("POST", "/api/v1/tts/generate-async"),
+    ("GET", "/api/v1/tts/jobs/{job_id}"),
+    ("GET", "/api/v1/system/gpu"),
     ("POST", "/api/v1/video/generate"),
     # Media tools
     ("POST", "/api/v1/audio/fit-check"),

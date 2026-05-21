@@ -379,6 +379,7 @@ async def _generate_via_f5tts_ro(
     payload: TTSGenerateRequest,
     session: AsyncSession,
     provider_id: str = "f5tts_ro",
+    progress_cb=None,  # Callable[[done:int, total:int], None] — per-chunk hook
 ) -> TTSGenerateResponse:
     """Phase 10A-1 — route TTS generation to the optional ``tts-ro``
     Docker service over HTTP.
@@ -456,6 +457,9 @@ async def _generate_via_f5tts_ro(
     max_chars = int(os.environ.get("F5TTS_RO_CHUNK_MAX_CHARS", "180"))
     chunks = _chunk_script_for_tts(payload.script_text, max_chars=max_chars)
     timeout_s = int(os.environ.get("F5TTS_RO_TIMEOUT", "120"))
+    if progress_cb:
+        try: progress_cb(0, len(chunks))
+        except Exception: pass
 
     def _call_wrapper(chunk_text: str, chunk_dest):
         """Make ONE call to F5TTS-Ro for ``chunk_text`` → writes to ``chunk_dest``.
@@ -553,6 +557,9 @@ async def _generate_via_f5tts_ro(
                 chunk_files.append(chunk_dest)
                 wrapper_bodies.append(chunk_body)
                 http_code = chunk_http  # last is reported
+                if progress_cb:
+                    try: progress_cb(i + 1, len(chunks))
+                    except Exception: pass
             # Concat all chunks into the final dest.
             try:
                 _concat_wavs(chunk_files, dest)
@@ -668,3 +675,44 @@ _ = _ERROR_CODES
 # Avoid an unused-import warning when ``os`` is needed only inside a
 # future branch.
 _ = os
+
+
+# --- Async TTS jobs (Phase: DB-backed background generation) -----------------
+@router.post("/generate-async", status_code=202)
+async def tts_generate_async(
+    payload: TTSGenerateRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Create a background TTS job + return its id immediately. The chunked
+    F5 generation runs in the background (no request timeout); poll
+    ``GET /api/v1/tts/jobs/{id}`` for progress + the final artifact."""
+    import asyncio
+
+    from app.services import tts_job_service
+
+    provider_id = (payload.tts_provider_id or "piper").strip() or "piper"
+    job = await tts_job_service.create_job(
+        session,
+        provider_id=provider_id,
+        voice_id=provider_id,
+        language=payload.language or "ro",
+        script_text=payload.script_text,
+    )
+    asyncio.create_task(tts_job_service.run_tts_job(job.id))
+    logger.info("tts.async.created job=%s provider=%s chunks=%d",
+                job.id, provider_id, job.chunks_total)
+    return tts_job_service.to_public(job)
+
+
+@router.get("/jobs/{job_id}")
+async def tts_job_status(
+    job_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    from app.models.tts_job import TtsJob
+    from app.services import tts_job_service
+
+    job = await session.get(TtsJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="tts job not found")
+    return tts_job_service.to_public(job)
