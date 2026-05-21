@@ -139,41 +139,67 @@ async def generate(body: MuseTalkRequest):
     except OSError as exc:
         return _err(500, "storage_failed", str(exc))
 
-    # MuseTalk's inference is invoked via the `scripts/inference.py` in
-    # the upstream repo. Args differ per release; we use the v1.0 API.
+    src = _source_dir()
+    models_root = _models_root()
+    # MuseTalk resolves weights via the relative ./models dir; point it at the
+    # operator weights so dwpose/whisper/sd-vae/musetalkV15 resolve.
+    msrc_models = src / "models"
+    if not (msrc_models.is_symlink() or (msrc_models.exists() and any(msrc_models.iterdir()))):
+        try:
+            if msrc_models.exists():
+                msrc_models.rmdir()
+            msrc_models.symlink_to(models_root)
+        except OSError:
+            pass
+
+    # Per-task inference config (MuseTalk reads video_path/audio_path from YAML;
+    # a still image is accepted as the "video"). Model paths + version (v15) go
+    # on the CLI.
+    work = out_path.parent / "musetalk_work"
+    cfg_path = out_path.parent / "musetalk_task.yaml"
+    try:
+        cfg_path.write_text(
+            "task_0:\n"
+            f' video_path: "{body.image_path}"\n'
+            f' audio_path: "{body.audio_path}"\n'
+            " bbox_shift: 0\n"
+        )
+    except OSError as exc:
+        return _err(500, "storage_failed", str(exc))
+
     cmd = [
-        sys.executable, str(_source_dir() / "scripts" / "inference.py"),
-        "--inference_config", "configs/inference/test.yaml",
-        # MuseTalk v1.0 uses an inference YAML — we pass overrides via env.
+        sys.executable, str(src / "scripts" / "inference.py"),
+        "--version", "v15",
+        "--inference_config", str(cfg_path),
+        "--result_dir", str(work),
+        "--unet_model_path", "models/musetalkV15/unet.pth",
+        "--unet_config", "models/musetalkV15/musetalk.json",
+        "--vae_type", "sd-vae",
+        "--whisper_dir", "models/whisper",
+        "--use_float16",
     ]
-    env = {
-        **os.environ,
-        "MUSETALK_VIDEO_PATH": body.image_path,
-        "MUSETALK_AUDIO_PATH": body.audio_path,
-        "MUSETALK_RESULT_DIR": str(out_path.parent),
-    }
+    env = {**os.environ, "PYTHONPATH": str(src)}
     t0 = time.perf_counter()
     try:
-        proc = subprocess.run(cmd, cwd=str(_source_dir()),
+        proc = subprocess.run(cmd, cwd=str(src),
                               capture_output=True, text=True, env=env,
-                              timeout=int(os.environ.get("MUSETALK_INFER_TIMEOUT", "900")))
+                              timeout=int(os.environ.get("MUSETALK_INFER_TIMEOUT", "1200")))
         elapsed = time.perf_counter() - t0
         if proc.returncode != 0:
             return _err(500, "generation_failed",
                         f"inference exit={proc.returncode}: {proc.stderr[-300:]}")
-        # MuseTalk writes to result_dir with auto-named MP4. Find it + move.
-        candidates = sorted(out_path.parent.glob("*.mp4"),
-                            key=lambda p: p.stat().st_mtime, reverse=True)
-        if not candidates:
-            return _err(500, "generation_failed", "no MP4 produced")
-        produced = candidates[0]
-        if produced != out_path:
-            produced.rename(out_path)
-        size = out_path.stat().st_size
+        import glob
+        import shutil
+        produced = sorted(glob.glob(str(work / "**" / "*.mp4"), recursive=True),
+                          key=lambda p: Path(p).stat().st_size if Path(p).is_file() else 0)
+        if not produced:
+            return _err(500, "generation_failed",
+                        f"no MP4 under {work}. tail: {proc.stdout[-200:]}")
+        shutil.move(produced[-1], str(out_path))
         return {
             "status": "completed",
             "output_path": str(out_path),
-            "size_bytes": size,
+            "size_bytes": out_path.stat().st_size if out_path.is_file() else 0,
             "duration_seconds": elapsed,
         }
     except subprocess.TimeoutExpired:

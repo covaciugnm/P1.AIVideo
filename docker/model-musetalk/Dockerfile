@@ -58,6 +58,18 @@ RUN git clone --depth 1 https://github.com/TMElyralab/MuseTalk.git /opt/musetalk
       pydub icecream && \
     python -m pip install "numpy<2"
 
+# torch>=2.6 defaults torch.load(weights_only=True), which rejects the numpy
+# objects in MuseTalk's legacy checkpoints (DWPose etc.). sitecustomize on
+# PYTHONPATH=/opt/musetalk-src auto-loads at startup and forces weights_only=False.
+RUN printf '%s\n' \
+    'import torch as _t' \
+    '_orig = _t.load' \
+    'def _patched(*a, **k):' \
+    '    k.setdefault("weights_only", False)' \
+    '    return _orig(*a, **k)' \
+    '_t.load = _patched' \
+    > /opt/musetalk-src/sitecustomize.py
+
 COPY docker/model-musetalk/requirements.txt /opt/musetalk-wrapper/requirements.txt
 RUN python -m pip install --no-cache-dir -r /opt/musetalk-wrapper/requirements.txt
 
