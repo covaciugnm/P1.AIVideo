@@ -129,6 +129,9 @@ async def generate(body: HalloRequest):
         cfg = OmegaConf.load(str(src / "configs" / "inference" / "long.yaml"))
         cfg.save_path = str(work)
         cfg.cache_path = str(out.parent / ".hallo_cache")
+        # Fewer diffusion steps so it's feasible on a 24GB GPU (40 is far too
+        # slow there). Tunable via HALLO_INFER_STEPS; the 128GB box can raise it.
+        cfg.inference_steps = int(os.environ.get("HALLO_INFER_STEPS", "12"))
         OmegaConf.save(cfg, str(cfg_path))
     except Exception as exc:  # noqa: BLE001
         return _err(500, "generation_failed", f"config build failed: {exc}")
