@@ -42,7 +42,7 @@ RUN python -m pip install --extra-index-url https://download.pytorch.org/whl/cu1
 # via openmim so versions resolve against the just-built mmcv. mmcv builds in
 # its OWN layer so the ~8-min sm_120 compile caches once it succeeds.
 RUN python -m pip install "numpy<2" cython "setuptools<70" && \
-    python -m pip install -v --no-build-isolation "mmcv==2.2.0"
+    python -m pip install -v --no-build-isolation "mmcv==2.1.0"
 # chumpy (a legacy mmpose dep) breaks under build isolation ("No module named
 # 'pip'"), so pre-install it WITHOUT isolation against the env numpy<2/setuptools.
 RUN python -m pip install --no-build-isolation chumpy && \
