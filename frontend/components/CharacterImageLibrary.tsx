@@ -654,7 +654,7 @@ function ImageCard({
           return (
             <div className="imglib-actions" style={{ marginTop: 6 }}>
             <Link
-              href={`/jobs/new?character_id=${character.id}&brief=${encodeURIComponent(brief)}`}
+              href={`/jobs/new?character_id=${character.id}&image_id=${image.id}&brief=${encodeURIComponent(brief)}`}
               className="btn btn-primary imglib-action-wide"
               style={{ textDecoration: "none", background: "var(--accent, #4a90e2)", color: "white" }}
               title="Pipeline-ul video este momentan oprit / va fi activat pe serverul de 128GB. Acest buton pregătește un job video pe baza acestei imagini."
