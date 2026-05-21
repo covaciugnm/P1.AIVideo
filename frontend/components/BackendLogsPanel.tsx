@@ -18,7 +18,9 @@ const MAX_BUFFER = 1000;
 // would sit empty with no error — the root cause of the "panoul e gol"
 // bug reported in Phase 20. With a cap, we time out, surface the
 // error in the diagnostic bar, and the next tick retries.
-const FETCH_TIMEOUT_MS = 4000;
+// 4s was too tight over the Cloudflare tunnel (and when the backend is busy
+// with CPU-bound TTS) → frequent false "timed out". 12s gives headroom.
+const FETCH_TIMEOUT_MS = 12000;
 
 function fmtTime(ts: number): string {
   const d = new Date(ts * 1000);

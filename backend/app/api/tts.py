@@ -548,12 +548,14 @@ async def _generate_via_f5tts_ro(
     http_code = None
     try:
         if len(chunks) == 1:
-            body, http_code = _call_wrapper(chunks[0], dest)
+            import asyncio as _aio
+            body, http_code = await _aio.to_thread(_call_wrapper, chunks[0], dest)
             wrapper_bodies = [body]
         else:
             for i, chunk_text in enumerate(chunks):
                 chunk_dest = root / upload_service.safe_unique_filename(f".chunk{i:03d}.wav")
-                chunk_body, chunk_http = _call_wrapper(chunk_text, chunk_dest)
+                import asyncio as _aio
+                chunk_body, chunk_http = await _aio.to_thread(_call_wrapper, chunk_text, chunk_dest)
                 chunk_files.append(chunk_dest)
                 wrapper_bodies.append(chunk_body)
                 http_code = chunk_http  # last is reported
