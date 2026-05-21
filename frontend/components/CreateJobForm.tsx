@@ -287,10 +287,16 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
             setTextScriptLlmProvider((prev) => prev ?? pick.provider_id);
           }
         }
-        // Default video engine = first runnable (quality-ranked by the
-        // backend catalog order, e.g. SadTalker before Wav2Lip).
-        const firstVideo = (p.video_generator ?? []).find(isUsableProvider);
-        if (firstVideo) setVideoProvider((prev) => prev ?? firstVideo.provider_id);
+        // Default video engine = best-quality RUNNABLE talking-head/lip-sync
+        // engine. Quality order (best first); fall back to first usable.
+        const VIDEO_QUALITY = ["hallo", "echomimic", "musetalk", "liveportrait", "sadtalker", "wav2lip"];
+        const vids = (p.video_generator ?? []).filter(isUsableProvider);
+        const bestVideo =
+          VIDEO_QUALITY.map((id) => vids.find((v) => v.provider_id === id)).find(Boolean)
+          ?? vids[0];
+        if (bestVideo) {
+          setVideoProvider((prev) => (fromCharacter ? bestVideo.provider_id : (prev ?? bestVideo.provider_id)));
+        }
       } catch {
         // Providers panel is optional; the form still works.
       }
@@ -616,7 +622,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       // Phase 8G-2 + Phase 10A-1 — operator-friendly copy keyed on both
       // the error code AND the selected provider, so F5TTS-Ro shows
       // Romanian-specific guidance instead of Piper-only instructions.
-      const isF5 = (ttsProvider ?? "piper") === "f5tts_ro";
+      const isF5 = (ttsProvider ?? "piper").startsWith("f5tts_ro");
       const niceMsg = isF5
         ? t(`niceErrors.f5_${res.error.code.replace("tts_", "")}` as any)
         : t(`niceErrors.piper_${res.error.code.replace("tts_", "")}` as any);
