@@ -39,9 +39,13 @@ RUN python -m pip install --extra-index-url https://download.pytorch.org/whl/cu1
     torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1
 
 # numpy<2 + cython first; then build mmcv from source (long), then mmdet/mmpose
-# via openmim so versions resolve against the just-built mmcv.
+# via openmim so versions resolve against the just-built mmcv. mmcv builds in
+# its OWN layer so the ~8-min sm_120 compile caches once it succeeds.
 RUN python -m pip install "numpy<2" cython "setuptools<70" && \
-    python -m pip install -v --no-build-isolation "mmcv==2.2.0" && \
+    python -m pip install -v --no-build-isolation "mmcv==2.2.0"
+# chumpy (a legacy mmpose dep) breaks under build isolation ("No module named
+# 'pip'"), so pre-install it WITHOUT isolation against the env numpy<2/setuptools.
+RUN python -m pip install --no-build-isolation chumpy && \
     python -m pip install -U openmim && \
     mim install "mmdet>=3.1,<3.4" "mmpose>=1.1,<1.4"
 
