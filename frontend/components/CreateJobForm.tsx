@@ -223,6 +223,26 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
   // only Text-audio + Video sections visible; everything else uses defaults.
   const fromCharacter = Boolean(searchParams?.get("character_id"));
   const sourceImageId = searchParams?.get("image_id") || null;
+  // Use the source character photo directly as the job's portrait.
+  useEffect(() => {
+    const cid = searchParams?.get("character_id");
+    const iid = searchParams?.get("image_id");
+    if (!cid || !iid) return;
+    const ctrl = new AbortController();
+    void (async () => {
+      try {
+        const { listCharacterImages } = await import("@/lib/characters");
+        const r = await listCharacterImages(cid, ctrl.signal);
+        const img = r.items.find((i) => i.id === iid);
+        if (img?.artifact_id) {
+          setGeneratedImageArtifactId(img.artifact_id);
+          setGeneratedImageUrl(`${api.getActiveApiBaseUrl()}/api/v1/characters/${cid}/images/${iid}/content`);
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const prefillAppliedRef = useRef(false);
   useEffect(() => {
     if (prefillAppliedRef.current) return;
@@ -701,6 +721,12 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
 
   const [syntheticPerson, setSyntheticPerson] = useState(false);
   const [consent, setConsent] = useState(false);
+  // From-character flow hides the compliance section — the persona is already
+  // vetted, so auto-assert synthetic + consent.
+  useEffect(() => {
+    if (fromCharacter) { setSyntheticPerson(true); setConsent(true); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromCharacter]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -715,15 +741,17 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
 
   const canSubmit =
     // Phase 18 — minimum 50 chars for brief + script_text (gating for
-    // Generate Script / Generate Audio / Submit Job).
-    brief.trim().length >= 50 &&
+    // Generate Script / Generate Audio / Submit Job). Brief is hidden in the
+    // from-character flow, so it isn't gated there.
+    (fromCharacter || brief.trim().length >= 50) &&
     // Phase 17 — character REQUIRED for talking_head + news_presenter
     // (scenes_only has no character on screen).
     (jobType === "scenes_only" || characterId.length > 0) &&
     duration >= durMin &&
     duration <= durMax &&
-    syntheticPerson &&
-    consent &&
+    // Compliance section is hidden in the from-character flow; the character
+    // is already a vetted synthetic persona, so consent is auto-asserted.
+    (fromCharacter || (syntheticPerson && consent)) &&
     // Phase 21 — voice / scene_plan gates per job_type.
     // - talking_head: script_text OR audio artifact (as before)
     // - scenes_only / news_presenter: scene_plan with ≥1 scene, all
@@ -870,6 +898,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           changes. talking_head submits today; scenes_only +
           news_presenter route to the new scene-plan form (next
           sub-phase). */}
+      {!fromCharacter && (
       <section className="card" data-testid="jobtype-section">
         <h2 style={{ marginBottom: 6 }}>{t("createJob.sectionJobType")}</h2>
         <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
@@ -965,6 +994,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           </p>
         </div>
       </section>
+      )}
       <section
         className="card"
         data-testid="character-section"
@@ -1079,6 +1109,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           )}
         </div>
       </section>
+      {!fromCharacter && (
       <section className="card">
         <h2>1. {t("createJob.sectionBrief").replace(/^\d+\.\s*/, "")} <HelpHint slug="create-job" small /></h2>
         <div className="field">
@@ -1242,6 +1273,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           </span>
         </div>
       </section>
+      )}
 
       {/* Phase 21 — Scene plan editor card. Shown only for scenes_only
           and news_presenter. The operator clicks "Generate plan", the
@@ -1693,8 +1725,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
 
       {/* Face section: needed for talking_head + news_presenter (both
           use a character portrait). scenes_only is B-roll only — no
-          portrait, so the upload card is hidden. */}
-      {jobType !== "scenes_only" && (
+          portrait, so the upload card is hidden. Hidden too when arriving
+          from a character (the source photo is already the portrait). */}
+      {!fromCharacter && jobType !== "scenes_only" && (
       <section className="card">
         <h2>{t("createJob.sectionFace")} <HelpHint slug="image-upload" small /></h2>
         {/* Phase 21 iter 3 — when a FLUX image was generated above,
@@ -1798,6 +1831,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
       </section>
       )}
 
+      {!fromCharacter && (
       <section className="card">
         <h2>{t("createJob.sectionLanguage")} <HelpHint slug="subtitles" small /></h2>
         <p className="muted" style={{ marginTop: -8, marginBottom: 12 }}>
@@ -1896,7 +1930,9 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           </>
         )}
       </section>
+      )}
 
+      {!fromCharacter && (
       <section className="card">
         <h2>{t("createJob.sectionCompliance")} <HelpHint slug="create-job" small /></h2>
         <div className="compliance-banner">{t("createJob.complianceBanner")}</div>
@@ -1919,6 +1955,7 @@ export function CreateJobForm({ uiOptions }: CreateJobFormProps) {
           </label>
         </div>
       </section>
+      )}
 
       {error && <ErrorMessage message={error} />}
 
