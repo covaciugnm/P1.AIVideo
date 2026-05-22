@@ -22,6 +22,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -75,16 +76,32 @@ export default function LoginPage() {
 
           <div className="auth-field">
             <label className="auth-label" htmlFor="login-password">Parolă</label>
-            <input
-              id="login-password"
-              name="login-password"
-              className="auth-input"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-            />
+            <div style={{ position: "relative" }}>
+              <input
+                id="login-password"
+                name="login-password"
+                className="auth-input"
+                type={showPass ? "text" : "password"}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={busy}
+                style={{ paddingRight: 44, width: "100%" }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                aria-label={showPass ? "Ascunde parola" : "Arată parola"}
+                title={showPass ? "Ascunde parola" : "Arată parola"}
+                style={{
+                  position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                  background: "none", border: "none", cursor: "pointer", fontSize: 16, padding: 4,
+                  lineHeight: 1,
+                }}
+              >
+                {showPass ? "🙈" : "👁️"}
+              </button>
+            </div>
           </div>
 
           <button type="submit" className="auth-button" disabled={busy || !username || !password}>
