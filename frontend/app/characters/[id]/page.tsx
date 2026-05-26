@@ -24,6 +24,7 @@ import {
   updateCharacter,
 } from "@/lib/characters";
 import { useT } from "@/lib/i18n/LanguageContext";
+import * as logBus from "@/lib/log-bus";
 
 type Tab = "profile" | "images" | "videos";
 
@@ -72,6 +73,7 @@ export default function CharacterDetailPage() {
     if (!id || !form) return;
     setBusy(true);
     setError(null);
+    logBus.emit({ source: "frontend", level: "info", message: "character update submitted", meta: { character_id: id } });
     try {
       const updated = await updateCharacter(id, {
         profile: form.profile,
@@ -81,8 +83,11 @@ export default function CharacterDetailPage() {
         default_image_provider_id: form.default_image_provider_id || null,
       });
       setCharacter(updated);
+      logBus.emit({ source: "frontend", level: "success", message: `character update → ${id}`, meta: { character_id: id } });
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      logBus.emit({ source: "frontend", level: "error", message: "character update failed", meta: { character_id: id, error: msg } });
     } finally {
       setBusy(false);
     }

@@ -656,6 +656,7 @@ def _build_video_providers() -> list[ProviderInfo]:
         ("ltx_video", "LTX-Video (real-time txt→vid)", "ltx_http", "ltx-video-0.9.1", True, True, "Phase 12V wrapper, ~24GB."),
         ("hunyuan_video", "HunyuanVideo (SOTA txt→vid, 4-bit option)", "hunyuan_http", "hunyuan-video-t2v-720p", True, True, "Phase 12V BIG wrapper, ~60GB → 16GB at int4."),
         ("mochi", "Mochi-1 (Genmo txt→vid, 4-bit option)", "mochi_http", "mochi-1-preview", True, True, "Phase 12V BIG wrapper, ~60GB → 16GB at int4."),
+        ("remote_gb10_video", "GB10 (ThinkStation) — remote t2v (Wan2.2)", "remote_engine_http", "ti2v-5B", False, False, "Remote LAN engine; POST /api/v1/video/remote-generate. Valid combos: preview/ti2v-5B → 1280*704 or 704*1280 (~5-10 min); main/t2v-A14B → 832*480 (heavy). Sequential only."),
         ("local_http_video", "Local HTTP video (operator endpoint)", "local_http", None, True, False, "Operator runs the worker; speaks HTTP."),
         ("external_video_api", "External video API", "external", None, False, False, "External API; not enabled."),
     ]
@@ -672,6 +673,7 @@ def _build_video_providers() -> list[ProviderInfo]:
         "ltx_video": "LTX_BASE_URL",
         "hunyuan_video": "HUNYUAN_BASE_URL",
         "mochi": "MOCHI_BASE_URL",
+        "remote_gb10_video": "REMOTE_IMAGE_BASE_URL",
     }
     out: list[ProviderInfo] = []
     for pid, label, backend_type, model, local, gpu, note in base:
@@ -922,6 +924,35 @@ def _build_image_processor_providers() -> list[ProviderInfo]:
 # ``mock`` is always ``available`` — it returns deterministic placeholder
 # PNGs and is the only provider that runs without operator setup.
 _IMAGE_GENERATOR_CATALOG: tuple[dict, ...] = (
+    # --- Remote LAN engine (GB10 / ThinkStation) — Bearer-authenticated ---
+    {
+        "provider_id": "remote_gb10_image",
+        "label": "GB10 (ThinkStation) — remote engine",
+        "backend_type": "remote_engine_http",
+        "default_model": "image-preview-fast",
+        "locality": "external",  # network call to another host + API key
+        "requires_gpu": False,   # GPU lives on the remote box, not here
+        "requires_model_files": False,
+        "env_endpoint": "REMOTE_IMAGE_BASE_URL",
+        "env_api_key": "REMOTE_ENGINE_API_KEY",
+        "supported_models": [
+            "image-preview-fast",
+            "image-text-layout",
+            "image-photoreal-main",
+            "image-identity",
+            "image-subject-test",
+        ],
+        "notes": (
+            "Remote generation orchestrator over the LAN (e.g. GB10 / "
+            "ThinkStation). Returns the PNG inline as base64 — no shared "
+            "volume needed. Set REMOTE_IMAGE_BASE_URL (the box exposes "
+            "/whoami for the current DHCP IP) and REMOTE_ENGINE_API_KEY "
+            "(sent as Authorization: Bearer). The 'model' field selects the "
+            "remote engine."
+        ),
+        "docs_url": "",
+        "warning": "",
+    },
     # --- Mock (always available, for dev + CI) ---
     {
         "provider_id": "mock",
@@ -1265,7 +1296,7 @@ def _build_image_generator_providers() -> list[ProviderInfo]:
             # env required since the SDK/URL is baked into the adapter).
             # ComfyUI / A1111 / FLUX_LOCAL / SD35_LOCAL / SDXL_LOCAL: need endpoint.
             # Vertex / Midjourney: need BOTH endpoint and key.
-            need_both = pid in ("vertex_imagen3", "midjourney_unofficial")
+            need_both = pid in ("vertex_imagen3", "midjourney_unofficial", "remote_gb10_image")
             need_endpoint_only = entry["locality"] == "local"
             need_key_only = (
                 entry["locality"] == "external" and not need_both

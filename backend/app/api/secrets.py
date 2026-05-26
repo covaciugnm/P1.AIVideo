@@ -77,11 +77,22 @@ async def update_secret(
 @router.delete("/{key_name}", status_code=204)
 async def delete_secret(
     key_name: str,
+    request: Request,
+    actor: User | None = Depends(require_super_admin),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     ok = await secrets_service.delete_secret(session, key_name)
     if not ok:
+        # Audit the failed attempt too (target gone / wrong name). key_name
+        # is a non-sensitive identifier; the secret value is never logged.
+        await security_audit_service.log_secret_event(
+            session, event_type="SECRET_DELETED", result="not_found",
+            severity="warning", request=request, actor=actor,
+            metadata={"key_name": key_name})
         raise HTTPException(status_code=404, detail="secret not found")
+    await security_audit_service.log_secret_event(
+        session, event_type="SECRET_DELETED", result="success",
+        request=request, actor=actor, metadata={"key_name": key_name})
 
 
 @router.post("/{key_name}/test", response_model=ApiSecretTestResponse)

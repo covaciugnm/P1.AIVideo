@@ -17,6 +17,7 @@ import {
   listCharacters,
 } from "@/lib/characters";
 import { useT } from "@/lib/i18n/LanguageContext";
+import * as logBus from "@/lib/log-bus";
 
 export default function CharactersPage() {
   const t = useT();
@@ -67,11 +68,15 @@ export default function CharactersPage() {
 
   const handleDelete = async (id: string) => {
     setBusyDeleteId(id);
+    logBus.emit({ source: "frontend", level: "info", message: "character delete submitted", meta: { character_id: id } });
     try {
       await deleteCharacter(id, { hard: true }); // purge identity + images + videos + jobs
       await reload();
+      logBus.emit({ source: "frontend", level: "success", message: `character delete → ${id}`, meta: { character_id: id } });
     } catch (err) {
-      setError(err as Error);
+      const e = err as Error;
+      setError(e);
+      logBus.emit({ source: "frontend", level: "error", message: "character delete failed", meta: { character_id: id, error: e.message } });
     } finally {
       setBusyDeleteId(null);
       cancelDelete();

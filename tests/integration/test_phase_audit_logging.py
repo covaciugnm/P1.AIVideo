@@ -145,3 +145,45 @@ async def test_backend_logs_access_logged(client):
 @pytest.mark.asyncio
 async def test_audit_endpoint_requires_super_admin(client):
     assert (await client.get("/api/v1/audit/security-events")).status_code == 401
+
+
+# --- R4 remediation -------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_operator_route_denied_is_audited(client):
+    """R4 TASK 1 — require_operator_or_above now audits denials, mirroring
+    require_super_admin (previously silent)."""
+    tok = await _admin_token(client)
+    # unauthenticated mutating call on an operator-or-above route → 401 + audit
+    assert (await client.post("/api/v1/jobs", json={})).status_code == 401
+    # viewer-level user attempting the same → 403 insufficient_role + audit
+    await client.post("/api/v1/auth/register", json={
+        "username": "vviewer", "email": "vv@ex.local", "password": GOOD_PASS})
+    pend = (await client.get("/api/v1/users/pending", headers=_auth(tok))).json()["items"]
+    uid = next(u["id"] for u in pend if u["username"] == "vviewer")
+    await client.post(f"/api/v1/users/{uid}/approve", headers=_auth(tok), json={"role": "viewer"})
+    vtok = (await client.post("/api/v1/auth/login", json={"username": "vviewer", "password": GOOD_PASS})).json()["access_token"]
+    assert (await client.post("/api/v1/jobs", headers=_auth(vtok), json={})).status_code == 403
+    denied = await _events(client, tok, "ACCESS_DENIED")
+    assert any(e["reason"] == "unauthenticated" for e in denied)
+    assert any(e["reason"] == "insufficient_role" for e in denied)
+
+
+@pytest.mark.asyncio
+async def test_secret_delete_is_audited_without_leaking_value(client):
+    """R4 TASK 3 — delete_secret now emits a SECRET_DELETED audit event and
+    never logs the secret value."""
+    tok = await _admin_token(client)
+    secret_value = "sk-DO-NOT-LEAK-7788"
+    await client.post("/api/v1/secrets", headers=_auth(tok), json={
+        "key_name": "R4_TEST_KEY", "value": secret_value, "category": "misc"})
+    assert (await client.delete("/api/v1/secrets/R4_TEST_KEY", headers=_auth(tok))).status_code == 204
+    deleted = await _events(client, tok, "SECRET_DELETED")
+    assert any(e["result"] == "success" and e["metadata_json"].get("key_name") == "R4_TEST_KEY"
+               for e in deleted)
+    # the secret value must never appear in any audit record
+    assert secret_value not in str(deleted)
+    # deleting a missing key is audited as not_found
+    assert (await client.delete("/api/v1/secrets/R4_TEST_KEY", headers=_auth(tok))).status_code == 404
+    deleted2 = await _events(client, tok, "SECRET_DELETED")
+    assert any(e["result"] == "not_found" for e in deleted2)

@@ -219,6 +219,12 @@ async def get_character_by_slug(
 async def create_character(
     session: AsyncSession, request: CharacterCreateRequest
 ) -> Character:
+    """Create a character with a unique name + slug.
+
+    Names are unique among non-deleted characters and the slug is made
+    collision-free by appending ``-N``. Raises :class:`CharacterRuleError`
+    when the name is already taken.
+    """
     profile = request.profile
     name = profile.identity.name
     # Names are unique among non-deleted characters (once used, can't reuse).
@@ -281,6 +287,13 @@ async def update_character(
     character: Character,
     request: CharacterUpdateRequest,
 ) -> Character:
+    """Apply a profile/settings patch, enforcing the active-state lock.
+
+    Invariant (Phase 23): while a character is ACTIVE its identity fields —
+    face, date_of_birth, gender and TTS voice — are immutable; changing them
+    requires first moving the character back to ``editing`` via the status
+    endpoint. Raises :class:`CharacterRuleError` on a locked-field edit.
+    """
     # Phase 23 — immutability gate. Once a character is ACTIVE, the
     # face (face_locked), date_of_birth, gender, and TTS voice are
     # frozen. To change them the operator must first move the
@@ -419,6 +432,12 @@ async def transition_status(
 async def soft_delete_character(
     session: AsyncSession, character: Character
 ) -> Character:
+    """Soft-delete a character: stamp ``deleted_at`` and mark it inactive.
+
+    The row is retained (so historical jobs keep their snapshot) and is
+    excluded from name-uniqueness and listing. Use :func:`purge_character`
+    for a hard delete that also removes images/videos/jobs.
+    """
     character.deleted_at = _utcnow()
     character.status = "inactive"
     character.updated_at = _utcnow()

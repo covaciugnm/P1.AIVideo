@@ -18,6 +18,7 @@ import {
   testSecret,
 } from "@/lib/secrets";
 import { useT } from "@/lib/i18n/LanguageContext";
+import * as logBus from "@/lib/log-bus";
 
 import styles from "./KeysPanel.module.css";
 
@@ -95,6 +96,8 @@ export function KeysPanel() {
     const row = drafts[key_name];
     if (!row) return;
     setDrafts((p) => ({ ...p, [key_name]: { ...p[key_name], busy: true } }));
+    // Only the key_name (identifier) is logged — never the secret value.
+    logBus.emit({ source: "frontend", level: "info", message: "key upsert submitted", meta: { key_name } });
     try {
       await saveSecret(
         key_name,
@@ -103,8 +106,11 @@ export function KeysPanel() {
         catalog.find((c) => c.key_name === key_name)?.category ?? "misc",
       );
       await reload();
+      logBus.emit({ source: "frontend", level: "success", message: `key upsert → ${key_name}`, meta: { key_name } });
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      logBus.emit({ source: "frontend", level: "error", message: "key upsert failed", meta: { key_name, error: msg } });
     } finally {
       setDrafts((p) => ({ ...p, [key_name]: { ...p[key_name], busy: false } }));
     }
@@ -112,25 +118,38 @@ export function KeysPanel() {
 
   const handleTest = async (key_name: string) => {
     setDrafts((p) => ({ ...p, [key_name]: { ...p[key_name], busy: true } }));
+    logBus.emit({ source: "frontend", level: "info", message: "key test submitted", meta: { key_name } });
     try {
       const r = await testSecret(key_name);
       setDrafts((p) => ({
         ...p,
         [key_name]: { ...p[key_name], testResult: r, busy: false },
       }));
+      logBus.emit({
+        source: "frontend",
+        level: r.status === "ok" ? "success" : "warning",
+        message: `key test ${key_name} → ${r.status}`,
+        meta: { key_name, status: r.status },
+      });
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
       setDrafts((p) => ({ ...p, [key_name]: { ...p[key_name], busy: false } }));
+      logBus.emit({ source: "frontend", level: "error", message: "key test failed", meta: { key_name, error: msg } });
     }
   };
 
   const handleDelete = async (key_name: string) => {
     if (!confirm(t("keys.confirmDelete", { name: key_name }))) return;
+    logBus.emit({ source: "frontend", level: "info", message: "key delete submitted", meta: { key_name } });
     try {
       await deleteSecret(key_name);
       await reload();
+      logBus.emit({ source: "frontend", level: "success", message: `key delete → ${key_name}`, meta: { key_name } });
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      logBus.emit({ source: "frontend", level: "error", message: "key delete failed", meta: { key_name, error: msg } });
     }
   };
 

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { login, setSession } from "@/lib/auth";
+import * as logBus from "@/lib/log-bus";
 
 function roStatusMessage(msg: string): string {
   const m = msg.toLowerCase();
@@ -38,13 +39,18 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    // Only the username (an identifier) is logged — never the password.
+    logBus.emit({ source: "frontend", level: "info", message: "login submitted", meta: { username: username.trim() } });
     try {
       const res = await login(username.trim(), password);
       setPassword(""); // drop it immediately after use
       setSession(res.access_token, res.user);
+      logBus.emit({ source: "frontend", level: "success", message: "login success", meta: { username: username.trim() } });
       router.push("/characters");
     } catch (err) {
-      setError(roStatusMessage((err as Error).message || "Autentificare eșuată."));
+      const msg = (err as Error).message || "Autentificare eșuată.";
+      setError(roStatusMessage(msg));
+      logBus.emit({ source: "frontend", level: "error", message: "login failed", meta: { username: username.trim(), error: msg } });
     } finally {
       setBusy(false);
     }

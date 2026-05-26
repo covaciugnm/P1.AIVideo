@@ -59,7 +59,16 @@ async def require_active_user(
 ) -> User | None:
     if not settings.p1_auth_enabled:
         return None
-    return await _resolve_user(request, session)
+    from app.services import security_audit_service
+    try:
+        return await _resolve_user(request, session)
+    except HTTPException:
+        # Unauthenticated attempt on an authenticated product route. Audit
+        # parity with require_super_admin; behaviour is unchanged (re-raise).
+        await security_audit_service.log_access_denied(
+            session, event_type=_denied_event_for(str(getattr(request.url, "path", ""))),
+            request=request, reason="unauthenticated")
+        raise
 
 
 def _denied_event_for(path: str) -> str:
@@ -100,7 +109,21 @@ async def require_operator_or_above(
 ) -> User | None:
     if not settings.p1_auth_enabled:
         return None
-    user = await _resolve_user(request, session)
+    from app.services import security_audit_service
+    path = str(getattr(request.url, "path", ""))
+    try:
+        user = await _resolve_user(request, session)
+    except HTTPException:
+        # Unauthenticated attempt on an operator-or-above route.
+        await security_audit_service.log_access_denied(
+            session, event_type=_denied_event_for(path), request=request,
+            reason="unauthenticated")
+        raise
     if user.role not in ("super_admin", "admin", "operator"):
+        # Viewer-level (or unknown) role attempting a privileged action —
+        # a genuine privilege-escalation signal. Mirror require_super_admin.
+        await security_audit_service.log_access_denied(
+            session, event_type=_denied_event_for(path), request=request, actor=user,
+            reason="insufficient_role")
         raise _FORBIDDEN
     return user

@@ -43,6 +43,83 @@ from app.services import artifact_service
 router = APIRouter(prefix="/api/v1/video", tags=["video"])
 
 
+# ---------------------------------------------------------------------------
+# Remote engine video generation (GB10 / ThinkStation) — text→video.
+# Separate from /generate (which is the SadTalker talking-head lipsync path):
+# the remote engine does prompt-driven t2v via Wan2.2 and returns a file we
+# download, not an image+audio lipsync. Long-running (~10–16 min/clip).
+# ---------------------------------------------------------------------------
+
+
+class RemoteVideoRequest(BaseModel):
+    """Text→video request for the remote GB10 engine.
+
+    ``size`` is task-dependent — the engine rejects mismatches:
+      - ``preview`` / ``ti2v-5B``  → ``1280*704`` or ``704*1280`` (default; ~5 min
+        at steps=8, ~10 min at steps=20; lighter — does not need ollama stopped).
+      - ``main``    / ``t2v-A14B`` → ``832*480`` (heavy, ~10–25 min; stop ollama).
+    Generation is sequential on the engine (FIFO lock) — do not fire concurrent
+    requests. Keep the client timeout ≥ REMOTE_VIDEO_TIMEOUT_SECONDS (default 1800).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    backend: str = Field(default="preview", max_length=40)
+    task: str = Field(default="ti2v-5B", max_length=40)
+    size: str = Field(default="1280*704", max_length=20)
+    steps: int = Field(default=8, ge=1, le=100)
+    job_id: uuid.UUID | None = None
+
+
+class RemoteVideoResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str
+    artifact_id: str | None = None
+    size_bytes: int | None = None
+    task_id: str | None = None
+    remote_output_path: str | None = None
+
+
+@router.post("/remote-generate", response_model=RemoteVideoResponse)
+async def remote_generate(
+    payload: RemoteVideoRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> RemoteVideoResponse:
+    """Generate a text→video clip on the remote LAN engine and register the
+    resulting MP4 as a local ``video`` artifact.
+
+    Long-running and synchronous on the engine side; use a generous client
+    timeout. image→video / speech→video are not wired yet.
+    """
+    from app.services import remote_video_service
+
+    logger.info(
+        "video.remote_generate.start backend=%s task=%s size=%s steps=%s job_id=%s",
+        payload.backend, payload.task, payload.size, payload.steps, payload.job_id,
+    )
+    try:
+        result = await remote_video_service.generate_video_remote(
+            session,
+            prompt=payload.prompt,
+            backend=payload.backend,
+            task=payload.task,
+            size=payload.size,
+            steps=payload.steps,
+            job_id=payload.job_id,
+        )
+    except remote_video_service.RemoteVideoError as exc:
+        logger.warning("video.remote_generate.failed code=%s detail=%s", exc.error_code, exc.detail)
+        code_map = {"video_provider_not_configured": 503, "storage_failed": 500, "generation_failed": 502}
+        raise HTTPException(
+            status_code=code_map.get(exc.error_code, 502),
+            detail={"error_code": exc.error_code, "detail": exc.detail},
+        ) from exc
+    logger.info("video.remote_generate.done artifact_id=%s", result.get("artifact_id"))
+    return RemoteVideoResponse(**result)
+
+
 _KNOWN_VIDEO_PROVIDERS = {"sadtalker", "musetalk", "wav2lip"}
 
 

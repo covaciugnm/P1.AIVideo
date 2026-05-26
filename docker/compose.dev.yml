@@ -159,6 +159,11 @@ services:
       # service. Default empty → the backend reports the provider as
       # ``not_implemented`` so the UI shows clean readiness state.
       F5TTS_RO_BASE_URL: "${F5TTS_RO_BASE_URL:-}"
+      # Remote LAN generation engine (e.g. GB10 / ThinkStation). When set, the
+      # backend's ``remote_gb10_image`` provider POSTs to ${REMOTE_IMAGE_BASE_URL}
+      # /engine/generate with Authorization: Bearer ${REMOTE_ENGINE_API_KEY}.
+      REMOTE_IMAGE_BASE_URL: "${REMOTE_IMAGE_BASE_URL:-}"
+      REMOTE_ENGINE_API_KEY: "${REMOTE_ENGINE_API_KEY:-}"
       # Phase 20 — voice catalog root. The backend reads
       # ``${F5TTS_RO_MODELS_ROOT}/voices.yaml`` to expose one TTS
       # dropdown row per voice; absolute paths from the catalog are

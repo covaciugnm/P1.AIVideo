@@ -10,6 +10,7 @@ import { CharacterForm, makeDefaultFormValue, type CharacterFormValue } from "@/
 import { ErrorMessage } from "@/components/ErrorMessage";
 import { createCharacter, listAvailableVoices } from "@/lib/characters";
 import { useT } from "@/lib/i18n/LanguageContext";
+import * as logBus from "@/lib/log-bus";
 
 export default function NewCharacterPage() {
   const t = useT();
@@ -35,6 +36,7 @@ export default function NewCharacterPage() {
     }
     setBusy(true);
     setError(null);
+    logBus.emit({ source: "frontend", level: "info", message: "character create submitted", meta: { name: value.profile.identity.name.trim() } });
     try {
       const created = await createCharacter({
         profile: value.profile,
@@ -43,9 +45,12 @@ export default function NewCharacterPage() {
         default_voice_provider_id: value.default_voice_provider_id || null,
         default_image_provider_id: value.default_image_provider_id || null,
       });
+      logBus.emit({ source: "frontend", level: "success", message: `character create → ${created.id}`, meta: { character_id: created.id } });
       router.push(`/characters/${created.id}`);
     } catch (err) {
-      setError((err as Error).message);
+      const msg = (err as Error).message;
+      setError(msg);
+      logBus.emit({ source: "frontend", level: "error", message: "character create failed", meta: { error: msg } });
     } finally {
       setBusy(false);
     }

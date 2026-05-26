@@ -18,6 +18,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db_session
+from app.core.security import require_active_user
+from app.models.user import User
 from app.schemas.character import (
     CharacterCloneRequest,
     CharacterCreateRequest,
@@ -264,11 +266,15 @@ async def list_images(
 async def generate_image(
     character_id: uuid.UUID,
     request: CharacterImageGenerateRequest,
+    actor: User | None = Depends(require_active_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> CharacterImageResponse:
+    # ``actor`` is bound so the requester's user_id is attributable in the
+    # standard logs; the route is already auth-guarded at the router level.
+    user_id = str(actor.id) if actor is not None else None
     logger.info(
-        "characters.image.endpoint.start character_id=%s provider=%s model=%s use_main_ref=%s",
-        character_id, request.provider_id, request.model_id, request.use_main_reference,
+        "characters.image.endpoint.start user_id=%s character_id=%s provider=%s model=%s use_main_ref=%s",
+        user_id, character_id, request.provider_id, request.model_id, request.use_main_reference,
     )
     character = await _load_character_or_404(session, character_id)
     if character_service.is_generation_blocked(character):

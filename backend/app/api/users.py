@@ -38,10 +38,16 @@ async def _load(session: AsyncSession, user_id: uuid.UUID) -> User:
 
 @router.get("", response_model=UserListResponse)
 async def list_users(
+    request: Request,
     status: str | None = Query(default=None),
     include_deleted: bool = Query(default=False),
+    actor: User = Depends(require_super_admin),
     session: AsyncSession = Depends(get_db_session),
 ):
+    await security_audit_service.record(
+        session, event_type="USER_LIST_VIEWED", result="success",
+        request=request, actor=actor, target_type="user",
+        metadata={"status_filter": status, "include_deleted": include_deleted})
     rows, total = await user_service.list_users(
         session, status=status, include_deleted=include_deleted
     )
@@ -49,7 +55,14 @@ async def list_users(
 
 
 @router.get("/pending", response_model=UserListResponse)
-async def list_pending(session: AsyncSession = Depends(get_db_session)):
+async def list_pending(
+    request: Request,
+    actor: User = Depends(require_super_admin),
+    session: AsyncSession = Depends(get_db_session),
+):
+    await security_audit_service.record(
+        session, event_type="USER_PENDING_VIEWED", result="success",
+        request=request, actor=actor, target_type="user")
     rows, total = await user_service.list_users(session, status="pending")
     return UserListResponse(items=[user_service.to_public(u) for u in rows], total=total)
 

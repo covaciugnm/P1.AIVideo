@@ -49,6 +49,8 @@ def _merge(
     catalog: list[ProviderInfo],
     overrides: dict[tuple[str, str], dict],
 ) -> list[ProviderInfo]:
+    """Overlay operator overrides (keyed by ``(feature, provider_id)``) onto a
+    static provider catalog, returning the effective list the UI should show."""
     return provider_registry.apply_feature_provider_overrides(catalog, overrides)
 
 
@@ -56,6 +58,8 @@ def _merge(
 async def list_providers(
     session: AsyncSession = Depends(get_db_session),
 ) -> ProvidersResponse:
+    """Return every provider catalog (one list per feature) with the operator's
+    persisted overrides already merged in via :func:`_merge`."""
     overrides = await _load_overrides(session)
     catalogs = provider_registry.list_providers()
     return ProvidersResponse(

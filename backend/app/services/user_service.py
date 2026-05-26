@@ -45,6 +45,14 @@ def to_public(user: User) -> UserPublic:
 # ----- registration --------------------------------------------------------
 
 async def register_user(session: AsyncSession, req: RegisterRequest) -> User:
+    """Create a self-service account in the locked-down default state.
+
+    Invariant: public registration ALWAYS yields role ``operator``,
+    status ``pending`` and ``is_active=False`` — any privileged fields in the
+    request are ignored (the schema drops them). The account cannot log in
+    until a super-admin approves it. Raises :class:`UserRuleError` on weak
+    password (422) or duplicate username/email (409).
+    """
     err = auth_service.validate_password_policy(req.password)
     if err:
         raise UserRuleError(422, err)
@@ -118,6 +126,11 @@ def _guard_not_protected(user: User, action: str) -> None:
 async def list_users(
     session: AsyncSession, *, status: str | None = None, include_deleted: bool = False
 ) -> tuple[list[User], int]:
+    """Return ``(users, count)`` newest-first.
+
+    ``status`` filters to one ``user_status``. With no filter, soft-deleted
+    users are hidden unless ``include_deleted`` is set.
+    """
     stmt = select(User)
     if status:
         stmt = stmt.where(User.user_status == status)
@@ -129,6 +142,12 @@ async def list_users(
 
 
 async def approve(session: AsyncSession, target: User, role: str, by: User) -> User:
+    """Activate a pending user with the granted ``role`` (operator/viewer/admin).
+
+    Transition ``pending → active`` only. Records who approved and when.
+    Raises :class:`UserRuleError` on a protected account (403), a non-pending
+    target (409) or an invalid role (422).
+    """
     _guard_not_protected(target, "approved")
     if target.user_status != "pending":
         raise UserRuleError(409, f"Only pending users can be approved (is {target.user_status}).")
@@ -146,6 +165,11 @@ async def approve(session: AsyncSession, target: User, role: str, by: User) -> U
 
 
 async def reject(session: AsyncSession, target: User, reason: str | None, by: User) -> User:
+    """Reject a pending registration (``pending → rejected``, stays inactive).
+
+    Raises :class:`UserRuleError` on a protected account (403) or a
+    non-pending target (409).
+    """
     _guard_not_protected(target, "rejected")
     if target.user_status != "pending":
         raise UserRuleError(409, "Only pending users can be rejected.")
@@ -161,6 +185,11 @@ async def reject(session: AsyncSession, target: User, reason: str | None, by: Us
 
 
 async def suspend(session: AsyncSession, target: User, reason: str | None, by: User) -> User:
+    """Suspend an active user (``active → suspended``, blocks login).
+
+    Reversible via :func:`reactivate`. Raises :class:`UserRuleError` on a
+    protected account (403) or a non-active target (409).
+    """
     _guard_not_protected(target, "suspended")
     if target.user_status != "active":
         raise UserRuleError(409, "Only active users can be suspended.")
@@ -176,6 +205,11 @@ async def suspend(session: AsyncSession, target: User, reason: str | None, by: U
 
 
 async def reactivate(session: AsyncSession, target: User, by: User) -> User:
+    """Restore a suspended user (``suspended → active``, login re-enabled).
+
+    Raises :class:`UserRuleError` on a protected account (403) or a
+    non-suspended target (409).
+    """
     _guard_not_protected(target, "reactivated")
     if target.user_status != "suspended":
         raise UserRuleError(409, "Only suspended users can be reactivated.")
@@ -190,6 +224,11 @@ async def reactivate(session: AsyncSession, target: User, by: User) -> User:
 async def soft_delete(
     session: AsyncSession, target: User, reason: str | None, by: User
 ) -> User:
+    """Soft-delete a user (``→ deleted``, inactive; row is retained for audit).
+
+    Self-deletion is forbidden (403). Raises :class:`UserRuleError` on a
+    protected account (403) or an already-deleted target (409).
+    """
     _guard_not_protected(target, "deleted")
     if target.id == by.id:
         raise UserRuleError(403, "Users cannot delete themselves.")

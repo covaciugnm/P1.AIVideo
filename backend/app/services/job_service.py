@@ -35,6 +35,15 @@ async def _load_character_snapshot(
 
 
 async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
+    """Persist a new job from a validated brief and emit ``job-created``.
+
+    Side effects: writes the ``Job`` row (status ``pending_compliance``),
+    snapshots the bound character profile (Phase 12), records a
+    ``CharacterVideo`` link row when a character is attached, and publishes
+    the queue event the orchestrator consumes. Raises
+    :class:`character_service.CharacterRuleError` when the bound character's
+    status forbids new video generation.
+    """
     logger.info(
         "jobs.create.start target_duration=%s voice_mode=%s face_mode=%s character_id=%s",
         payload.target_duration_seconds, payload.voice_mode, payload.face_mode, payload.character_id,
@@ -132,6 +141,7 @@ async def create_job(session: AsyncSession, payload: JobCreateRequest) -> Job:
 
 
 async def get_job(session: AsyncSession, job_id: uuid.UUID) -> Job | None:
+    """Return the ``Job`` row for ``job_id``, or ``None`` if it doesn't exist."""
     result = await session.execute(select(Job).where(Job.id == job_id))
     return result.scalar_one_or_none()
 
@@ -142,14 +152,29 @@ async def set_job_status(
     status: JobStatus,
     rejection_reason: str | None = None,
 ) -> Job | None:
+    """Force a job into ``status`` (used by the orchestrator/agents).
+
+    Returns the updated job, or ``None`` if it doesn't exist. The transition
+    is logged at the service layer so terminal states (published / rejected /
+    failed) are traceable across the multi-agent flow even when no API request
+    triggered them.
+    """
     job = await get_job(session, job_id)
     if job is None:
         return None
+    old_status = job.status
     job.status = status
     if rejection_reason is not None:
         job.rejection_reason = rejection_reason
     await session.commit()
     await session.refresh(job)
+    is_terminal = status in TERMINAL_STATUSES
+    logger.log(
+        logging.WARNING if status == JobStatus.failed else logging.INFO,
+        "jobs.status.change job_id=%s %s -> %s terminal=%s",
+        job.id, getattr(old_status, "value", old_status), status.value, is_terminal,
+        extra={"job_id": str(job.id), "phase": "jobs.status.change"},
+    )
     return job
 
 

@@ -129,6 +129,7 @@ def _compose_display_name(job) -> str:  # type: ignore[no-untyped-def]
 
 from app.core.deps import get_db_session
 from app.core.security import require_operator_or_above
+from app.models.user import User
 from app.models.artifact import Artifact
 from app.models.compliance import ComplianceEvent
 from app.models.job import Job
@@ -389,23 +390,28 @@ async def _stage_artifact(
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "", response_model=JobResponse, status_code=201,
-    dependencies=[Depends(require_operator_or_above)],
-)
+@router.post("", response_model=JobResponse, status_code=201)
 async def create_job(
     payload: JobCreateRequest,
+    actor: User | None = Depends(require_operator_or_above),
     session: AsyncSession = Depends(get_db_session),
 ) -> JobResponse:
+    # ``actor`` is bound (not just a decorator dependency) so the actor's
+    # user_id can be attributed in the standard logs below. The guard still
+    # enforces operator-or-above exactly as before.
+    user_id = str(actor.id) if actor is not None else None
     logger.info(
-        "jobs.create_endpoint.start target_dur=%s voice_mode=%s face_mode=%s character_id=%s",
-        payload.target_duration_seconds, payload.voice_mode, payload.face_mode, payload.character_id,
+        "jobs.create_endpoint.start user_id=%s target_dur=%s voice_mode=%s face_mode=%s character_id=%s",
+        user_id, payload.target_duration_seconds, payload.voice_mode, payload.face_mode, payload.character_id,
     )
     try:
         job = await job_service.create_job(session, payload)
     except character_service.CharacterRuleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    logger.info("jobs.create_endpoint.done job_id=%s status=%s", job.id, job.status.value)
+    logger.info(
+        "jobs.create_endpoint.done user_id=%s job_id=%s status=%s",
+        user_id, job.id, job.status.value,
+    )
     return JobResponse.model_validate(job)
 
 
@@ -424,6 +430,13 @@ async def list_jobs(
         description="Filter by job status. Invalid values yield a 422.",
     ),
 ) -> list[JobSummary]:
+    """List jobs, newest-per-character first.
+
+    Optional ``status`` filters in SQL. Results are then ordered in Python by
+    character name (case-insensitive) then production date — the name lives in
+    the frozen ``character_snapshot``, not a column, so it can't be sorted in
+    SQL — and finally sliced by ``offset``/``limit``.
+    """
     stmt = select(Job)
     if status is not None:
         stmt = stmt.where(Job.status == status)

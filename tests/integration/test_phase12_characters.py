@@ -58,8 +58,10 @@ async def test_providers_lists_image_generator_category(client):
     body = r.json()
     assert "image_generator" in body
     ids = [p["provider_id"] for p in body["image_generator"]]
-    # 16 providers (1 mock + 5 local + 10 hosted).
-    assert len(ids) == 16
+    # 17 providers (1 mock + 5 local + 10 hosted + 1 remote LAN engine).
+    assert len(ids) == 17
+    # Remote GB10/ThinkStation engine is registered in the catalog.
+    assert "remote_gb10_image" in ids
     # Mock is always available + must appear in the catalog.
     assert "mock" in ids
     mock = next(p for p in body["image_generator"] if p["provider_id"] == "mock")

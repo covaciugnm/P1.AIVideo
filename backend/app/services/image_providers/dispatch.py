@@ -23,6 +23,7 @@ from app.services.image_providers.local_wrapper_stub import (
 )
 from app.services.image_providers.kontext_stub import FluxKontextProvider
 from app.services.image_providers.mock_provider import MockImageProvider
+from app.services.image_providers.remote_engine_stub import RemoteEngineImageProvider
 
 
 def _build_registry() -> dict[str, ImageProvider]:
@@ -33,6 +34,8 @@ def _build_registry() -> dict[str, ImageProvider]:
         out[d["provider_id"]] = HostedApiImageProviderStub.build(**d)
     # Phase IG-5 — future reference-edit provider (clear "not configured").
     out["flux_kontext"] = FluxKontextProvider()
+    # Remote LAN engine (e.g. GB10 / ThinkStation) — Bearer-authenticated HTTP.
+    out[RemoteEngineImageProvider.provider_id] = RemoteEngineImageProvider()
     return out
 
 

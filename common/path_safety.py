@@ -20,8 +20,11 @@ with ``monkeypatch.setenv`` between requests without rebuilding the app.
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 _DEFAULT_AUDIO_ROOTS = (
@@ -76,6 +79,12 @@ def _validate_local_path(
     raw = Path(path)
 
     if any(part == ".." for part in raw.parts):
+        # Security signal: deliberate ".." traversal in an operator-supplied
+        # path. The path is a filesystem location (not a credential), so it is
+        # safe to log for monitoring.
+        logger.warning(
+            "path_safety.violation field=%s reason=traversal path=%r", field_name, path
+        )
         raise ValueError(f"{field_name} contains path traversal: {path!r}")
 
     if not raw.is_absolute():
@@ -100,6 +109,11 @@ def _validate_local_path(
 
     resolved_roots = [Path(r).resolve(strict=False) for r in allowed_roots]
     if not any(_is_under(resolved, root) for root in resolved_roots):
+        # Security signal: path escapes every configured allowed root.
+        logger.warning(
+            "path_safety.violation field=%s reason=outside_allowed_roots path=%r",
+            field_name, path,
+        )
         raise ValueError(
             f"{field_name} is outside the configured allowed roots: {path!r}"
         )
